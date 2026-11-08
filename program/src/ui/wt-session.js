@@ -16,7 +16,7 @@
           slot: "auto",
           messages: (window.__history || history || []),
           meta: (window.__saveMeta && window.__saveMeta()) ||
-                { bg: currentBg || "", outfit: (WA2.state.outfit || ""), at: Date.now() }
+                { bg: (document.body.dataset.bg || ""), outfit: (WA2.state.outfit || ""), at: Date.now() }
         })
       }).catch(function () {});
     } catch (e) { return null; }
@@ -51,8 +51,10 @@
   function lastAssistant() {
     for (var i = history.length - 1; i >= 0; i--) {
       if (history[i] && history[i].role === "assistant") {
+        /* 带上当时的情绪：不带就会退回 calm，重播既变平静又要重新合成 */
         return { zh: history[i].zh || history[i].content || "",
-                 ja: history[i].content || "" };
+                 ja: history[i].content || "",
+                 emo: history[i].emo || "" };
       }
     }
     return { zh: "", ja: "" };
@@ -73,11 +75,13 @@
         if (!d.messages || !d.messages.length) return false;
         applyHistory(d.messages);
         const meta = d.meta || {};
-        if (meta.bg) { currentBg = null; setBg(meta.bg); }
+        if (meta.bg) { setBg(meta.bg); }
+        else if (!currentBgName()) { setBg("classroom"); }   /* 旧档没存背景：别让它是空的，否则之后存的档也空 */
         if (meta.outfit) { WA2.state.outfit = meta.outfit; }
         /* 立绘表情 / BGM 按存档还原（以前这里只还原背景，表情停在默认） */
         try {
-          setSpriteByScene(meta.bg || "classroom", meta.emo || "calm", true, meta.outfit || "");
+          var _spriteEmo = (meta.hscene === 1 || meta.hscene === "1") ? "H" : (meta.emo || "calm");
+          setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
           if (meta.bgm) setBgm(meta.bgm, 600);
         } catch (e) {}
         var line = lastAssistant();
@@ -116,15 +120,23 @@
   });
 
   /* 读档：把存档恢复到当前对话并进入游戏 */
+  /* 当前背景名：真正的值由 game.js 的 setBg 写在 body.dataset.bg 上；
+     这个文件里那个 currentBg 从来没被赋过值，别再读它 */
+  function currentBgName() {
+    try { return document.body.dataset.bg || ""; } catch (e) { return ""; }
+  }
+
   window.__loadSession = function (data) {
     try {
       applyHistory(data.messages);
       const meta = data.meta || {};
       showScreen("gameScreen");
       titleBgmStarted = true;
-      if (meta.bg) { currentBg = null; setBg(meta.bg); } else { setBg("classroom"); }
+      if (meta.bg) { setBg(meta.bg); }
+      else if (!currentBgName()) { setBg("classroom"); }
       if (meta.outfit) { WA2.state.outfit = meta.outfit; }
-      setSpriteByScene(meta.bg || "classroom", meta.emo || "calm", true, meta.outfit || "");
+      var _spriteEmo = (meta.hscene === 1 || meta.hscene === "1") ? "H" : (meta.emo || "calm");
+      setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
       gdiRenderName(CHAR_NAME, $("namePlate"));
       setBgm(meta.bgm || meta.emo || "calm", 600);
       var line = lastAssistant();
@@ -143,10 +155,13 @@
      currentBg、currentOutfit 是模块内变量，这里只读不写 */
   window.__saveMeta = function () {
     var meta = {
-      bg: (typeof currentBg !== "undefined" && currentBg) || "",
+      /* 背景名以 setBg 写进 body.dataset 的为准 */
+      bg: (document.body.dataset.bg || ""),
       outfit: (WA2.state.outfit || ""),
       /* 立绘表情和 BGM 也要存：以前读档写死 calm，导致「回到默认立绘和场景」 */
       emo: (window.__lastEmo || ""),
+      /* 当时是不是成人场面：表情标签可能被写成 calm，光靠 emo 会还原成平静脸 */
+      hscene: (document.body.dataset.hscene === "1") ? 1 : 0,
       bgm: (WA2.audio && WA2.audio.current) || "",
       at: Date.now()
     };
@@ -161,7 +176,7 @@
   /* 存档界面用：按场景名取背景图，给槽位缩略图用 */
   window.__bgThumb = function (name) { return bgSrc(name); };
   /* 调试/探针用：直接切到某张场景图（传 CG 的 id，或旧背景名） */
-  window.__scenePreview = function (name) { currentBg = null; setBg(name); return { bg: currentBg, url: bgSrc(name) }; };
+  window.__scenePreview = function (name) { setBg(name); return { bg: currentBgName(), url: bgSrc(name) }; };
   /* 工具栏提示（快速存档/读档暂未开放时用） */
   window.__saveHint = function (msg) {
     var h = document.getElementById("tbHint");
@@ -205,7 +220,6 @@
   };
 
   /* ---------- 场景切换 ---------- */
-  let currentBg = null;
 
   /* 开新游戏：清空对话历史（**必须走这里**）。
      以前 wt-nav 里直接写 `history = []` —— 那不是本模块的数组，而是浏览器的
@@ -223,9 +237,11 @@
     try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
   }
   WA2.session = _exp;
+  /* 用函数覆盖导出串里的同名变量（那个 currentBg 永远是 null） */
+  try { WA2.session.currentBg = currentBgName; } catch (e) {}
   WA2.register("session", _exp);
   /* __export_all__ */
-  ["sessionRestore", "sessionSave", "clearHistory", "W", "WA2", "_exp", "_names", "bg", "currentBg", "cv", "g", "h", "meta", "r", "s", "sp", "sr", "stage", "w"].forEach(function (n) {
+  ["sessionRestore", "sessionSave", "clearHistory", "W", "WA2", "_exp", "_names", "bg", "cv", "g", "h", "meta", "r", "s", "sp", "sr", "stage", "w"].forEach(function (n) {
     try { var v = eval(n); if (v !== undefined) { window[n] = v; } } catch (e) {}
   });
 })();

@@ -1,5 +1,5 @@
 {
-  "version": "2026-11-07.1",
+  "version": "2026-11-08.1",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
-  "notes": "存档还原画面 / 界面不透明度键独立 / 自测扩充"
+  "notes": "自动续说 / 存档还原画面 / 场景与立绘切换 / 语音与界面修复"
 }

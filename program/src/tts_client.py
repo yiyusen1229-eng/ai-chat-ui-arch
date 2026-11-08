@@ -479,7 +479,9 @@ def pick_ref(emo="neutral", target=""):
     if _looks_like_moan(target):
         return random.choice(with_text or items)
 
-    # 正常台词：**音频里得真有人声**，否则模型只出气声不出字（VAD 实测 H 里 74/151 是 0）
+    # 正常台词：**音频里得真有人声**，否则模型只出气声不出字（VAD 实测 H 里 74/151 是 0）。
+    # 但 H 是例外：它的素材本来就是气声，VAD 天然低；用 VAD 门槛会把 H 全筛掉，
+    # 只能借 calm 的音色 → 听起来完全不是 H 的语气（用户逐条听过，确认不是噪声）。
     def _key(path):
         return (os.path.basename(os.path.dirname(path)).lower(),
                 os.path.basename(path).lower())
@@ -491,7 +493,7 @@ def pick_ref(emo="neutral", target=""):
     def _dur(path):
         return _REF_DUR.get(_key(path), 0.0)
 
-    def _good(pairs, lo=3.5, hi=7.5):
+    def _good(pairs, lo=3.5, hi=7.5, min_ratio=0.5):
         """念正常台词用的参考：有人声、时长适中、文本不是纯拟声。
 
         实测：>8 秒的长参考会掉字；2~3 秒的气声参考会把整句带成气声
@@ -500,7 +502,7 @@ def pick_ref(emo="neutral", target=""):
         out = []
         for x in pairs:
             d = _dur(x[0])
-            if _ratio(x[0]) < 0.5:
+            if _ratio(x[0]) < min_ratio:
                 continue
             if d and not (lo <= d <= hi):
                 continue
@@ -512,11 +514,18 @@ def pick_ref(emo="neutral", target=""):
             out.append(x)
         return out
 
-    local = _good(with_text)
+    local = _good(with_text, min_ratio=(0.0 if emo == "H" else 0.5))
+    if emo == "H" and local:
+        # H 放宽了 VAD，但「CER 未知」不能当成好：优先用测过的那些
+        _known = [x for x in local if _REFCER.get(_key(x[0])) is not None]
+        if _known:
+            local = _known
     # 实测：H 那批参考最好也只有 CER≈0.45（念字不可靠）。
     # 若本情绪最好的一条也超过门槛，就借其它情绪「念得清」的参考，
     # 语速/温度仍用本情绪的，语气不至于跑掉。
-    if local:
+    if local and emo != "H":
+        # H 例外：H 那批参考本来就念不清（实测 0.44~0.56），借 calm 的音色会变成平静语气。
+        # 用户要求「H 就用 H 的语气」，所以 H 不吃这条。
         _cs = [ _REFCER.get(_key(x[0])) for x in local ]
         _cs = [ c for c in _cs if c is not None ]
         if _cs and min(_cs) > 0.45:
@@ -536,10 +545,21 @@ def pick_ref(emo="neutral", target=""):
             pool = [x for x, c in scored if c <= best + 0.12]
             if pool:
                 return random.choice(pool)
-        return random.choice(local)
+        _pick = random.choice(local)
+        try:
+            import applog
+            applog.log("参考：%s → %s（CER=%s）" %
+                       (emo, os.path.basename(_pick[0]),
+                        _REFCER.get(_key(_pick[0]))), "TTS")
+        except Exception:
+            pass
+        return _pick
     # 本情绪里没有能说话的参考 → 跨情绪借（calm/soft 这类以说话为主），参数仍用本情绪的
     borrow = []
     for _e, _v in refs.items():
+        # 不要从本情绪自己的目录里「借」：这里要的是**别的**情绪的音色
+        if str(_e).lower() == str(emo).lower():
+            continue
         for x in _good([y for y in _v if y[1]]):
             borrow.append(x)
     if borrow:
@@ -758,8 +778,11 @@ _TTS_CACHE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(_
                                                 "..", "cache", "tts"))
 
 
-# 合成行为（参数/参考挑选/切分）一变就 +1：否则会一直命中旧参数合成的音频
-_CACHE_VERSION = 2
+# 合成行为（参数/参考挑选/切分）一变就 +1：否则会一直命中旧参数合成的音频。
+# v3（2026-11-07）：H 不再借 calm 音色。旧音频是用 calm 参考合成的，
+# key 里不含"选了哪条参考"，所以必须靠版本号让它们全部失效，
+# 否则同一句话重放时仍然是那种平静嗓音（表现就是"偶尔还是平静"）。
+_CACHE_VERSION = 3
 
 
 def _tts_cache_path(text, lang, emo):

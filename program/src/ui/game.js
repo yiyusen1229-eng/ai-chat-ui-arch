@@ -194,6 +194,9 @@ function openingLine() { return OPENING_LINE; }
 function setBg(name) {
   if (currentBg === name) return;
   currentBg = name;
+  /* 存档要记「当前背景」，但 currentBg 是 game.js 的内部变量；
+     顺手写到 body.dataset 上，session.js 直接读它（不新增全局） */
+  try { document.body.dataset.bg = name || ""; } catch (e) {}
   const bgUrl = bgSrc(name);
   window.__curBg = new Image();
   window.__curBg.src = bgUrl;

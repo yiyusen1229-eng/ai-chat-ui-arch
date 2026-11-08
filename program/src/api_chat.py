@@ -103,6 +103,8 @@ class ChatApi:
         raw_msgs = list(msgs)          # 关系阶段要看完整历史，不能用裁剪后的
         # 当前背景图（前端带的）：模型没说时间时，新场景沿用这个时段
         prev_bg = (req.get("bg") or "").strip()
+        # 自动续说：这一轮没有新的玩家消息，是她在接着自己刚才的话往下说
+        _auto_continue = bool(req.get("continue"))
         # 成人场面：先听模型自己（<hscene> 标记），没给才退回关键词兜底
         _intimate = False
         _h_src = ""
@@ -211,6 +213,21 @@ class ChatApi:
             outfit_hint = "（按当前角色立绘）"
         _before_tail = len(system)
         # 演出标签（场景 / 服装 / 情绪 / 动作）：云端和本地都要，见 performance_hints
+        if _auto_continue:
+            _last_line = ""
+            try:
+                for _m in reversed(raw_msgs):
+                    if isinstance(_m, dict) and _m.get("role") == "assistant":
+                        _last_line = (_m.get("content") or "").strip()
+                        break
+            except Exception:
+                pass
+            system = system + ("\n【续说】这一轮没有对方的新发言：你接着自己上一句往下说，"
+                              "不要等对方回答，也不要复述已经说过的内容；"
+                              "只写一句（可以是短句或动作 + 一句），不要一次性把话题说完。")
+            if _last_line:
+                system = system + ("\n上一句是：" + _last_line[:60] +
+                                   "\n不要重复上面这句，要往下推进（换个动作、换句话）。")
         system = system + performance_hints(cc, outfit_hint)
         # 场面的最终判定在模型回复里（<hscene>），这里不预判；判定为「是」时解析后强制 H。
         _seg["tail"] = len(system) - _before_tail
@@ -275,7 +292,17 @@ class ChatApi:
             except Exception:
                 pass
             # —— 场面判定：优先用模型自己给的 <hscene> ——
+            # 续说轮（没有新的玩家发言）不重新判定：消息里全是我方的短句，
+            # 关键词判不出来，连判几次就会把迟滞推向「退出 H 场面」，
+            # 于是整个自动续说都变成平静语气。这里直接沿用当前场面。
             _h = None
+            if _auto_continue:
+                try:
+                    _h = bool(hscene.last_scene())
+                except Exception:
+                    _h = False
+                _h_src = "续说沿用"
+                log("成人场面：续说轮沿用当前场面=%s" % ("是" if _h else "否"))
             _m = _re_hscene.search(raw or "")
             if _m:
                 _v = (_m.group(1) or "").strip().lower()
@@ -283,21 +310,47 @@ class ChatApi:
                 raw = _re_hscene.sub("", raw, count=1)
                 _h_src = "模型标记"
                 log("成人场面：模型判定=%s" % ("是" if _h else "否"))
-            else:
+            elif not _auto_continue:
                 try:
-                    _h = hscene.is_intimate(raw_msgs)
+                    # 只看**最近两条**：H 台词离开后，前面几条 H 不能一直把场面钉住
+                    # （否则在教室里聊升学也会被判成 H）
+                    _h = hscene.is_intimate(raw_msgs[-2:])
                 except Exception:
                     _h = False
                 _h_src = "关键词兜底"
                 log("成人场面：模型没给 <hscene>，关键词判定=%s" % ("是" if _h else "否"))
             _intimate = bool(_h)
-            try:
-                # 带迟滞：返回的是**生效**状态（H 场面里短句不会把语气拽回平静）
-                _intimate = hscene.set_last(_intimate)
-            except Exception:
-                pass
+            if not _auto_continue:
+                try:
+                    # 迟滞只保护「短句/拟声」：玩家发一句完整的、毫无 H 特征的句子时，
+                    # 说明场面已经切走了（例：教室里聊升学），要立刻退出，
+                    # 否则普通台词会被当成「H 场面里的短句」继续用 H 语音。
+                    if not _intimate:
+                        _u = ""
+                        for _m2 in reversed(raw_msgs):
+                            if isinstance(_m2, dict) and _m2.get("role") == "user":
+                                _u = (_m2.get("content") or "").strip()
+                                break
+                        try:
+                            _u_score = hscene.score(_u)[0] if _u else 0
+                        except Exception:
+                            _u_score = 0
+                        if _u and _u_score == 0 and len(_u) >= 6:
+                            hscene.force_exit()
+                            log("成人场面：玩家这句没有 H 特征且是完整句 → 直接退出")
+                    # 带迟滞：返回的是**生效**状态（H 场面里短句不会把语气拽回平静）
+                    _intimate = hscene.set_last(_intimate)
+                except Exception:
+                    pass
             if _intimate != bool(_h):
                 log("成人场面：本轮判定=否，但仍在 H 场面里（迟滞保护）")
+            # 续说轮模型常常不写 <emotion>，会被推断成 calm（语气全变平静）。
+            # 这时候沿用历史里上一条的情绪标签。
+            if _auto_continue and _src != "tag":
+                _le = (req.get("last_emo") or "").strip()
+                if _le:
+                    log("续说：沿用上一条情绪 %r" % _le)
+                    emo = _le
             # 成人场面里模型仍可能标 calm/soft：这里按场面改掉（只影响选参考音频）
             if _intimate:
                 # 成人场面里**任何**情绪标签都压成 H：

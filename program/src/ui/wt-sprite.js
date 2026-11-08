@@ -156,7 +156,10 @@
   function setSpriteByScene(scene, mood, force, wantOutfit) {
     // 服装以 WA2.state.outfit 为准；只有对话明确换衣服（wantOutfit）才改
     var cur = (WA2.state && WA2.state.outfit) || "";
-    var outfit = resolveOutfit(wantOutfit) || resolveOutfit(cur) || outfitOf(scene) || "";
+    /* 顺序很重要：以前是「上次的衣服」压过「场景对应的衣服」，
+       结果换场景时立绘永远穿着同一套（看着就是“立绘不切换”）。
+       现在：模型明确换衣服 > 场景表 > 上次的衣服 > 场景兜底。 */
+    var outfit = resolveOutfit(wantOutfit) || outfitOf(scene) || resolveOutfit(cur) || "";
     var key = outfit + "|" + (mood || "");
     if (currentSprite === key && !force) return;
     if (WA2.state) WA2.state.outfit = outfit;

@@ -75,22 +75,25 @@ def main():
     print("[5] 场面状态跨请求（载入存档后的自动重播要用）")
     hscene.set_last(True)
     check("set_last(True) 读得到", hscene.last_scene() is True)
-    # 有迟滞：一次判否不会立刻退出，要连续 3 次
+    # 有迟滞：一次判否不会立刻退出，要连续 EXIT_STREAK（5）次
     hscene.set_last(False)
     check("一次判否仍在场面里（迟滞）", hscene.last_scene() is True)
-    hscene.set_last(False); hscene.set_last(False)
-    check("连续三次判否才退出", hscene.last_scene() is False)
+    for _ in range(hscene.EXIT_STREAK - 2):
+        hscene.set_last(False)
+    check("差一次时仍在场面里", hscene.last_scene() is True)
+    hscene.set_last(False)
+    check("连续五次判否才退出", hscene.last_scene() is False)
 
 
     print("[6] 迟滞：H 场面里的短句不能把语气拽回平静")
     hscene.reset()
-    seq = [(True, True), (False, True), (False, True), (False, False), (False, False)]
+    seq = [(True, True)] + [(False, True)] * (hscene.EXIT_STREAK - 1) + [(False, False)]
     for i, (judge, want) in enumerate(seq, 1):
         got = hscene.set_last(judge)
         check("第 %d 次判定 %s → 生效 %s" % (i, judge, got), got == want, (judge, got, want))
     hscene.reset()
     check("reset 后是 None", hscene.last_scene() is None)
-    check("EXIT_STREAK 是 3", getattr(hscene, "EXIT_STREAK", 0) == 3, getattr(hscene, "EXIT_STREAK", None))
+    check("EXIT_STREAK 是 5", getattr(hscene, "EXIT_STREAK", 0) == 5, getattr(hscene, "EXIT_STREAK", None))
 
     print()
     if FAILS:

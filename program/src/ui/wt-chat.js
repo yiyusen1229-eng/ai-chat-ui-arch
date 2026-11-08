@@ -5,54 +5,12 @@
   var WA2 = window.WA2 = window.WA2 || {};
   var $ = (WA2.util && WA2.util.$) || function (id) { return document.getElementById(id); };
 
-  async function send() {
-    if (window.__charSwitching) return;      // 切角色过渡中：先别发，等新角色就位
-    /* 新消息先打断重播：回想里正在播的那句要停，状态机也清掉 */
-    if (WA2.perf) {
-      WA2.perf.interrupt("REPLAYING");
-      try { if (WA2.voice && WA2.voice.stopSpeak) WA2.voice.stopSpeak(); } catch (e) {}
-      WA2.perf.begin("DIALOGUE_STREAMING");
-    }
-    const inp = $("input");
-    const text = inp.value.trim();
-    if (!text || typing) return;
-    inp.value = "";
+  /* 渲染一条后端回复：更新历史/立绘/BGM/语音，返回「语音播完」的 Promise。
+     自动续说也走这里（先 generateContinue 预生成，再 renderQueued 显示）。 */
+  async function applyServerReply(d) {
+    if (d && d.usage) { try { (WA2.cost && WA2.cost.render ? WA2.cost.render : window.renderCost)(d.usage); } catch (e) {} }
+    if (d && d.error) { $("msgText").textContent = "[错误] " + d.error; return false; }
 
-    addHistory("user", text);
-    history.push({ role: "user", content: text });
-    window.__history = history;      // 用户消息也要同步到全局，否则存档规则读到的是旧长度
-    // 等待提示也用字模渲染，避免冒出系统字体
-    if (window.gdiRenderMsg) {
-      stopReveal();
-      gdiRenderMsg("「……」", $("msgText"), 56, 1200, 1);
-      $("msgText").classList.add("gdi");
-    } else {
-      $("msgText").textContent = "「……」";
-    }
-    hidePageCursor();
-
-    try {
-      const r = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify((function () {
-      let act = {};
-      try { act = JSON.parse(localStorage.getItem("app_active_model") || "{}"); } catch (e) {}
-      // 不写死模型: 只有用户在设置里明确选过才传, 否则由后端用 DEFAULT_MODEL
-        // 注意：整段历史都发给后端 —— 裁剪/记忆书由后端按 token 预算决定（前端不砍）
-        const body = { messages: history.map(function (m) { return { role: m.role, content: m.content }; }) };
-        if (act.model) body.model = act.model;
-      if (act.url) body.base_url = act.url;
-      // 让后端做一次剧本检索：和这句话相关的「原作里发生过的事」会单独拼进 system
-      body.memory = true;
-      // 当前背景一并带上：模型只说地点没说时间时，新场景沿用现在的时段（白天/晚上）
-      if (currentBg) body.bg = currentBg;
-      if (WA2.state.outfit) body.outfit = WA2.state.outfit;
-      try { var _pm = localStorage.getItem("app_period") || "auto"; if (_pm !== "auto") body.period = _pm; } catch (e) {}
-      return body;
-    })()),
-      });
-      const d = await r.json();
       if (d && d.usage) { try { (WA2.cost && WA2.cost.render ? WA2.cost.render : window.renderCost)(d.usage); } catch (e) {} }
       if (d.error) { $("msgText").textContent = "[错误] " + d.error; return; }
       /* #24：静默降级会让人以为云端模型突然变笨了，所以降级要说一声；
@@ -85,17 +43,44 @@
       addHistory("assistant", shown, reply, window.__lastEmo || "");   /* 三参：日文原句；四参：当时的情绪 */
       // 先合成语音；语音没准备好就先不出文字，等语音出来一起出
       try { if (WA2.backlog && WA2.backlog.setVoiceOnLast) WA2.backlog.setVoiceOnLast(window.__lastVoiceReq); } catch (e) {}
-      speakReply(reply).then(() => {
-        // 场景/服装只在模型明确标记时才切，且与文字同一时刻出现
-        const _want = window.__lockOutfit ? "" : (window.__nextOutfit || "");
-        if (window.__nextScene && !window.__lockScene) { setBg(window.__nextScene); }
-        window.__nextScene = "";
-        window.__nextOutfit = "";
-        setSpriteByScene(currentBg || "classroom", mood, true, _want);
-        showReply(shown);
-      });
-
       const mood = (window.__lastEmo || detectMood(shown));
+      /* 文字、立绘、背景在**语音开始播放**那一刻一起出（不能等播完） */
+      let _rendered = false;
+      const renderNow = function () {
+        if (_rendered) return;
+        _rendered = true;
+        try {
+          const _want = window.__lockOutfit ? "" : (window.__nextOutfit || "");
+          /* 被「锁定场景/锁定服装」挡住时要说一声 —— 否则表现就是「场景和立绘不自动切换」，
+             但界面上完全看不出原因（那两个开关在右键菜单里） */
+          if (window.__nextScene && window.__lockScene && !window.__lockSceneWarned) {
+            window.__lockSceneWarned = 1;
+            try { (window.__toast || function () {})("场景已锁定，不会自动切换（右键菜单可解锁）", 3000); } catch (e) {}
+          }
+          if (window.__nextOutfit && window.__lockOutfit && !window.__lockOutfitWarned) {
+            window.__lockOutfitWarned = 1;
+            try { (window.__toast || function () {})("服装已锁定，不会自动切换（右键菜单可解锁）", 3000); } catch (e) {}
+          }
+          if (window.__nextScene && !window.__lockScene) {
+            setBg(window.__nextScene);
+            /* 换场景给个短提示：没看到这条就说明后端这轮没给场景标签 */
+            try {
+              if (window.__lastSceneToasted !== window.__nextScene) {
+                window.__lastSceneToasted = window.__nextScene;
+                (window.__toast || function () {})("场景：" + window.__nextScene, 1600);
+              }
+            } catch (e) {}
+            try { console.info("[scene]", window.__nextScene); } catch (e) {}
+          }
+          window.__nextScene = "";
+          window.__nextOutfit = "";
+          setSpriteByScene((WA2.session && WA2.session.currentBg ? WA2.session.currentBg() : "") || "classroom", mood, true, _want);
+          showReply(shown);
+        } catch (e) {}
+      };
+      const voiceDone = speakReply(reply, renderNow).then(function () {
+        renderNow();          /* 没有语音 / 播失败时兜底：文字照样要出 */
+      });
       // 立绘表情随情绪变，服装与场景只在模型明确标记时切换
       // BGM 按累积氛围切换，不随单句变。
       // 注意要喂**中文**那侧：detectMood 的规则全是中文词，喂日语原文永远判成 calm。
@@ -104,8 +89,67 @@
       accumulateMood(replyZh || shown, window.__lastEmo || "");
       sessionSave();          // 自动存档
       turnCount++;
+
+      /* 等这句语音真的播完，再告诉自动模式 —— 否则会抢下一句 */
+      try { await voiceDone; } catch (e) {}
+      try { if (WA2.auto && WA2.auto.lineDone) WA2.auto.lineDone(); } catch (e) {}
+    return true;
+  }
+
+  async function send() {
+    if (window.__charSwitching) return;      // 切角色过渡中：先别发，等新角色就位
+    /* 新消息先打断重播：回想里正在播的那句要停，状态机也清掉 */
+    if (WA2.perf) {
+      WA2.perf.interrupt("REPLAYING");
+      try { if (WA2.voice && WA2.voice.stopSpeak) WA2.voice.stopSpeak(); } catch (e) {}
+      WA2.perf.begin("DIALOGUE_STREAMING");
+    }
+    const inp = $("input");
+    const text = inp.value.trim();
+    if (typing || !text) return;
+    inp.value = "";
+    if (WA2.auto && WA2.auto.isOn && WA2.auto.isOn()) WA2.auto.stop();   /* 玩家自己发话就退出自动 */
+    addHistory("user", text);
+    history.push({ role: "user", content: text });
+    window.__history = history;      // 用户消息也要同步到全局，否则存档规则读到的是旧长度
+    // 等待提示也用字模渲染，避免冒出系统字体
+    if (window.gdiRenderMsg) {
+      stopReveal();
+      gdiRenderMsg("「……」", $("msgText"), 56, 1200, 1);
+      $("msgText").classList.add("gdi");
+    } else {
+      $("msgText").textContent = "「……」";
+    }
+    hidePageCursor();
+
+    try {
+      const r = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify((function () {
+      let act = {};
+      try { act = JSON.parse(localStorage.getItem("app_active_model") || "{}"); } catch (e) {}
+      // 不写死模型: 只有用户在设置里明确选过才传, 否则由后端用 DEFAULT_MODEL
+        // 注意：整段历史都发给后端 —— 裁剪/记忆书由后端按 token 预算决定（前端不砍）
+        const body = { messages: history.map(function (m) { return { role: m.role, content: m.content }; }) };
+
+        if (act.model) body.model = act.model;
+      if (act.url) body.base_url = act.url;
+      // 让后端做一次剧本检索：和这句话相关的「原作里发生过的事」会单独拼进 system
+      body.memory = true;
+      // 当前背景一并带上：模型只说地点没说时间时，新场景沿用现在的时段（白天/晚上）
+      var _bgNow = (WA2.session && WA2.session.currentBg) ? WA2.session.currentBg() : "";
+      if (_bgNow) body.bg = _bgNow;
+      if (WA2.state.outfit) body.outfit = WA2.state.outfit;
+      try { var _pm = localStorage.getItem("app_period") || "auto"; if (_pm !== "auto") body.period = _pm; } catch (e) {}
+      return body;
+    })()),
+      });
+      const d = await r.json();
+      await applyServerReply(d);
     } catch (e) {
       $("msgText").textContent = "[网络错误] " + e.message;
+
     } finally {
       if (WA2.perf) WA2.perf.end("DIALOGUE_STREAMING");
     }
@@ -124,7 +168,42 @@
     return true;
   }
 
-  WA2.chat = { send: send, resetPending: resetPending };
+  /* 自动续说：只请求、不渲染（预生成用） */
+  async function generateContinue() {
+    try {
+      const r = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify((function () {
+          let act = {};
+          try { act = JSON.parse(localStorage.getItem("app_active_model") || "{}"); } catch (e) {}
+          const b = { messages: history.map(function (m) { return { role: m.role, content: m.content }; }),
+                      continue: true, memory: true,
+                      last_emo: (window.__lastEmo || "") };
+          if (act.model) b.model = act.model;
+          if (act.url) b.base_url = act.url;
+          var _bgNow2 = (WA2.session && WA2.session.currentBg) ? WA2.session.currentBg() : "";
+          if (_bgNow2) b.bg = _bgNow2;
+          if (WA2.state.outfit) b.outfit = WA2.state.outfit;
+          try { var _pm = localStorage.getItem("app_period") || "auto"; if (_pm !== "auto") b.period = _pm; } catch (e) {}
+          return b;
+        })())
+      });
+      const d = await r.json();
+      if (!d || d.error) return null;
+      return d;
+    } catch (e) { return null; }
+  }
+
+  /* 显示一条预生成的回复（返回语音播完的 Promise） */
+  function renderQueued(d) {
+    if (!d) return Promise.resolve(false);
+    return applyServerReply(d);
+  }
+
+  WA2.chat = { send: send, resetPending: resetPending, generateContinue: generateContinue,
+              renderQueued: renderQueued,
+              isBusy: function () { return !!typing; } };
   WA2.register("chat", WA2.chat);
   window.send = send;
   /* __export_all__ */

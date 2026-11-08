@@ -221,9 +221,12 @@ html, body {
 /* ---------- 底部工具栏 ---------- */
 #toolbar {
   position:absolute; right:5.4px; bottom:4.5px; height:19.8px;
+  /* 右边留 10px：原来提示条靠 margin-left:10px 占着这块，
+     现在提示条改成绝对定位不占布局了，用 padding 把同样的内缩补回来，
+     否则整排按钮会比发布版往右挪约 10px。 */
   background:none;
   display:flex; align-items:center; justify-content:flex-end; gap:6.8px;
-  padding:0; z-index:26;
+  padding:0 10px 0 0; z-index:26;
   font-size:11px; color:rgba(220,245,255,.9);
 }
 #toolbar .tb {
@@ -246,7 +249,12 @@ html, body {
   text-shadow:0 0.7px 1.8px rgba(0,20,40,.85);
 }
 #toolbar .tb.close { filter:none; }
-#toolbar .hint { margin-left:10px; letter-spacing:1px; opacity:.8; }
+/* 固定宽度 + 不接收鼠标：提示文字出现/消失都不能改变整排按钮的位置，
+   否则会触发「提示出现→按钮左移→鼠标离开→提示消失→按钮弹回」的高速抖动 */
+#toolbar .hint { position:absolute; right:0; bottom:100%; margin-bottom:2px;
+  letter-spacing:1px; opacity:.8; white-space:nowrap; pointer-events:none; }
+/* 自动续说开着：这个按钮常亮（用类而不是内联 filter，免得盖掉 hover 的亮度） */
+#toolbar .tb.is-on { filter:drop-shadow(0 0 6px rgba(120,220,255,.95)); }
 
 /* ---------- 底部输入栏（定稿：原图直用，挪到右下角） ---------- */
 #inputBar { position:absolute; left:512px; top:208px; bottom:auto;
@@ -558,3 +566,19 @@ body.histOpen #toolbar { display:none !important; }
 }
 #charFade.slow #charFadeName { opacity: 1; }
 #charFadeName img { height: 14px; width: auto; display: block; margin: 0 auto; }
+
+/* ---------- 左下角：自动模式指示 ----------
+   小白条一直显示（原版 AUTO 行的左侧图标），绿色 ▶ 只在自动续说开着时显示。 */
+#autoHud {
+  position: absolute; left: 14px; bottom: 8px;
+  display: flex; align-items: flex-end; gap: 5px;
+  pointer-events: none; z-index: 27;
+}
+#autoHud img { display: block; }
+#autoBar  { width: 13px; height: auto; opacity: .92; }
+/* 注意选择器要比 #autoHud img 更具体，否则 display:none 会被它盖掉 */
+#autoHud #autoIcon { width: 15px; height: auto; display: none; }
+body.autoOn #autoHud #autoIcon { display: block; }
+/* ON 用原素材（16×10），跟着绿色 ▶ 一起显隐；按比例缩到 10px 宽 */
+#autoHud #autoOnLabel { display: none; width: 10px; height: auto; margin-left: 2px; }
+body.autoOn #autoHud #autoOnLabel { display: block; }

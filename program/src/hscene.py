@@ -24,6 +24,8 @@ STRONG = (
     "腰", "こし", "胸", "むね", "舐", "なめ", "くわ", "感じ", "かんじ",
     "敏感", "びんかん", "濡", "ぬれ", "喘", "あえ", "イク", "イか",
     "もっと", "まだ", "はぁ", "んっ", "あぁっ", "やめて", "やだ",
+    # 气声写法：以前「んぁっ」「はぁっ」「ふぅっ」匹配不上（词表里写的是 んっ/あぁっ）
+    "ぁっ", "んぁ", "はぁっ", "ふぅっ", "んんっ", "そこ", "いやだ", "いやっ",
 )
 # 弱特征：单独出现不算，但和强特征一起加分
 WEAK = ("キス", "きす", "抱", "だき", "触", "さわ", "熱", "あつ", "痛", "いた",
@@ -55,7 +57,7 @@ def score(text):
     return strong * 2 + weak + zh, strong
 
 
-def is_intimate(messages, lookback=4):
+def is_intimate(messages, lookback=6):
     """最近几条对话是不是成人场面。
 
     只看 user / assistant 的正文，遇不到就返回 False（宁可漏判，不要乱判）。
@@ -74,8 +76,10 @@ def is_intimate(messages, lookback=4):
             hits += 1
         total += s
         strong_total += strong
-    # 强特征至少 1 个、且总分够、且至少两条消息有信号 → 认为是成人场面
-    return strong_total >= 1 and total >= 3 and hits >= 1
+    # 强特征至少 1 个、且总分够、且至少一条消息有信号 → 认为是成人场面。
+    # 门槛 2 而不是 3：单个强特征词就是 2 分，门槛 3 会让「…むり…」这种短句永远判否
+    # （日志实证：H 场景里反复出现「关键词判定=否」→ 语音退回平静）。
+    return strong_total >= 1 and total >= 2 and hits >= 1
 
 
 def hint():
@@ -91,7 +95,7 @@ _LAST = {"scene": None, "neg": 0}
 # 连续多少次判否才真的退出成人场面。
 # 为什么要迟滞：H 场景里常有「ん…」「…」这种极短的一两句，
 # 关键词分数会掉到阈值下，判定翻成否 → 下一句突然用平静语气（用户反馈「很出戏」）。
-EXIT_STREAK = 3
+EXIT_STREAK = 5
 
 
 def set_last(is_intimate):
@@ -107,6 +111,13 @@ def set_last(is_intimate):
         _LAST["scene"] = False
         _LAST["neg"] = 0
         return False
+    _LAST["scene"] = False
+    _LAST["neg"] = 0
+    return False
+
+
+def force_exit():
+    """立刻退出成人场面（用于"玩家说了一句完整、毫无 H 特征的句子"）。"""
     _LAST["scene"] = False
     _LAST["neg"] = 0
     return False

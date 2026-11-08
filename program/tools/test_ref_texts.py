@@ -147,7 +147,8 @@ def main():
             TC._REFCER[k] = 0.9
     p, txt = TC.pick_ref("H", target="あぁ…ちょっと、指、なら、いいけど…っ、そこは、だめ…")
     folder = os.path.basename(os.path.dirname(p or ""))
-    check("借到了其它情绪的参考", folder not in ("H", "接吻", ""), folder)
+    # 2026-11-07 用户要求：H 就该用 H 的语气，不要借平静音色（借了听起来就不是 H）
+    check("H 仍然用 H 自己的参考", folder.lower() in ("h",), folder)
     TC._REFCER = saved
 
     TC._REFS_OVERRIDE = ""

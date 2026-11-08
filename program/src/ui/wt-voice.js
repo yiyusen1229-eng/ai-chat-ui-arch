@@ -19,6 +19,7 @@
   }
 
   function stopSpeak() {
+    try { if (_voiceResolve) { _voiceResolve(false); _voiceResolve = null; } } catch (e) {}
     if (ttsAudio) { try { ttsAudio.pause(); } catch (e) {} ttsAudio = null; }
     _devState = null;
   }
@@ -73,12 +74,35 @@
     return new Promise((resolve) => {
       const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
       let done = false;
+      /* 超时要随文本长度放宽：长句合成实测要 17~20 秒，固定 15 秒会把整句丢掉
+         （表现就是「出字没出音」，稍后重播反而是好的 —— 服务端已经合成并缓存了）。 */
+      const _budget = (timeoutMs && timeoutMs > 0)
+        ? timeoutMs
+        : Math.min(60000, 20000 + (text || "").length * 500);
       const timer = setTimeout(() => {
         if (done) return;
         done = true;
         if (ctrl) { try { ctrl.abort(); } catch (e) {} }
-        resolve(null);
-      }, timeoutMs || 15000);
+        console.warn("[voice] 等待超时（%dms），重试一次：", _budget, text && text.slice(0, 20));
+        /* 超时后服务端往往还在合成（实测长句 17~20 秒）。再请求一次：
+           它会排在合成锁后面，等前一次写进缓存后立刻命中 —— 通常这一下就有声了。 */
+        setTimeout(function () {
+          if (done) return;
+          done = true;
+          fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() +
+                "&emotion=" + (window.__lastEmo || emoOf(text)) +
+                (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""))
+            .then(function (r) { if (!r.ok) throw new Error("tts " + r.status); return r.blob(); })
+            .then(function (blob) {
+              const u = URL.createObjectURL(blob);
+              const a = new Audio(u);
+              a.onended = function () { URL.revokeObjectURL(u); };
+              resolve(a);
+            })
+            .catch(function () { resolve(null); });
+        }, 1500);
+        return;
+      }, _budget);
       fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() + "&emotion=" + (window.__lastEmo || emoOf(text)) + (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""), ctrl ? { signal: ctrl.signal } : {})
         .then((r) => {
           if (!r.ok) throw new Error("tts " + r.status);
@@ -129,15 +153,38 @@
     waitTtsReady(function () { speakReply(clean); }, 60);
   }
 
-  function speakReply(text) {
+  /* 播放并**等它播完**再 resolve —— 自动续说靠这个避免"语音没说完就下一句"。
+     onStart：音频真正开始播放时回调一次，文字/立绘要跟它同时出，
+     不能等播完（否则就是「语音响了，字还没出」）。 */
+  function speakReply(text, onStart) {
     stopSpeak();
-    return fetchVoice(text, 15000).then((a) => {
-      if (!a) return false;
+    return fetchVoice(text).then((a) => new Promise((resolve) => {
+      if (!a) { resolve(false); return; }
       ttsAudio = a;
-      try { a.volume = voiceVolume(); a.play(); } catch (e) {}
-      return true;
-    });
+      _voiceResolve = resolve;          /* stopSpeak 里用它收尾，别让 Promise 挂着 */
+      try { a.volume = voiceVolume(); } catch (e) {}
+      var fired = false;
+      var fire = function () {
+        if (fired) return;
+        fired = true;
+        _voiceResolve = null;
+        try { onStart && onStart(); } catch (e) {}
+      };
+      var finish = function (ok) { fire(); resolve(ok); };
+      /* 兜底：音频时长 + 3 秒还没结束（被暂停/切走/播放器卡住）也放行 */
+      var _dur = (a.duration && isFinite(a.duration)) ? a.duration : 12;
+      setTimeout(function () { finish(true); }, (_dur + 3) * 1000);
+      a.addEventListener("playing", fire, { once: true });   /* 真正开始出声 */
+      a.addEventListener("ended", function () { finish(true); }, { once: true });
+      a.addEventListener("pause", function () { finish(true); }, { once: true });   /* stopSpeak 会 pause */
+      a.addEventListener("error", function () { finish(false); }, { once: true });
+      try {
+        var pr = a.play();
+        if (pr && pr.then) pr.then(fire, function () { finish(false); });
+      } catch (e) { finish(false); }
+    }));
   }
+  var _voiceResolve = null;
   var _exp = {};
   var _names = ["_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak",
                 "suspendForDevice", "resumeAfterDevice", "waitTtsReady"];

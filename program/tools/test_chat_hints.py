@@ -8,6 +8,7 @@
 跑：
     cd program && .\\build_env\\venv\\Scripts\\python.exe tools\\test_chat_hints.py
 """
+import io
 import os
 import sys
 
@@ -62,6 +63,14 @@ def main():
     check("规则里有 <hscene> 说明", "<hscene>是</hscene>" in hints)
     check("示例里有 <hscene>否</hscene>", "<hscene>否</hscene>" in hints)
     check("说明了只用来挑语音参考", "语音参考" in hints)
+
+
+    print("[续说] continue 模式要提示她接着说")
+    _src = io.open(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "src", "api_chat.py"), encoding="utf-8").read()
+    check("后端有 continue 分支", "_auto_continue" in _src)
+    check("提示里写了续说", "【续说】" in _src)
+    check("明确要求不要等对方回答", "不要等对方回答" in _src)
 
     print()
     if _fail:

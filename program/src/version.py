@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """版本号与更新检查的常量（发布时改这里 + 仓库根目录 version.json）。"""
 
-VERSION = "2026-11-07.1"                     # 本机版本：YYYY-MM-DD.N
+VERSION = "2026-11-08.1"                     # 本机版本：YYYY-MM-DD.N
 REPO = "yiyusen1229-eng/ai-chat-ui-arch"     # GitHub 仓库
 RAW_VERSION_URL = "https://raw.githubusercontent.com/%s/master/version.json" % REPO
 REPO_URL = "https://github.com/%s" % REPO

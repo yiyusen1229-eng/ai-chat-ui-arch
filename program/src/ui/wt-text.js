@@ -72,8 +72,8 @@
     const cur = pageCursorEl();
     if (!cur) return;
     const text = pageTexts[pageIndex] || "";
-    /* 只有「这一段还没打完 → 不能显示」和「还有下一页」两个条件同时不满足才显示 */
-    if (typing || !text || pageIndex >= pageTexts.length - 1) {
+    /* 打完这一页就该出现（不管后面还有没有页）；自动续说时由她自己往下走，不需要这个提示 */
+    if (typing || !text || document.body.classList.contains("autoOn")) {
       cur.style.display = "none";
       return;
     }

@@ -94,7 +94,10 @@
   let backlogPlayingRow = null;
   function replayBacklogVoice(row) {
     const ja = (row.dataset.ja || "").trim();
-    if (!ja || !window.__voiceOk) return;
+    /* 以前这里还要 window.__voiceOk —— 那是页面加载时查一次的标志，
+       语音服务中途重启/没就绪就永远 false，点了回想一点反应都没有（连请求都不发）。
+       现在不拦：真没就绪服务端会返回 503，界面会给出提示。 */
+    if (!ja) return;
     if (WA2.perf && !WA2.perf.can("REPLAYING")) return;   // 切角色 / 流式输出中不许重播
     if (WA2.perf) { WA2.perf.interrupt("REPLAYING"); WA2.perf.begin("REPLAYING"); }
     if (backlogPlayingRow && backlogPlayingRow !== row) {

@@ -107,6 +107,8 @@
 /* 选择分支开着的时候把输入栏收起来：输入栏的青色边框正好横穿选项条那一行，
    会看成一条「分界线」（也点不到，收起来更接近原版只有对话框的样子）。 */
 body.choiceOpen #inputBar { opacity: 0; pointer-events: none; }
+/* 自动续说开着：收起输入框（绝对定位，不会挤动布局） */
+body.autoOn #inputBar { opacity: 0; pointer-events: none; }
 
 /* 但工具栏要留在选项层**上面**：开着选项也要能点「存档」——
    存下去的这一笔会带上还没选的分支（meta.choice），读回来就摆回原来那几条。
