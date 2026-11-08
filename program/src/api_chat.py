@@ -105,7 +105,8 @@ class ChatApi:
         prev_bg = (req.get("bg") or "").strip()
         # 自动续说：这一轮没有新的玩家消息，是她在接着自己刚才的话往下说
         _auto_continue = bool(req.get("continue"))
-        _line_type = "her"          # 续写分句类型（her/you/narr），异常路径也要有值
+        _line_type = "her"          # 续写分句类型（her/you/narr/other），异常路径也要有值
+        _speaker = ""               # 非和纱的说话人名字
         # 成人场面：先听模型自己（<hscene> 标记），没给才退回关键词兜底
         _intimate = False
         _h_src = ""
@@ -140,6 +141,14 @@ class ChatApi:
             msgs, period=period,
             max_entries=_sl["worldbook_entries"], max_chars=_sl["worldbook_chars"])
         system = persona_ctx.persona_text(raw_msgs, period=period)
+        if _auto_continue:
+            # 续写模式：和"一句台词"的硬规则冲突，必须在最前面覆盖掉，
+            # 否则模型会拒绝写旁白（实测返回空）。
+            system = ("【续写模式·最高优先级】这一轮不是对话，而是在续写小说。"
+                      "忽略后面所有「只输出一句台词」「不要旁白」「必须用「」」之类的限制。\n"
+                      "- 旁白/动作/环境/心理：直接写，不加引号；\n"
+                      "- 台词：写成 名字：「台词」 的形式（和纱：「…」、春希：「…」）；\n"
+                      "- 每轮只写 1~2 句（≤60 字），用换行分开；不要一次写完。\n\n") + system
         _seg["persona"] = len(system)
 
         # system 的拼装顺序（措辞必须分开，否则模型会把设定和"这次聊过的事"混一起）：
@@ -258,9 +267,17 @@ class ChatApi:
         # few-shot 示例（本地也喂：小模型靠模仿，光讲规则不吐标签）
         # WA2_NO_FEWSHOT=1 只是给「标签不出现」这类问题做 A/B 用的
         _few = [] if os.environ.get("WA2_NO_FEWSHOT") else fewshot_msgs()
+        _req_msgs = msgs
+        if _auto_continue:
+            # 这条只用于本次请求、不入历史：模型对「最后一条消息」的顺从度远高于 system 里的长说明
+            _lp2 = (msgs[-1].get("content") or "").strip() if msgs else ""
+            _ask = ("（旁白：只写环境/动作/心理，不要写台词的引号，20~40 字）"
+                    if _lp2[:1] in ("「", "『") else
+                    "（接着写一句台词；如果有其他人说话，写成 名字：「台词」）")
+            _req_msgs = list(msgs) + [{"role": "user", "content": _ask}]
         payload = {
             "model": model,
-            "messages": ([{"role": "system", "content": system}] + _few + msgs),
+            "messages": ([{"role": "system", "content": system}] + _few + _req_msgs),
             "stream": False,
             "max_tokens": MAX_TOKENS_CLOUD if cc else MAX_TOKENS_LOCAL,
         }
@@ -397,8 +414,19 @@ class ChatApi:
                 elif _body[:1] in ("「", "『"):
                     _line_type = "you" if _body[0] == "『" else "her"
                 else:
-                    _line_type = "narr"
+                    # 「和纱：「…」」「春希：「…」」这种带说话人的写法
+                    _mm = re.match(r"^([^：:「『\n]{1,6})[：:]\s*[「『](.*?)[」』]\s*$",
+                                   _body, re.S)
+                    if _mm:
+                        _who = _mm.group(1).strip()
+                        reply = _mm.group(2).strip()
+                        _line_type = "her" if _who in ("和纱", "かずさ") else "other"
+                        _speaker = _who if _line_type == "other" else ""
+                    else:
+                        _line_type = "narr"
                 reply = re.sub(r"</?(say|you)>", "", reply or "", flags=re.I).strip()
+                if _line_type == "other" and _speaker:
+                    reply = _speaker + "：" + reply
             # 游戏里角色台词一律用「」包起来，由程序统一处理，不让模型自己加
             _r = (reply or "").strip()
             if _r:
