@@ -69,8 +69,8 @@ def main():
     _src = io.open(os.path.join(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))), "src", "api_chat.py"), encoding="utf-8").read()
     check("后端有 continue 分支", "_auto_continue" in _src)
-    check("提示里写了续说", "【续说】" in _src)
-    check("明确要求不要等对方回答", "不要等对方回答" in _src)
+    check("提示里写了续写", "【续写故事】" in _src)
+    check("明确要求每轮只写一小段", "只写**一小段**" in _src or "只写一小段" in _src)
 
     print()
     if _fail:

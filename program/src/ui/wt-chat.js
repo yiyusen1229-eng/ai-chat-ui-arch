@@ -78,9 +78,18 @@
           showReply(shown);
         } catch (e) {}
       };
-      const voiceDone = speakReply(reply, renderNow).then(function () {
-        renderNow();          /* 没有语音 / 播失败时兜底：文字照样要出 */
-      });
+      /* 自动续写里，旁白和「你的台词」是没有语音的：
+         立刻显示，然后按字数留阅读时间，时间到了才算这一条结束（自动模式据此推进）。 */
+      const _lineType = (d.line_type || "her");
+      const _readMs = Math.min(9000, Math.max(2200, (shown || "").length * 130));
+      const voiceDone = (_lineType === "her")
+        ? speakReply(reply, renderNow).then(function () {
+            renderNow();      /* 没有语音 / 播失败时兜底：文字照样要出 */
+          })
+        : Promise.resolve().then(function () {
+            renderNow();      /* 旁白 / 你的台词：先显示 */
+            return new Promise(function (res) { setTimeout(res, _readMs); });  /* 再留阅读时间 */
+          });
       // 立绘表情随情绪变，服装与场景只在模型明确标记时切换
       // BGM 按累积氛围切换，不随单句变。
       // 注意要喂**中文**那侧：detectMood 的规则全是中文词，喂日语原文永远判成 calm。

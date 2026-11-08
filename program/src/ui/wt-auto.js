@@ -24,8 +24,7 @@
     generating: false,
     showing: false,            // 当前这句还在播
     timer: null,
-    errors: 0,
-    budget: 0                  // 这次开启还能预生成几条
+    errors: 0
   };
 
   function btn() {
@@ -122,11 +121,8 @@
   /* 补队列，直到 CAP 条 */
   function pump() {
     if (!state.on) return false;
-    if (state.budget <= 0) {
-      /* 三条预生成完了：停在当前这句，剩下靠左键一句句放 */
-      stop("已预生成后面 " + CAP + " 句，点左键继续", true);
-      return false;
-    }
+    /* 缓冲语义：最多领先「正在播的那句」CAP 条；满了就等播完再补，**不是**总共只生成三条 */
+    if (state.queue.length >= CAP) return false;
     if (state.generating) return false;
     var why = blocked();
     if (why) { stop(why); return false; }
@@ -141,14 +137,19 @@
         return;
       }
       state.errors = 0;
-      state.budget--;
+      /* 模型不能只写旁白（主提示词强制「只输出一句台词」），
+         但它本来就会给动作/神态描写 —— 拿它当旁白，先放一条无语音的叙述。 */
+      try {
+        var _act = ((d && (d.action_zh || d.action)) || "").trim();
+        if (_act && (d.line_type || "her") === "her") {
+          state.queue.push({ line_type: "narr", reply: _act, reply_zh: _act,
+                             emotion: "", bg: "", outfit: "", hscene: 0, action: "" });
+        }
+      } catch (e) {}
       state.queue.push(d);
       if (!state.showing) showNext();
-      /* 还有预算就继续补；用尽则立刻停（当前这句照常播完） */
-      if (state.on) {
-        if (state.budget > 0) pump();
-        else stop("已预生成后面 " + CAP + " 句，点左键继续", true);
-      }
+      /* 还没满就继续补（播完一条会自动再补一条） */
+      if (state.on && state.queue.length < CAP) pump();
     }).catch(function () {
       state.generating = false;
       state.errors++;
@@ -161,8 +162,6 @@
     if (state.on) return true;
     state.queue.length = 0;
     state.errors = 0;
-    /* 预算 = 当前这句之外还要预生成的条数（第一条是立刻要播的，不占预算） */
-    state.budget = CAP + 1;
     state.on = true;
     paint();
     savePref();

@@ -105,6 +105,7 @@ class ChatApi:
         prev_bg = (req.get("bg") or "").strip()
         # 自动续说：这一轮没有新的玩家消息，是她在接着自己刚才的话往下说
         _auto_continue = bool(req.get("continue"))
+        _line_type = "her"          # 续写分句类型（her/you/narr），异常路径也要有值
         # 成人场面：先听模型自己（<hscene> 标记），没给才退回关键词兜底
         _intimate = False
         _h_src = ""
@@ -222,12 +223,24 @@ class ChatApi:
                         break
             except Exception:
                 pass
-            system = system + ("\n【续说】这一轮没有对方的新发言：你接着自己上一句往下说，"
-                              "不要等对方回答，也不要复述已经说过的内容；"
-                              "只写一句（可以是短句或动作 + 一句），不要一次性把话题说完。")
+            system = system + ("\n【续写故事】这一轮没有对方的新发言。你要像小说一样把场景往下写："
+                              "可以写旁白（不加引号的叙述）、她的台词（用「」包住）、"
+                              "也可以写「你」的台词（用『』包住，就像对方真的说了这句）。"
+                              "每一轮只写一小段（1~2 句，总共不超过 60 字），"
+                              "不要一次把整段情节写完，也不要复述已经写过的内容。")
             if _last_line:
                 system = system + ("\n上一句是：" + _last_line[:60] +
                                    "\n不要重复上面这句，要往下推进（换个动作、换句话）。")
+                # 交替推进：上一句是她的台词，这一轮就写旁白或对方的话，别又是她一句
+                _lp = _last_line.lstrip()
+                if _lp[:1] == "「":
+                    system = system + ("\n【这一轮只写旁白】：不要加任何引号，不要写她说话，"
+                                       "只写一句环境/动作/心理的叙述（20~40 字）。")
+                elif _lp[:1] == "『":
+                    system = system + ("\n【这一轮写她的反应】：只写一句她的台词（用「」），"
+                                       "不要写旁白。")
+                else:
+                    system = system + ("\n【这一轮写她的台词】：只写一句她说的话（用「」）。")
         system = system + performance_hints(cc, outfit_hint)
         # 场面的最终判定在模型回复里（<hscene>），这里不预判；判定为「是」时解析后强制 H。
         _seg["tail"] = len(system) - _before_tail
@@ -371,11 +384,26 @@ class ChatApi:
             if _ja:                      # 有 <ja> 就以它为准（那是模型的原句）
                 reply = _ja
             action = " ".join(a for a in acts if a).strip()
+            # 自动续写：模型按约定用引号区分三类 —— 「」她说的、『』对方说的、无引号旁白。
+            # 只有她的台词加「」并配语音；旁白和对方台词不配音。
+            if _auto_continue:
+                _ms = re.search(r"<say>(.*?)</say>", reply or "", re.S | re.I)
+                _my = re.search(r"<you>(.*?)</you>", reply or "", re.S | re.I)
+                _body = (reply or "").strip()
+                if _ms:
+                    reply, _line_type = _ms.group(1), "her"
+                elif _my:
+                    reply, _line_type = _my.group(1), "you"
+                elif _body[:1] in ("「", "『"):
+                    _line_type = "you" if _body[0] == "『" else "her"
+                else:
+                    _line_type = "narr"
+                reply = re.sub(r"</?(say|you)>", "", reply or "", flags=re.I).strip()
             # 游戏里角色台词一律用「」包起来，由程序统一处理，不让模型自己加
             _r = (reply or "").strip()
             if _r:
                 _r = _r.strip("「」『』")
-                reply = "「" + _r + "」"
+                reply = _r if _line_type != "her" else ("「" + _r + "」")
 
             # 中文：优先用模型自己写的那句；没写 / 不像中文才回落翻译层
             reply_zh = ""
@@ -444,7 +472,7 @@ class ChatApi:
             except Exception:
                 pass
 
-            self._json({"reply": reply, "reply_zh": reply_zh, "thinking": think,
+            self._json({"reply": reply, "reply_zh": reply_zh, "line_type": _line_type, "thinking": think,
                         "action": action, "action_zh": action_zh,
                         "emotion": emo, "hscene": bool(_intimate),
                         "scene": scene_now, "outfit": outfit_now,
