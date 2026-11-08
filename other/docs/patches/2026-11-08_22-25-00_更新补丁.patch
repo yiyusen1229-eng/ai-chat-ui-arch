@@ -1,0 +1,5266 @@
+diff --git a/README.md b/README.md
+index afac9e1..4a54813 100644
+--- a/README.md
++++ b/README.md
+@@ -30,6 +30,8 @@
+ > **非官方、非商业、个人技术验证项目。**
+ > 本仓库**只包含源代码与文档**：不含任何游戏素材，不含任何模型权重，不含游戏本体。
+ 
++## 2026-11-08-22:25:00更新（自动续说 / 存档还原画面 / 场景与立绘切换 / 语音与界面修复）
++
+ ## 2026-11-07-11:20:00更新（存档还原画面 / 界面不透明度键独立 / 自测扩充）
+ 
+ ## 完结（2026-11-02）
+diff --git a/other/docs/交接速览.md b/other/docs/交接速览.md
+index f7c66b7..e1fe439 100644
+--- a/other/docs/交接速览.md
++++ b/other/docs/交接速览.md
+@@ -4,6 +4,16 @@
+ > 细节去 `新对话交接说明.md`（按节读，`tools/digest.py --outline` 看目录）。
+ 
+ 
++
++## 本版（2026-11-08.1）要点
++
++- 自动续说（▶）：预生成 3 句 + 左键逐句放，语音播完才推进。
++- 存档记录并还原画面（背景/CG、服装、立绘表情、BGM）。
++- 修复立绘不随场景换、换场景无提示的问题。
++- 文字与语音同时出现；回想重放修复；长句等待时间放宽。
++- 工具栏悬停闪烁与位置偏移修复。
++- 冒烟 56 项；拆分 91 处基线。
++
+ ## 本版（2026-11-07.1）要点
+ 
+ - 存档记录画面状态（背景/CG、服装、立绘表情、BGM），读档按存档还原。
+diff --git a/other/docs/更新日志_2026-11-08_22-25-00.md b/other/docs/更新日志_2026-11-08_22-25-00.md
+new file mode 100644
+index 0000000..e16c322
+--- /dev/null
++++ b/other/docs/更新日志_2026-11-08_22-25-00.md
+@@ -0,0 +1,46 @@
++# 更新日志 · 2026-11-08
++
++（自 `2026-11-07.1` 之后）
++
++## 自动续说（对话框下方 ▶ 按钮）
++
++- 点 ▶ 开启「自动续说」：不用输入，她会接着自己往下说；再点一次关闭。
++- 开启后最多**预生成 3 句**，然后停下并停在当前这句；之后像 galgame 一样**左键点画面**逐句播放，播完输入框自动回来。
++- 播放过程中并行预生成，语音没播完不会推进下一句。
++- 出现选项、正在打字、切角色、连续出错时会自动停下；玩家自己发消息会退出自动模式。
++- 开启时收起输入框；左下角显示 AUTO 指示（白色标签 + 绿色 ▶ + `ON`），关掉即隐藏。
++
++## 存档 / 读档
++
++- 存档记录画面状态：背景 / CG、服装、立绘表情、BGM；读档按存档还原，不再回到默认背景与默认表情。
++- 旧存档缺字段时按默认值读，不会报错。
++- 自动存档也会记录这些信息。
++
++## 场景与立绘
++
++- 修复背景变量失联导致**立绘不随场景换**的问题（服装优先级：模型明确换衣 > 场景表 > 上次的衣服）。
++- 换场景时短暂提示「场景：xxx」，方便确认切换是否发生。
++- 右键菜单里的「锁定场景 / 锁定服装」被触发时会有提示，不再静默不切换。
++
++## 语音
++
++- 文字与语音**同时出现**（以前语音先响、文字要等念完才出）。
++- 回想里点任意一句会立即重放；修复了「点了没反应」的两处拦截
++  （页面加载时缓存的可播标志、以及被打断后 Promise 不收尾导致状态机卡住）。
++- 等待时间随文本长度放宽，超时自动重试一次，长句不再偶发「只有文字没有声音」。
++- 合成缓存加入版本号，参数调整后会重新生成，避免一直播到旧音频。
++
++## 界面
++
++- 修复工具栏悬停时高频闪烁（提示条挤动布局引起的抖动循环）。
++- 修复工具栏整体位置比之前偏右的问题。
++- 对话框末尾的翻页提示恢复显示（每句打完即出现，自动续说时隐藏）。
++
++## 工具与自测
++
++- 冒烟 56 项全绿；拆分检查 91 处基线未破；参数表重新生成。
++- 新增若干自测与探针工具（自动续说队列、存档字段、语音时序）。
++
++## 升级方式
++
++用本版补丁一键更新；旧补丁保留在 `other/docs/patches/`。
+diff --git a/other/docs/架构/映射表.md b/other/docs/架构/映射表.md
+index e648c03..a319721 100644
+--- a/other/docs/架构/映射表.md
++++ b/other/docs/架构/映射表.md
+@@ -7,7 +7,7 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/game.js` | 553 | 对话演出：请求/解析/打字机/立绘/回想/音量 | __endIntro, __history, __loadOpeningLine, bgSrc, bgmVolume, finish | <script 全局> | — |
++| `src/ui/game.js` | 556 | 对话演出：请求/解析/打字机/立绘/回想/音量 | __endIntro, __history, __loadOpeningLine, bgSrc, bgmVolume, finish | <script 全局> | — |
+ 
+ ## 一级 · 前端/特别模式
+ 
+@@ -37,7 +37,7 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/wt-backlog.js` | 207 | 对话历史与回想（WA2.backlog） | __rebuildBacklog, addHistory, replayBacklogVoice, setRowHighlight, setVoiceOnLast | <script 全局> | — |
++| `src/ui/wt-backlog.js` | 210 | 对话历史与回想（WA2.backlog） | __rebuildBacklog, addHistory, replayBacklogVoice, setRowHighlight, setVoiceOnLast | <script 全局> | — |
+ 
+ ## 二级 · 前端/壳
+ 
+@@ -57,13 +57,13 @@
+ |---|---|---|---|---|---|
+ | `src/ui/savepages.js` | 373 | 存档网格/缩略图/页签 | __renderSaveSlots, __renderSaveSlotsNow, __savePage, dateHTML, fillContent, numHTML | <script 全局> | — |
+ | `src/ui/savetabs4.js` | 69 | 存档页签资源 | __savePage, __saveTabsPaint, __setSavePage, activeImg, boxEl, hoverImg | <script 全局> | — |
+-| `src/ui/wt-session.js` | 232 | 存读档与缩略图（WA2.session） | __bgThumb, __history, __loadSession, __saveMeta, applyHistory, lastAssistant | <script 全局> | — |
++| `src/ui/wt-session.js` | 248 | 存读档与缩略图（WA2.session） | __bgThumb, __history, __loadSession, __saveMeta, applyHistory, lastAssistant | <script 全局> | — |
+ 
+ ## 二级 · 前端/对话
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/wt-chat.js` | 135 | 发送与分析回复（WA2.chat） | __history, __lastEmo, __nextOutfit, __nextScene, resetPending | <script 全局> | — |
++| `src/ui/wt-chat.js` | 214 | 发送与分析回复（WA2.chat） | __lastEmo, __lastThinking, __nextOutfit, __nextScene, renderQueued, resetPending | <script 全局> | — |
+ 
+ ## 二级 · 前端/导航
+ 
+@@ -139,7 +139,7 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/wt-sprite.js` | 256 | 立绘/服装/表情（WA2.sprite） | __reloadSprites, __spriteSummary, __spriteWarned, cfgOverride, loadIndex, mergeMap | <script 全局> | — |
++| `src/ui/wt-sprite.js` | 259 | 立绘/服装/表情（WA2.sprite） | __reloadSprites, __spriteSummary, __spriteWarned, cfgOverride, loadIndex, mergeMap | <script 全局> | — |
+ 
+ ## 二级 · 前端/记忆书
+ 
+@@ -163,7 +163,7 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/wt-voice.js` | 154 | TTS 播放与参考音频（WA2.voice） | __lastEmo, __lastVoiceReq, __speakJa, __voiceWarned, _tts, currentVoiceLang | <script 全局> | — |
++| `src/ui/wt-voice.js` | 201 | TTS 播放与参考音频（WA2.voice） | __lastEmo, __lastVoiceReq, __speakJa, __voiceWarned, _tts, currentVoiceLang | <script 全局> | — |
+ 
+ ## 二级 · 前端/调试
+ 
+@@ -225,7 +225,7 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/api_chat.py` | 411 | /api/chat 对话入口 | performance_hints, ChatApi | char_res, characters, diag, hscene, llm, perf | main |
++| `src/api_chat.py` | 464 | /api/chat 对话入口 | performance_hints, ChatApi | char_res, characters, diag, hscene, llm, perf | main |
+ 
+ ## 二级 · 接口/日志
+ 
+@@ -309,7 +309,7 @@
+ | `src/characters.py` | 599 | 角色文件夹/切换/立绘索引 | user_dir, root, set_seed_sources, seed_character, ensure, active_id | — | api_char, api_chat, api_cleanup, api_export, api_wizard, char_pack |
+ | `src/special_cfg.py` | 132 | 角色名读写 | name_file, defaults, current, ensure, save, get_name | characters, memory | api_char, main |
+ | `src/special_files.py` | 404 | 特别模式导入/打开/立绘落盘 | char_dir, set_assets_dir, save_upload, set_default_paths, kind_dir, portrait_dir | characters | char_res, main |
+-| `src/tts_client.py` | 1076 | 语音合成与参考音频 | endpoint, is_remote, bind_host, refs_dir, load_refs, pick_ref | audio_gain, cache_io, char_res, diag | api_chat, api_modelcfg, api_tts, main |
++| `src/tts_client.py` | 1099 | 语音合成与参考音频 | endpoint, is_remote, bind_host, refs_dir, load_refs, pick_ref | audio_gain, cache_io, char_res, diag | api_chat, api_modelcfg, api_tts, main |
+ 
+ ## 二级 · 记忆
+ 
+@@ -327,6 +327,12 @@
+ |---|---|---|---|---|---|
+ | `src/audio_gain.py` | 292 | 响度归一化（BS.1770 近似，记增益不改原文件） | probe, apply, lufs_of, stats | — | api_tts, tts_client |
+ 
++## 前端
++
++| 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
++|---|---|---|---|---|---|
++| `src/ui/wt-auto.js` | 229 | 自动续说 | btn, paint, savePref, toast | <script 全局> | — |
++
+ ## 未登记
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+@@ -337,7 +343,7 @@
+ | `src/assets_report.py` | 115 | — | build, write, summary | cache_io | api_wizard |
+ | `src/cache_io.py` | 103 | — | stats, reset_stats, read_bytes, read_json, read_gz_json, read_image | applog | api_text, assets_report, memory, pricing, story_rag, tts_client |
+ | `src/firstrun.py` | 149 | — | checklist, state | characters, secret, sessions | main |
+-| `src/hscene.py` | 124 | — | score, is_intimate, hint, set_last, last_scene, reset | — | api_chat |
++| `src/hscene.py` | 135 | — | score, is_intimate, hint, set_last, force_exit, last_scene | — | api_chat |
+ | `src/llm.py` | 356 | — | LLMError, Result, provider_of, endpoint, headers, classify_status | — | api_chat |
+ | `src/powerwatch.py` | 109 | — | tick, gen, state, reset, start, stop | — | main |
+ | `src/runstate.py` | 144 | — | begin, end, has_autosave, state, crash_log, install_hooks | applog, sessions | main |
+@@ -355,10 +361,10 @@
+ | 文件 | 行数 | 建议 |
+ |---|---|---|
+ | `src/main.py` | 1580 | 超过 800 行，必须拆 |
+-| `src/tts_client.py` | 1076 | 超过 800 行，必须拆 |
++| `src/tts_client.py` | 1099 | 超过 800 行，必须拆 |
+ | `src/ui/menubar.js` | 644 | 超过 400 行，建议拆 |
+ | `src/characters.py` | 599 | 超过 400 行，建议拆 |
+ | `src/api_cleanup.py` | 582 | 超过 400 行，建议拆 |
+-| `src/ui/game.js` | 553 | 超过 400 行，建议拆 |
++| `src/ui/game.js` | 556 | 超过 400 行，建议拆 |
+ | `src/char_pack.py` | 526 | 超过 400 行，建议拆 |
+-| `src/logpack.py` | 425 | 超过 400 行，建议拆 |
++| `src/api_chat.py` | 464 | 超过 400 行，建议拆 |
+diff --git a/program/src/api_chat.py b/program/src/api_chat.py
+index 36e2f2e..575b716 100644
+--- a/program/src/api_chat.py
++++ b/program/src/api_chat.py
+@@ -103,6 +103,8 @@ class ChatApi:
+         raw_msgs = list(msgs)          # 关系阶段要看完整历史，不能用裁剪后的
+         # 当前背景图（前端带的）：模型没说时间时，新场景沿用这个时段
+         prev_bg = (req.get("bg") or "").strip()
++        # 自动续说：这一轮没有新的玩家消息，是她在接着自己刚才的话往下说
++        _auto_continue = bool(req.get("continue"))
+         # 成人场面：先听模型自己（<hscene> 标记），没给才退回关键词兜底
+         _intimate = False
+         _h_src = ""
+@@ -211,6 +213,21 @@ class ChatApi:
+             outfit_hint = "（按当前角色立绘）"
+         _before_tail = len(system)
+         # 演出标签（场景 / 服装 / 情绪 / 动作）：云端和本地都要，见 performance_hints
++        if _auto_continue:
++            _last_line = ""
++            try:
++                for _m in reversed(raw_msgs):
++                    if isinstance(_m, dict) and _m.get("role") == "assistant":
++                        _last_line = (_m.get("content") or "").strip()
++                        break
++            except Exception:
++                pass
++            system = system + ("\n【续说】这一轮没有对方的新发言：你接着自己上一句往下说，"
++                              "不要等对方回答，也不要复述已经说过的内容；"
++                              "只写一句（可以是短句或动作 + 一句），不要一次性把话题说完。")
++            if _last_line:
++                system = system + ("\n上一句是：" + _last_line[:60] +
++                                   "\n不要重复上面这句，要往下推进（换个动作、换句话）。")
+         system = system + performance_hints(cc, outfit_hint)
+         # 场面的最终判定在模型回复里（<hscene>），这里不预判；判定为「是」时解析后强制 H。
+         _seg["tail"] = len(system) - _before_tail
+@@ -275,7 +292,17 @@ class ChatApi:
+             except Exception:
+                 pass
+             # —— 场面判定：优先用模型自己给的 <hscene> ——
++            # 续说轮（没有新的玩家发言）不重新判定：消息里全是我方的短句，
++            # 关键词判不出来，连判几次就会把迟滞推向「退出 H 场面」，
++            # 于是整个自动续说都变成平静语气。这里直接沿用当前场面。
+             _h = None
++            if _auto_continue:
++                try:
++                    _h = bool(hscene.last_scene())
++                except Exception:
++                    _h = False
++                _h_src = "续说沿用"
++                log("成人场面：续说轮沿用当前场面=%s" % ("是" if _h else "否"))
+             _m = _re_hscene.search(raw or "")
+             if _m:
+                 _v = (_m.group(1) or "").strip().lower()
+@@ -283,21 +310,47 @@ class ChatApi:
+                 raw = _re_hscene.sub("", raw, count=1)
+                 _h_src = "模型标记"
+                 log("成人场面：模型判定=%s" % ("是" if _h else "否"))
+-            else:
++            elif not _auto_continue:
+                 try:
+-                    _h = hscene.is_intimate(raw_msgs)
++                    # 只看**最近两条**：H 台词离开后，前面几条 H 不能一直把场面钉住
++                    # （否则在教室里聊升学也会被判成 H）
++                    _h = hscene.is_intimate(raw_msgs[-2:])
+                 except Exception:
+                     _h = False
+                 _h_src = "关键词兜底"
+                 log("成人场面：模型没给 <hscene>，关键词判定=%s" % ("是" if _h else "否"))
+             _intimate = bool(_h)
+-            try:
+-                # 带迟滞：返回的是**生效**状态（H 场面里短句不会把语气拽回平静）
+-                _intimate = hscene.set_last(_intimate)
+-            except Exception:
+-                pass
++            if not _auto_continue:
++                try:
++                    # 迟滞只保护「短句/拟声」：玩家发一句完整的、毫无 H 特征的句子时，
++                    # 说明场面已经切走了（例：教室里聊升学），要立刻退出，
++                    # 否则普通台词会被当成「H 场面里的短句」继续用 H 语音。
++                    if not _intimate:
++                        _u = ""
++                        for _m2 in reversed(raw_msgs):
++                            if isinstance(_m2, dict) and _m2.get("role") == "user":
++                                _u = (_m2.get("content") or "").strip()
++                                break
++                        try:
++                            _u_score = hscene.score(_u)[0] if _u else 0
++                        except Exception:
++                            _u_score = 0
++                        if _u and _u_score == 0 and len(_u) >= 6:
++                            hscene.force_exit()
++                            log("成人场面：玩家这句没有 H 特征且是完整句 → 直接退出")
++                    # 带迟滞：返回的是**生效**状态（H 场面里短句不会把语气拽回平静）
++                    _intimate = hscene.set_last(_intimate)
++                except Exception:
++                    pass
+             if _intimate != bool(_h):
+                 log("成人场面：本轮判定=否，但仍在 H 场面里（迟滞保护）")
++            # 续说轮模型常常不写 <emotion>，会被推断成 calm（语气全变平静）。
++            # 这时候沿用历史里上一条的情绪标签。
++            if _auto_continue and _src != "tag":
++                _le = (req.get("last_emo") or "").strip()
++                if _le:
++                    log("续说：沿用上一条情绪 %r" % _le)
++                    emo = _le
+             # 成人场面里模型仍可能标 calm/soft：这里按场面改掉（只影响选参考音频）
+             if _intimate:
+                 # 成人场面里**任何**情绪标签都压成 H：
+diff --git a/program/src/hscene.py b/program/src/hscene.py
+index add210d..721767d 100644
+--- a/program/src/hscene.py
++++ b/program/src/hscene.py
+@@ -24,6 +24,8 @@ STRONG = (
+     "腰", "こし", "胸", "むね", "舐", "なめ", "くわ", "感じ", "かんじ",
+     "敏感", "びんかん", "濡", "ぬれ", "喘", "あえ", "イク", "イか",
+     "もっと", "まだ", "はぁ", "んっ", "あぁっ", "やめて", "やだ",
++    # 气声写法：以前「んぁっ」「はぁっ」「ふぅっ」匹配不上（词表里写的是 んっ/あぁっ）
++    "ぁっ", "んぁ", "はぁっ", "ふぅっ", "んんっ", "そこ", "いやだ", "いやっ",
+ )
+ # 弱特征：单独出现不算，但和强特征一起加分
+ WEAK = ("キス", "きす", "抱", "だき", "触", "さわ", "熱", "あつ", "痛", "いた",
+@@ -55,7 +57,7 @@ def score(text):
+     return strong * 2 + weak + zh, strong
+ 
+ 
+-def is_intimate(messages, lookback=4):
++def is_intimate(messages, lookback=6):
+     """最近几条对话是不是成人场面。
+ 
+     只看 user / assistant 的正文，遇不到就返回 False（宁可漏判，不要乱判）。
+@@ -74,8 +76,10 @@ def is_intimate(messages, lookback=4):
+             hits += 1
+         total += s
+         strong_total += strong
+-    # 强特征至少 1 个、且总分够、且至少两条消息有信号 → 认为是成人场面
+-    return strong_total >= 1 and total >= 3 and hits >= 1
++    # 强特征至少 1 个、且总分够、且至少一条消息有信号 → 认为是成人场面。
++    # 门槛 2 而不是 3：单个强特征词就是 2 分，门槛 3 会让「…むり…」这种短句永远判否
++    # （日志实证：H 场景里反复出现「关键词判定=否」→ 语音退回平静）。
++    return strong_total >= 1 and total >= 2 and hits >= 1
+ 
+ 
+ def hint():
+@@ -91,7 +95,7 @@ _LAST = {"scene": None, "neg": 0}
+ # 连续多少次判否才真的退出成人场面。
+ # 为什么要迟滞：H 场景里常有「ん…」「…」这种极短的一两句，
+ # 关键词分数会掉到阈值下，判定翻成否 → 下一句突然用平静语气（用户反馈「很出戏」）。
+-EXIT_STREAK = 3
++EXIT_STREAK = 5
+ 
+ 
+ def set_last(is_intimate):
+@@ -112,6 +116,13 @@ def set_last(is_intimate):
+     return False
+ 
+ 
++def force_exit():
++    """立刻退出成人场面（用于"玩家说了一句完整、毫无 H 特征的句子"）。"""
++    _LAST["scene"] = False
++    _LAST["neg"] = 0
++    return False
++
++
+ def last_scene():
+     """None=还没判定过，True/False=当前生效的场面状态"""
+     return _LAST["scene"]
+diff --git a/program/src/tts_client.py b/program/src/tts_client.py
+index 0369f88..73dc0aa 100644
+--- a/program/src/tts_client.py
++++ b/program/src/tts_client.py
+@@ -479,7 +479,9 @@ def pick_ref(emo="neutral", target=""):
+     if _looks_like_moan(target):
+         return random.choice(with_text or items)
+ 
+-    # 正常台词：**音频里得真有人声**，否则模型只出气声不出字（VAD 实测 H 里 74/151 是 0）
++    # 正常台词：**音频里得真有人声**，否则模型只出气声不出字（VAD 实测 H 里 74/151 是 0）。
++    # 但 H 是例外：它的素材本来就是气声，VAD 天然低；用 VAD 门槛会把 H 全筛掉，
++    # 只能借 calm 的音色 → 听起来完全不是 H 的语气（用户逐条听过，确认不是噪声）。
+     def _key(path):
+         return (os.path.basename(os.path.dirname(path)).lower(),
+                 os.path.basename(path).lower())
+@@ -491,7 +493,7 @@ def pick_ref(emo="neutral", target=""):
+     def _dur(path):
+         return _REF_DUR.get(_key(path), 0.0)
+ 
+-    def _good(pairs, lo=3.5, hi=7.5):
++    def _good(pairs, lo=3.5, hi=7.5, min_ratio=0.5):
+         """念正常台词用的参考：有人声、时长适中、文本不是纯拟声。
+ 
+         实测：>8 秒的长参考会掉字；2~3 秒的气声参考会把整句带成气声
+@@ -500,7 +502,7 @@ def pick_ref(emo="neutral", target=""):
+         out = []
+         for x in pairs:
+             d = _dur(x[0])
+-            if _ratio(x[0]) < 0.5:
++            if _ratio(x[0]) < min_ratio:
+                 continue
+             if d and not (lo <= d <= hi):
+                 continue
+@@ -512,11 +514,18 @@ def pick_ref(emo="neutral", target=""):
+             out.append(x)
+         return out
+ 
+-    local = _good(with_text)
++    local = _good(with_text, min_ratio=(0.0 if emo == "H" else 0.5))
++    if emo == "H" and local:
++        # H 放宽了 VAD，但「CER 未知」不能当成好：优先用测过的那些
++        _known = [x for x in local if _REFCER.get(_key(x[0])) is not None]
++        if _known:
++            local = _known
+     # 实测：H 那批参考最好也只有 CER≈0.45（念字不可靠）。
+     # 若本情绪最好的一条也超过门槛，就借其它情绪「念得清」的参考，
+     # 语速/温度仍用本情绪的，语气不至于跑掉。
+-    if local:
++    if local and emo != "H":
++        # H 例外：H 那批参考本来就念不清（实测 0.44~0.56），借 calm 的音色会变成平静语气。
++        # 用户要求「H 就用 H 的语气」，所以 H 不吃这条。
+         _cs = [ _REFCER.get(_key(x[0])) for x in local ]
+         _cs = [ c for c in _cs if c is not None ]
+         if _cs and min(_cs) > 0.45:
+@@ -536,10 +545,21 @@ def pick_ref(emo="neutral", target=""):
+             pool = [x for x, c in scored if c <= best + 0.12]
+             if pool:
+                 return random.choice(pool)
+-        return random.choice(local)
++        _pick = random.choice(local)
++        try:
++            import applog
++            applog.log("参考：%s → %s（CER=%s）" %
++                       (emo, os.path.basename(_pick[0]),
++                        _REFCER.get(_key(_pick[0]))), "TTS")
++        except Exception:
++            pass
++        return _pick
+     # 本情绪里没有能说话的参考 → 跨情绪借（calm/soft 这类以说话为主），参数仍用本情绪的
+     borrow = []
+     for _e, _v in refs.items():
++        # 不要从本情绪自己的目录里「借」：这里要的是**别的**情绪的音色
++        if str(_e).lower() == str(emo).lower():
++            continue
+         for x in _good([y for y in _v if y[1]]):
+             borrow.append(x)
+     if borrow:
+@@ -758,8 +778,11 @@ _TTS_CACHE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(_
+                                                 "..", "cache", "tts"))
+ 
+ 
+-# 合成行为（参数/参考挑选/切分）一变就 +1：否则会一直命中旧参数合成的音频
+-_CACHE_VERSION = 2
++# 合成行为（参数/参考挑选/切分）一变就 +1：否则会一直命中旧参数合成的音频。
++# v3（2026-11-07）：H 不再借 calm 音色。旧音频是用 calm 参考合成的，
++# key 里不含"选了哪条参考"，所以必须靠版本号让它们全部失效，
++# 否则同一句话重放时仍然是那种平静嗓音（表现就是"偶尔还是平静"）。
++_CACHE_VERSION = 3
+ 
+ 
+ def _tts_cache_path(text, lang, emo):
+diff --git a/program/src/ui/choice.css b/program/src/ui/choice.css
+index 0264c54..0adda82 100644
+--- a/program/src/ui/choice.css
++++ b/program/src/ui/choice.css
+@@ -1,200 +1,202 @@
+-/* choice.css —— 选择分支（选项条）
+- *
+- * ===========================================================================
+- * 几何量怎么来的（见 other/docs/界面像素测量方法.md）
+- * ---------------------------------------------------------------------------
+- * 参考图：program/work_scratch/orig_game.jpg（原版整帧 2730×1536，含两条选项）。
+- * 换算：800 / 2730 = 0.29304（整帧 → 800×450 舞台）。
+- *
+- * 关键结论：**原版贴图是 1:1 等比缩放，不是三段拉伸**
+- *   sys_00200 每段 784×72；800/1280 = 0.625 = 8/5 是整套 UI 素材的固定缩放
+- *   → 784×0.625 = 490.0，72×0.625 = 45.0
+- *   所以条子就是 490×45，宽高比 10.9:1 和贴图一模一样（上一版写 490×22，
+- *   竖着压掉一半，这是"不像原版"的主因）。
+- *
+- * 实测读数（都用归一化互相关在 800×450 上量的，雪花/条子当模板）：
+- *   条宽 490        条高 45        左端 x=154.7（正好水平居中：(154.7+644.7)/2=399.7）
+- *   第 1 行上沿 y=148，行距 52（雪花模板在 y=148 / y=200 两处命中，score 均 >11）
+- *   贴图可见内容在段内第 5~58 行 → 条身可见 3.1~36.3px（上下各留软边）
+- *   雪花：和第 1/2 段同画布，整张 snow.png 叠上去即可，左朵在条内 x 24.4~58.1
+- *   小白牌：sys_00011 图集 alpha 盒 (219,64)-(236,96) = 18×33 → 11.25×20.625，
+- *          条内 (56, 10.7)，牌心与条子中线齐平
+- *   文字：原版字身格 32px（补丁字模 FONT_OCCUPATION）→ 0.625 后 20px；
+- *        首字墨迹在条内 x≈75.3、行高 20 时 top=11 正好对上（墨迹 y 213~228）
+- *        字距 = 28×0.625 = 17.5px/全角字（原版"把脸背过去"5 字跨 85px，实测吻合）
+- *        编号"1."与正文同一张字模（原版就是同字号全角步进，不是另找的数字图）
+- *   状态：常态 = 段1（半透明淡青）；悬停 = 段2（浓蓝＋亮青顶边）＋字变金
+- *
+- * 素材（都是原版图，`python program/tools/make_choice_assets.py` 生成）：
+- *   bar_off.png / bar_on.png / snow.png ← sys_00200 三段（784×72 各一帧）
+- *   tag.png                            ← sys_00011 图集里那块带别针的小白牌
+- * ===========================================================================
+- */
+-
+-#choiceScreen {
+-  position: absolute;
+-  inset: 0;
+-  display: none;
+-  z-index: 70;
+-  opacity: 1;
+-  transition: opacity .26s ease;
+-  pointer-events: none;
+-}
+-#choiceScreen.show { display: block; pointer-events: auto; }
+-#choiceScreen.in { opacity: 0; }          /* 入场第一帧：压透明，下一帧推到 1 */
+-#choiceScreen.fading { opacity: 0; }       /* 点选后整层淡出 */
+-
+-#choiceList { position: absolute; inset: 0; }
+-
+-/* 一条 = 条身贴图 + 雪花层 + 小白牌 + 一整张字模（编号+正文） */
+-.choiceRow {
+-  position: absolute;
+-  left: 154.7px;
+-  width: 490px;
+-  height: 45px;
+-  padding: 0;
+-  margin: 0;
+-  border: 0;
+-  display: block;
+-  background: none;
+-  border-radius: 0;
+-  appearance: none;
+-  -webkit-appearance: none;
+-  cursor: pointer;
+-  outline: 0;
+-  -webkit-tap-highlight-color: transparent;
+-}
+-
+-/* 条身：整张等比铺满 490×45（不切、不拉伸）。
+-   悬停 = **换图**，不是再叠一层：bar_on.png 已经在素材阶段把「段1 + 段2」按加法
+-   烘成一张，alpha 和 bar_off.png 逐像素相同，所以轮廓一模一样、结构上不可能接出边。
+-   （曾经用 mix-blend-mode: plus-lighter 实时叠：选项层有 z-index，它的混合背景只有
+-   条子本身、不含 CG，`α出 = α源+α底` 一夹满这块就变不透明、CG 被顶掉，
+-   软边那几行出现最暗 −110 的黑边——就是用户看到的「框线」。） */
+-.choiceBg {
+-  position: absolute;
+-  inset: 0;
+-  background-image: url("assets/ui/choice/bar_off.png");
+-  background-size: 100% 100%;
+-  background-repeat: no-repeat;
+-  pointer-events: none;
+-}
+-.choiceRow:hover .choiceBg,
+-.choiceRow.hover .choiceBg {
+-  background-image: url("assets/ui/choice/bar_on.png");
+-}
+-
+-/* 悬停时**不要**再给条身加 filter: drop-shadow 做辉光。
+-   实测（开/关 filter 各截一张、同一场景逐像素差）：加 drop-shadow 之后，条子soft边外面
+-   那几行会**变暗** 5~10 级（R 掉得最多），也是一圈黑边；不加就干净。
+-   原版本来也没有额外辉光——它的边缘衰减就是贴图自己的 alpha 坡。 */
+-
+-/* 两端雪花：和条子同画布同原点，整张叠上去。
+-   **也是加法**：雪花贴图芯色 (149,193,227)，原版常态那条的雪花最亮处实测 R = 159，
+-   正好等于 149 + 条身底色 ~10；用普通 alpha 盖上去只能得到 149 以下，会发灰
+-   （用户反馈「选中的时候雪花没有亮」就是这个）。plus-lighter 之后常态/悬停都跟着
+-   底下的条身一起亮，和原版一致。 */
+-.choiceSnow {
+-  position: absolute;
+-  inset: 0;
+-  background-image: url("assets/ui/choice/snow.png");
+-  background-size: 100% 100%;
+-  background-repeat: no-repeat;
+-  mix-blend-mode: plus-lighter;
+-  pointer-events: none;
+-}
+-
+-/* 选择分支开着的时候把输入栏收起来：输入栏的青色边框正好横穿选项条那一行，
+-   会看成一条「分界线」（也点不到，收起来更接近原版只有对话框的样子）。 */
+-body.choiceOpen #inputBar { opacity: 0; pointer-events: none; }
+-
+-/* 但工具栏要留在选项层**上面**：开着选项也要能点「存档」——
+-   存下去的这一笔会带上还没选的分支（meta.choice），读回来就摆回原来那几条。
+-   工具栏在右下（y≈421），选项条最多排到 y≈401，不会盖住。 */
+-body.choiceOpen #toolbar { z-index: 78; }
+-
+-/* 小白牌（真素材，18×33 × 0.625） */
+-.choiceTag {
+-  position: absolute;
+-  left: 56px;
+-  top: 10.7px;
+-  width: 11.25px;
+-  height: 20.625px;
+-  background-image: url("assets/ui/choice/tag.png");
+-  background-size: 100% 100%;
+-  background-repeat: no-repeat;
+-  pointer-events: none;
+-}
+-
+-/* 一整张字模：白字+黑描边（常态）/ 金字+黑描边（悬停），两层叠着做交叉淡入。
+-   宽度必须写死：两层 img 都是 position:absolute，不给宽度容器会塌成 0，
+-   再被 overflow:hidden 一裁就什么都看不见了（探针里 txtBox 宽 0 就是这个）。 */
+-.choiceTxt {
+-  position: absolute;
+-  left: 74px;
+-  top: 11px;
+-  width: 400px;
+-  height: 20px;
+-  overflow: hidden;
+-  pointer-events: none;
+-  line-height: 0;
+-}
+-.choiceTxt img {
+-  position: absolute;
+-  left: 0;
+-  top: 0;
+-  height: 20px;
+-  width: auto;
+-  display: block;
+-  transition: opacity .14s ease;
+-}
+-.choiceTxt .txtNormal { opacity: 1; }
+-.choiceTxt .txtGold { opacity: 0; }
+-.choiceRow:hover .txtNormal,
+-.choiceRow.hover .txtNormal { opacity: 0; }
+-.choiceRow:hover .txtGold,
+-.choiceRow.hover .txtGold { opacity: 1; }
+-
+-/* 请求还没回来时：按钮进入等待态，别让用户连点 */
+-#choiceBtn.busy {
+-  opacity: .55 !important;
+-  cursor: progress;
+-  pointer-events: none;
+-}
+-
+-/* 「选择分支」按钮（和发送键同一张三段底板，位置在输入栏左下） */
+-#choiceBtn {
+-  position: absolute;
+-  bottom: -22px;
+-  right: 180px;
+-  height: 20px;
+-  width: 82px;
+-  padding: 0 6px;
+-  font-size: 7.6px;
+-  letter-spacing: .6px;
+-  color: #f4fcff !important;
+-  font-family: inherit !important;
+-  text-shadow: 0 1px 2px rgba(0, 18, 36, .95) !important;
+-  background-color: transparent !important;
+-  border: 0 !important;
+-  border-radius: 0 !important;
+-  box-shadow: none !important;
+-  outline: 0 !important;
+-  cursor: pointer;
+-  isolation: isolate;
+-  white-space: nowrap;
+-}
+-#choiceBtn::before {
+-  content: "";
+-  position: absolute;
+-  left: 0; top: 0; right: 0; bottom: 0;
+-  z-index: -1;
+-  background-image: url("assets/ui/btn_3state.png");
+-  background-size: 100% 300%;
+-  background-repeat: no-repeat;
+-  background-position: 0 0;
+-  opacity: var(--ui-alpha, 1);
+-  pointer-events: none;
+-}
+-#choiceBtn:active::before { background-position: 0 50%; }
+-#choiceBtn.released::before { background-position: 0 100%; }
++/* choice.css —— 选择分支（选项条）
++ *
++ * ===========================================================================
++ * 几何量怎么来的（见 other/docs/界面像素测量方法.md）
++ * ---------------------------------------------------------------------------
++ * 参考图：program/work_scratch/orig_game.jpg（原版整帧 2730×1536，含两条选项）。
++ * 换算：800 / 2730 = 0.29304（整帧 → 800×450 舞台）。
++ *
++ * 关键结论：**原版贴图是 1:1 等比缩放，不是三段拉伸**
++ *   sys_00200 每段 784×72；800/1280 = 0.625 = 8/5 是整套 UI 素材的固定缩放
++ *   → 784×0.625 = 490.0，72×0.625 = 45.0
++ *   所以条子就是 490×45，宽高比 10.9:1 和贴图一模一样（上一版写 490×22，
++ *   竖着压掉一半，这是"不像原版"的主因）。
++ *
++ * 实测读数（都用归一化互相关在 800×450 上量的，雪花/条子当模板）：
++ *   条宽 490        条高 45        左端 x=154.7（正好水平居中：(154.7+644.7)/2=399.7）
++ *   第 1 行上沿 y=148，行距 52（雪花模板在 y=148 / y=200 两处命中，score 均 >11）
++ *   贴图可见内容在段内第 5~58 行 → 条身可见 3.1~36.3px（上下各留软边）
++ *   雪花：和第 1/2 段同画布，整张 snow.png 叠上去即可，左朵在条内 x 24.4~58.1
++ *   小白牌：sys_00011 图集 alpha 盒 (219,64)-(236,96) = 18×33 → 11.25×20.625，
++ *          条内 (56, 10.7)，牌心与条子中线齐平
++ *   文字：原版字身格 32px（补丁字模 FONT_OCCUPATION）→ 0.625 后 20px；
++ *        首字墨迹在条内 x≈75.3、行高 20 时 top=11 正好对上（墨迹 y 213~228）
++ *        字距 = 28×0.625 = 17.5px/全角字（原版"把脸背过去"5 字跨 85px，实测吻合）
++ *        编号"1."与正文同一张字模（原版就是同字号全角步进，不是另找的数字图）
++ *   状态：常态 = 段1（半透明淡青）；悬停 = 段2（浓蓝＋亮青顶边）＋字变金
++ *
++ * 素材（都是原版图，`python program/tools/make_choice_assets.py` 生成）：
++ *   bar_off.png / bar_on.png / snow.png ← sys_00200 三段（784×72 各一帧）
++ *   tag.png                            ← sys_00011 图集里那块带别针的小白牌
++ * ===========================================================================
++ */
++
++#choiceScreen {
++  position: absolute;
++  inset: 0;
++  display: none;
++  z-index: 70;
++  opacity: 1;
++  transition: opacity .26s ease;
++  pointer-events: none;
++}
++#choiceScreen.show { display: block; pointer-events: auto; }
++#choiceScreen.in { opacity: 0; }          /* 入场第一帧：压透明，下一帧推到 1 */
++#choiceScreen.fading { opacity: 0; }       /* 点选后整层淡出 */
++
++#choiceList { position: absolute; inset: 0; }
++
++/* 一条 = 条身贴图 + 雪花层 + 小白牌 + 一整张字模（编号+正文） */
++.choiceRow {
++  position: absolute;
++  left: 154.7px;
++  width: 490px;
++  height: 45px;
++  padding: 0;
++  margin: 0;
++  border: 0;
++  display: block;
++  background: none;
++  border-radius: 0;
++  appearance: none;
++  -webkit-appearance: none;
++  cursor: pointer;
++  outline: 0;
++  -webkit-tap-highlight-color: transparent;
++}
++
++/* 条身：整张等比铺满 490×45（不切、不拉伸）。
++   悬停 = **换图**，不是再叠一层：bar_on.png 已经在素材阶段把「段1 + 段2」按加法
++   烘成一张，alpha 和 bar_off.png 逐像素相同，所以轮廓一模一样、结构上不可能接出边。
++   （曾经用 mix-blend-mode: plus-lighter 实时叠：选项层有 z-index，它的混合背景只有
++   条子本身、不含 CG，`α出 = α源+α底` 一夹满这块就变不透明、CG 被顶掉，
++   软边那几行出现最暗 −110 的黑边——就是用户看到的「框线」。） */
++.choiceBg {
++  position: absolute;
++  inset: 0;
++  background-image: url("assets/ui/choice/bar_off.png");
++  background-size: 100% 100%;
++  background-repeat: no-repeat;
++  pointer-events: none;
++}
++.choiceRow:hover .choiceBg,
++.choiceRow.hover .choiceBg {
++  background-image: url("assets/ui/choice/bar_on.png");
++}
++
++/* 悬停时**不要**再给条身加 filter: drop-shadow 做辉光。
++   实测（开/关 filter 各截一张、同一场景逐像素差）：加 drop-shadow 之后，条子soft边外面
++   那几行会**变暗** 5~10 级（R 掉得最多），也是一圈黑边；不加就干净。
++   原版本来也没有额外辉光——它的边缘衰减就是贴图自己的 alpha 坡。 */
++
++/* 两端雪花：和条子同画布同原点，整张叠上去。
++   **也是加法**：雪花贴图芯色 (149,193,227)，原版常态那条的雪花最亮处实测 R = 159，
++   正好等于 149 + 条身底色 ~10；用普通 alpha 盖上去只能得到 149 以下，会发灰
++   （用户反馈「选中的时候雪花没有亮」就是这个）。plus-lighter 之后常态/悬停都跟着
++   底下的条身一起亮，和原版一致。 */
++.choiceSnow {
++  position: absolute;
++  inset: 0;
++  background-image: url("assets/ui/choice/snow.png");
++  background-size: 100% 100%;
++  background-repeat: no-repeat;
++  mix-blend-mode: plus-lighter;
++  pointer-events: none;
++}
++
++/* 选择分支开着的时候把输入栏收起来：输入栏的青色边框正好横穿选项条那一行，
++   会看成一条「分界线」（也点不到，收起来更接近原版只有对话框的样子）。 */
++body.choiceOpen #inputBar { opacity: 0; pointer-events: none; }
++/* 自动续说开着：收起输入框（绝对定位，不会挤动布局） */
++body.autoOn #inputBar { opacity: 0; pointer-events: none; }
++
++/* 但工具栏要留在选项层**上面**：开着选项也要能点「存档」——
++   存下去的这一笔会带上还没选的分支（meta.choice），读回来就摆回原来那几条。
++   工具栏在右下（y≈421），选项条最多排到 y≈401，不会盖住。 */
++body.choiceOpen #toolbar { z-index: 78; }
++
++/* 小白牌（真素材，18×33 × 0.625） */
++.choiceTag {
++  position: absolute;
++  left: 56px;
++  top: 10.7px;
++  width: 11.25px;
++  height: 20.625px;
++  background-image: url("assets/ui/choice/tag.png");
++  background-size: 100% 100%;
++  background-repeat: no-repeat;
++  pointer-events: none;
++}
++
++/* 一整张字模：白字+黑描边（常态）/ 金字+黑描边（悬停），两层叠着做交叉淡入。
++   宽度必须写死：两层 img 都是 position:absolute，不给宽度容器会塌成 0，
++   再被 overflow:hidden 一裁就什么都看不见了（探针里 txtBox 宽 0 就是这个）。 */
++.choiceTxt {
++  position: absolute;
++  left: 74px;
++  top: 11px;
++  width: 400px;
++  height: 20px;
++  overflow: hidden;
++  pointer-events: none;
++  line-height: 0;
++}
++.choiceTxt img {
++  position: absolute;
++  left: 0;
++  top: 0;
++  height: 20px;
++  width: auto;
++  display: block;
++  transition: opacity .14s ease;
++}
++.choiceTxt .txtNormal { opacity: 1; }
++.choiceTxt .txtGold { opacity: 0; }
++.choiceRow:hover .txtNormal,
++.choiceRow.hover .txtNormal { opacity: 0; }
++.choiceRow:hover .txtGold,
++.choiceRow.hover .txtGold { opacity: 1; }
++
++/* 请求还没回来时：按钮进入等待态，别让用户连点 */
++#choiceBtn.busy {
++  opacity: .55 !important;
++  cursor: progress;
++  pointer-events: none;
++}
++
++/* 「选择分支」按钮（和发送键同一张三段底板，位置在输入栏左下） */
++#choiceBtn {
++  position: absolute;
++  bottom: -22px;
++  right: 180px;
++  height: 20px;
++  width: 82px;
++  padding: 0 6px;
++  font-size: 7.6px;
++  letter-spacing: .6px;
++  color: #f4fcff !important;
++  font-family: inherit !important;
++  text-shadow: 0 1px 2px rgba(0, 18, 36, .95) !important;
++  background-color: transparent !important;
++  border: 0 !important;
++  border-radius: 0 !important;
++  box-shadow: none !important;
++  outline: 0 !important;
++  cursor: pointer;
++  isolation: isolate;
++  white-space: nowrap;
++}
++#choiceBtn::before {
++  content: "";
++  position: absolute;
++  left: 0; top: 0; right: 0; bottom: 0;
++  z-index: -1;
++  background-image: url("assets/ui/btn_3state.png");
++  background-size: 100% 300%;
++  background-repeat: no-repeat;
++  background-position: 0 0;
++  opacity: var(--ui-alpha, 1);
++  pointer-events: none;
++}
++#choiceBtn:active::before { background-position: 0 50%; }
++#choiceBtn.released::before { background-position: 0 100%; }
+diff --git a/program/src/ui/game.js b/program/src/ui/game.js
+index 468c49e..f4f16d5 100644
+--- a/program/src/ui/game.js
++++ b/program/src/ui/game.js
+@@ -1,552 +1,555 @@
+-// WHITE ALBUM 2 风格对话界面 —— 使用游戏原始素材
+-const $ = (id) => document.getElementById(id);
+-
+-let history = [];
+-window.__history = history;   // 同一引用：读档只改内容、不换数组
+-let typing = false;
+-let fullText = "";
+-let turnCount = 0;
+-let backlogOpen = false;
+-/* 角色名：存在 char/name.txt，特别模式里改的就是它 */
+-let CHAR_NAME = "角色";
+-
+-/* ---------- 素材表 ---------- */
+-/* 旧的四张通用背景：新场景图还没导入、或读档时遇到旧存档的场景名，就退回这里 */
+-const BGS = {
+-  classroom: "assets/bg_classroom.png",
+-  music:     "assets/bg_music.png",
+-  corridor:  "assets/bg_corridor.png",
+-  street:    "assets/bg_street.png",
+-};
+-
+-/* 场景 CG：assets/cg/index.json 由 tools/import_cg.py 生成，id 就是图片文件名（去掉扩展名）。
+-   对话里换场景时后端已经按文件名标签匹配好了（scene_cg.py），这里只负责按 id 取图。 */
+-const CG_URL = {};
+-fetch("assets/cg/index.json", { cache: "no-store" })
+-  .then(function (r) { return r.json(); })
+-  .then(function (d) {
+-    (d && d.items || []).forEach(function (it) { CG_URL[it.id] = "assets/cg/" + it.file; });
+-    /* 目录比背景晚到时（刚打开页面就读档）补渲染一次，免得停在兜底教室图上 */
+-    if (currentBg) { var _n = currentBg; currentBg = null; setBg(_n); }
+-  })
+-  .catch(function () {});
+-
+-/* 场景名 → 图片地址。认三种：CG 的 id / 旧的四张背景 / 都没有就用教室 */
+-function bgSrc(name) {
+-  var url = "";
+-  if (name && CG_URL[name]) url = CG_URL[name];
+-  else if (name && BGS[name]) url = BGS[name];
+-  else url = BGS.classroom;
+-  /* #20 热重载：素材换了之后加 ?v= 强制重新取图 */
+-  if (WA2.assetsVer) url += (url.indexOf("?") >= 0 ? "&" : "?") + "v=" + WA2.assetsVer;
+-  return url;
+-}
+-
+-
+-/* 音量/BGM 已搬到 wt-audio.js（WA2.audio），这里只留薄封装 */
+-function bgmVolume() { return WA2.audio.bgmVolume(); }
+-function voiceVolume() { return WA2.audio.voiceVolume(); }
+-
+-/* ---------- 开场动画 ---------- */
+-(function intro() {
+-  const scr = $("introScreen");
+-  const vid = $("introVideo");
+-  if (!scr) return;
+-  // 没有视频元素（已改成静态开场）：直接点任意处 / 1.2 秒后进入标题
+-  if (!vid) {
+-    let done2 = false;
+-    function finish() {
+-      if (done2) return;
+-      done2 = true;
+-      scr.classList.remove("active");
+-      const t = document.getElementById("titleScreen");
+-      if (t) t.classList.add("active");
+-      try { setBgm("menu", 900); } catch (e) {}
+-    }
+-    window.__endIntro = finish;
+-    scr.addEventListener("click", finish);
+-    document.addEventListener("keydown", function (e) {
+-      if (!done2 && (e.key === "Escape" || e.key === " " || e.key === "Enter")) finish();
+-    });
+-    setTimeout(finish, 1200);
+-    return;
+-  }
+-  let done = false;
+-
+-  function endIntro() {
+-    if (done) return;
+-    done = true;
+-    /* 跳过时必须把视频彻底停掉：只 pause 不够——fetch 完之后那串 play() 的异步链
+-       可能在你点过之后又把音轨拉起来，于是画面没了声音还在放。
+-       这里静音 + 断源 + load()，把解码器一起关掉。 */
+-    try {
+-      vid.pause();
+-      vid.muted = true;
+-      vid.removeAttribute("src");
+-      vid.load();
+-    } catch (e) {}
+-    scr.classList.remove("active");
+-    $("titleScreen").classList.add("active");
+-    if (window.App && window.App.getPrefs) { try { setBgm("menu", 900); } catch (e) {} }
+-  }
+-  window.__endIntro = endIntro;
+-
+-  vid.muted = false;
+-  vid.volume = 0.9;
+-
+-  /* 开屏按原版顺序播两段：Leaf 社 logo → 游戏 OP → 标题
+-     点一下 / Esc = 跳过当前这一段，跳到下一段；最后一段再跳过才进标题 */
+-  var SEQ = ["assets/leaf_logo.mp4", (vid.dataset.src || "assets/opening.mp4")];
+-  var seqIdx = 0;
+-
+-  function playSeq(i) {
+-    if (done) return;
+-    if (i >= SEQ.length) { endIntro(); return; }
+-    seqIdx = i;
+-    var url = SEQ[i];
+-    fetch(url, { cache: "force-cache" })
+-      .then(function (r) { return r.blob(); })
+-      .then(function (b) {
+-        if (done || seqIdx !== i) return;
+-        vid.src = URL.createObjectURL(b);
+-        vid.load();          /* preload="none" 时必须显式 load，否则一直卡在 readyState=0 */
+-        /* 一段播完再切下一段：用 onended（不用全局 ended 监听，避免旧段的残留事件把序列顶掉） */
+-        vid.onended = function () {
+-          if (done || seqIdx !== i) return;
+-          playSeq(i + 1);
+-        };
+-        var p = vid.play();
+-        if (p && p.catch) p.catch(function () {
+-          try { vid.muted = true; vid.play().catch(function () {}); } catch (e) {}
+-        });
+-      })
+-      .catch(function () { if (seqIdx === i) playSeq(i + 1); });   /* 取不到就跳下一段 */
+-  }
+-
+-  function nextOrFinish() {
+-    if (done) return;
+-    if (seqIdx + 1 < SEQ.length) {
+-      try { vid.pause(); } catch (e) {}
+-      vid.onended = null;
+-      playSeq(seqIdx + 1);
+-    } else {
+-      endIntro();
+-    }
+-  }
+-
+-  scr.addEventListener("click", nextOrFinish);
+-  document.addEventListener("keydown", (e) => {
+-    if (!done && (e.key === "Escape" || e.key === " " || e.key === "Enter")) nextOrFinish();
+-  });
+-
+-  // 等首屏资源（界面图/字体/音频）都加载完再拉视频，避免抢带宽
+-  function startVideo() {
+-    if (vid.dataset.started) return;
+-    vid.dataset.started = "1";
+-    playSeq(0);          /* 从 Leaf logo 开始，后面的段由 playSeq 按顺序拉 */
+-  }
+-  if (document.readyState === "complete") {
+-    setTimeout(startVideo, 300);
+-  } else {
+-    window.addEventListener("load", function () { setTimeout(startVideo, 300); });
+-  }
+-
+-  // 开场视频是从本地 HTTP 服务慢慢下载的（38MB，可能要 20~30 秒），
+-  // 所以不能按「3 秒没播起来就跳过」来判断——那会导致没点屏幕就自动跳过。
+-  // 只在真正出错（解码失败 / 文件缺失）时才自动跳过；其余情况等用户点击或播完。
+-  vid.addEventListener("stalled", () => {}, { passive: true });
+-  let loadFail = 0;
+-  const failTimer = setInterval(() => {
+-    if (done) { clearInterval(failTimer); return; }
+-    // readyState=0 且已经等很久，才认为加载失败
+-    if (vid.readyState === 0 && ++loadFail >= 60) {   // 60 × 2s = 120s
+-      clearInterval(failTimer);
+-      endIntro();
+-    }
+-  }, 2000);
+-})();
+-
+-/* ---------- 音频：实现搬到 wt-audio.js ---------- */
+-function playSE(kind) { return WA2.audio.playSE(kind); }
+-function setBgm(name, fadeMs) { return WA2.audio.setBgm(name, fadeMs); }
+-
+-/* ---------- 情绪判断 ---------- */
+-/* detectMood / accumulateMood / currentBgmMood 已搬到 mood.js（WA2.mood） */
+-
+-function loadOpeningLine() {
+-  return fetch("/api/character/opening", { cache: "no-store" })
+-    .then(function (r) { return r.json(); })
+-    .then(function (d) {
+-      if (d && d.ok && (d.zh || d.ja)) {
+-        OPENING_LINE = { zh: d.zh || "「……」", ja: d.ja || "", emo: d.emotion || "calm" };
+-      }
+-    })
+-    .catch(function () {});
+-}
+-window.__loadOpeningLine = loadOpeningLine;
+-loadOpeningLine();
+-
+-function openingLine() { return OPENING_LINE; }
+-
+-/* ---------- 会话存档 ---------- */
+-/* sessionSave / sessionRestore 已搬到 session.js（WA2.session） */
+-
+-function setBg(name) {
+-  if (currentBg === name) return;
+-  currentBg = name;
+-  const bgUrl = bgSrc(name);
+-  window.__curBg = new Image();
+-  window.__curBg.src = bgUrl;
+-  /* 背景缺图时留个纯色底 + 提示一次，别让画面空成黑的 */
+-  const missing = function () {
+-    const l = $("bgLayer");
+-    if (l) {
+-      l.style.backgroundImage = "none";
+-      l.style.backgroundColor = "#1b2430";
+-    }
+-    if (!window.__bgWarned) {
+-      window.__bgWarned = true;
+-      (window.__toast || function () {})("背景缺失，先用纯色底继续", 2500);
+-    }
+-  };
+-  /* 双缓冲交叉淡化（200~300ms，设置里可关）；wt-fade 没加载时才走老办法 */
+-  try {
+-    if (WA2.fade && WA2.fade.crossBg) { WA2.fade.crossBg(bgUrl, null, missing); return; }
+-  } catch (e) {}
+-  const l = $("bgLayer");
+-  if (!l) return;
+-  l.style.opacity = "0.25";
+-  setTimeout(() => {
+-    const probe = new Image();
+-    probe.onerror = missing;
+-    probe.src = bgUrl;
+-    l.style.backgroundImage = `url("${bgUrl}")`;
+-    l.style.opacity = "1";
+-  }, 260);
+-}
+-
+-/* ---------- 立绘：实现搬到 wt-sprite.js（WA2.sprite） ---------- */
+-/* 热重载（#20）：素材变了之后强制重画一次当前背景（setBg 同名的会早退） */
+-window.__reapplyBg = function () {
+-  var name = currentBg;
+-  if (!name) return false;
+-  currentBg = null;
+-  try { setBg(name); return true; } catch (e) { return false; }
+-};
+-/* 切换/新建角色后重拉索引：带上当前场景，交给 wt-sprite 处理 */
+-window.__reloadSprites = function () {
+-  try { WA2.sprite.reload(currentBg || "classroom", window.__lastEmo || ""); } catch (e) {}
+-};
+-
+-/* ---------- 飘雪 ---------- */
+-(function snow() {
+-  const box = $("snowLayer");
+-  for (let i = 0; i < 34; i++) {
+-    const f = document.createElement("div");
+-    f.className = "flake";
+-    const s = 1.4 + Math.random() * 3;
+-    f.style.width = s + "px"; f.style.height = s + "px";
+-    f.style.left = Math.random() * 100 + "vw";
+-    f.style.animationDuration = (11 + Math.random() * 16) + "s";
+-    f.style.animationDelay = (-Math.random() * 26) + "s";
+-    f.style.opacity = 0.18 + Math.random() * 0.45;
+-    box.appendChild(f);
+-  }
+-})();
+-
+-function showScreen(id) {
+-  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+-  $(id).classList.add("active");
+-}
+-
+-/* ---------- GDI 字体渲染(复刻游戏原生方案) ---------- */
+-const NAME_BOOST = 1.0;   // 人名比正文大一点点(按像素比对)
+-/* gdiRenderName / gdiRenderMsg / __gdiFallback 已搬到 gdi.js（WA2.gdi） */
+-
+-function emoOf(text) {
+-  const m = detectMood(text || "");
+-  if (m === "angry") return "angry";
+-  if (m === "sad") return "sad";
+-  if (m === "warm" || m === "smile") return "warm";
+-  return "neutral";
+-}
+-
+-/* currentVoiceLang / stopSpeak / fetchVoice 已搬到 voice.js（WA2.voice） */
+-
+-/* splitPages / renderPage / showReply 已搬到 text.js（WA2.text） */
+-
+-/* addHistory / rebuildBacklog / toggleBacklog 已搬到 backlog.js（WA2.backlog） */
+-
+-/* showChoices 已搬到 choices.js（WA2.choices） */
+-
+-/* send 已搬到 chat.js（WA2.chat） */
+-
+-/* playTitleBgm / quitGame / backToTitle 已搬到 nav.js（WA2.nav） */
+-
+-function syncHistThumb() {
+-  const list = $("historyList"), thumb = $("hsThumb"), track = $("hsTrack");
+-  if (!list || !thumb || !track) return;
+-  const trackH = track.clientHeight || 1;
+-  // 滑块长度固定，按轨道高度算，不随内容变化
+-  const fixedH = Math.max(18, Math.round(trackH * HIST_THUMB_RATIO));
+-  thumb.style.height = fixedH + "px";
+-  const thumbH = fixedH;
+-  histTopGap = 3; histBottomGap = 5;   // 底部留白（游戏实测 16px@2730 ≈ 4.7px@450）
+-  histMaxTop = Math.max(1, trackH - thumbH - histBottomGap - histTopGap);
+-  const scrollable = Math.max(0, list.scrollHeight - list.clientHeight);
+-  // 内容不足一屏时停在顶部
+-  // 打开即最新: 内容不足一屏时滑块也停在底部
+-  const ratio = scrollable > 2 ? Math.min(1, Math.max(0, list.scrollTop / scrollable)) : 1;
+-  thumb.style.top = Math.round(histTopGap + histMaxTop * ratio) + "px";
+-  /* 内容不足一屏时不允许拖动 */
+-  if (scrollable > 2) delete thumb.dataset.nodrag; else thumb.dataset.nodrag = "1";
+-  thumb.style.display = "block";
+-}
+-
+-(function initHistory() {
+-  const list = $("historyList");
+-  if (list) list.addEventListener("scroll", syncHistThumb);
+-
+-  // 上下箭头
+-  document.querySelectorAll("#historyScroll .hsArrow").forEach((btn) => {
+-    btn.addEventListener("click", () => {
+-      const dir = parseInt(btn.dataset.dir || "1", 10);
+-      if (list) list.scrollTop += dir * (list.clientHeight * 0.85);
+-      playSE("click");
+-    });
+-  });
+-
+-  // 拖动滑块
+-  const thumb = $("hsThumb"), track = $("hsTrack");
+-  if (thumb && track) {
+-    let dragging = false, startY = 0, startTop = 0;
+-    thumb.addEventListener("mousedown", (e) => {
+-      if (thumb.dataset.nodrag === "1") return;      /* 内容不足一屏：不给拖 */
+-      dragging = true; startY = e.clientY;
+-      startTop = Math.max(0, parseInt(thumb.style.top || "0", 10) - histTopGap);
+-      e.preventDefault();
+-    });
+-    window.addEventListener("mousemove", (e) => {
+-      if (!dragging || !list) return;
+-      const maxTop = histMaxTop;
+-      // 滑块位移 -> 文本滚动量：同样的位移，内容越多滚得越多
+-      const scrollable = Math.max(0, list.scrollHeight - list.clientHeight);
+-      let top = Math.min(maxTop, Math.max(0, startTop + (e.clientY - startY)));
+-      thumb.style.top = (histTopGap + top) + "px";
+-      list.scrollTop = (top / maxTop) * scrollable;
+-    });
+-    window.addEventListener("mouseup", () => { dragging = false; });
+-  }
+-
+-  // 轨道点击翻页
+-  if (track) {
+-    track.addEventListener("click", (e) => {
+-      if (e.target.closest("#hsThumb") || !list) return;
+-      const r = track.getBoundingClientRect();
+-      list.scrollTop += (e.clientY < r.top + r.height / 2 ? -1 : 1) * list.clientHeight * 0.85;
+-    });
+-  }
+-
+-  // EXIT 返回
+-  const ex = $("historyExit");
+-  if (ex) ex.addEventListener("click", () => toggleBacklog(false));
+-
+-  window.addEventListener("resize", syncHistThumb);
+-})();
+-
+-/* 启动时问一次语音模型是否可用：可用 → 和纱的回想图标是白气泡（可重播），否则用灰气泡 */
+-(function probeVoice() {
+-  fetch("/api/voice/ok", { cache: "no-store" })
+-    .then(function (r) { return r.json(); })
+-    .then(function (d) {
+-      window.__voiceOk = !!(d && d.ok);
+-      try { rebuildBacklog(); } catch (e) {}
+-    })
+-    .catch(function () { window.__voiceOk = false; });
+-})();
+-/* 内容淡入淡出：换页/换标签时统一走这里，时长和实机一致（约 0.2s 出 + 0.2s 入） */
+-
+-/* 回想（历史对话）面板滚轮翻动时播翻页音 */
+-(function () {
+-  function attach() {
+-    var box = document.getElementById("historyBox") || document.getElementById("blogList") ||
+-              document.getElementById("histBox") || document.querySelector(".historyBox");
+-    if (!box || box.dataset.seWheel) return;
+-    box.dataset.seWheel = "1";
+-    var acc = 0;
+-    box.addEventListener("wheel", function (e) {
+-      acc += Math.abs(e.deltaY);
+-      if (acc < 60) return;          /* 累积一点再响，避免一滑响一串 */
+-      acc = 0;
+-      try { if (window.playSE) window.playSE("page"); } catch (err) {}
+-    }, { passive: true });
+-  }
+-  document.addEventListener("DOMContentLoaded", attach);
+-  window.addEventListener("load", attach);
+-  setInterval(attach, 1500);
+-})();
+-
+-/* 回想：已经翻到最底部时继续往下滚 = 直接退出回想（原版手感） */
+-(function () {
+-  var panel = document.getElementById("historyPanel");
+-  if (!panel) return;
+-  panel.addEventListener("wheel", function (e) {
+-    if (!backlogOpen || e.deltaY <= 0) return;
+-    var list = document.getElementById("historyList");
+-    if (!list) return;
+-    /* 还差 1px 以内都算到底（子像素滚动会差一点点） */
+-    if (list.scrollTop + list.clientHeight < list.scrollHeight - 1) return;
+-    toggleBacklog(false);
+-    e.preventDefault();
+-  }, { passive: false });
+-})();
+-
+-/* ---------- 音量总控：BGM / 语音 / 音效都乘上主音量 ----------
+-   注意这里必须用模块内的 bgmAudio / ttsAudio：
+-   之前写的是 window.__bgmAudio / window.__voiceAudio，那两个变量从来没被赋值过，
+-   所以「全体音量」「BGM」「VOICE」三个滑块都没有实际效果。 */
+-window.__applyVolumes = function () {
+-  var bv = 0, vv = 0;
+-  try { bv = bgmVolume(); } catch (e) {}
+-  try { vv = voiceVolume(); } catch (e) {}
+-  try { WA2.audio.applyVolume(); } catch (e) {}
+-  try { var _va = WA2.voice._tts(); if (_va) _va.volume = vv; } catch (e) {}
+-  window.__volBgm = bv;
+-  window.__volVoice = vv;
+-};
+-document.addEventListener("DOMContentLoaded", function () {
+-  try { window.__applyVolumes(); } catch (e) {}
+-});
+-
+-/* ---------- 界面显示（OPTION 1 的「窗口」那几项） ----------
+-   窗口透明度（普通场景）：只淡 UI 底图（对话框发光框 / 输入栏底框 / 按钮底板），
+-     字模（正文、名字、占位符、按钮标签）保持原样 —— 通过 CSS 变量 --ui-alpha 控制；
+-   窗口 ON / OFF：整块显示/隐藏（连字一起），这是有意的。 */
+-window.__applyUiPrefs = function () {
+-  var P = (window.App && window.App.getPrefs) ? window.App.getPrefs() : {};
+-  var on = (P.winVisible === undefined) ? true : !!P.winVisible;
+-  var a = (P.winAlpha === undefined) ? 100 : P.winAlpha;
+-  a = Math.max(0, Math.min(100, a)) / 100;
+-  try { document.documentElement.style.setProperty("--ui-alpha", String(a)); } catch (e) {}
+-  ["msgWrap", "inputBar"].forEach(function (id) {
+-    var el = document.getElementById(id);
+-    if (!el) return;
+-    if (on) {
+-      el.style.removeProperty("opacity");
+-      el.style.removeProperty("pointer-events");
+-    } else {
+-      el.style.setProperty("opacity", "0", "important");
+-      el.style.setProperty("pointer-events", "none", "important");
+-    }
+-  });
+-  document.body.classList.toggle("dlgHidden", !on);
+-};
+-window.addEventListener("app:prefs", function () {
+-  try { window.__applyUiPrefs(); } catch (e) {}
+-});
+-document.addEventListener("DOMContentLoaded", function () {
+-  try { window.__applyUiPrefs(); } catch (e) {}
+-});
+-
+-/* 窗口 / 全屏：和标题栏那条路一样走后端 pywebview 开关（不是浏览器 Fullscreen API） */
+-window.__setWinMode = function (mode) {
+-  var on = (mode === "full") ? "1" : "0";
+-  try {
+-    fetch("/api/window?action=fullscreen&on=" + on, { cache: "no-store" })
+-      .then(function (r) { return r.json(); })
+-      .then(function (d) {
+-        try { if (window.__dbg) window.__dbg("WINMODE", mode + " " + JSON.stringify(d).slice(0, 36)); } catch (e) {}
+-        /* 后端可能退回最大化，界面高亮要跟真实状态走 */
+-        if (d && d.ok && typeof d.fullscreen === "boolean" && window.__ct1SetWinModeUI) {
+-          window.__ct1SetWinModeUI(d.fullscreen);
+-        }
+-      })
+-      .catch(function () {});
+-  } catch (e) {}
+-};
+-
+-/* 一组元素做淡出→改动→淡入（切标签页/切存档页时用，和实机一致约 0.2s） */
+-/* 换页动画（按原版观感实现）：
+-   旧页：向内收缩 + 虚化 + 变透明
+-   新页：从略大开始，向内收缩同时由透明迅速实化
+-   总时长默认 390ms（与翻页音 SE_9213 等长） */
+-
+-/* ---------- 滑鼠右键功能（OPTION 2 设置项） ----------
+-   三种模式：hide = 隐藏所有界面只留 CG/立绘；options = 打开设置；save = 打开存档
+-   只在「对话界面」生效：浮层（设置 / 存读档 / 回想 / 特别模式）开着时，右键 = 关掉当前这一层，
+-   不再顺带触发下面的隐藏窗口，否则两个界面会同时响应同一个右键。 */
+-document.addEventListener("contextmenu", function (e) {
+-  // 输入框上仍然保留浏览器默认（方便复制粘贴）
+-  if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+-  e.preventDefault();
+-  /* 隐藏状态下右键 = 先把界面叫回来（不管右键功能设的是哪一项） */
+-  if (document.body.classList.contains("uiHidden")) {
+-    document.body.classList.remove("uiHidden");
+-    return;
+-  }
+-
+-  /* 浮层开着：右键只负责退出这一层（等同右下角 EXIT） */
+-  if (window.__closeTopScreen && window.__closeTopScreen()) {
+-    if (window.__dbg) window.__dbg("RMB", "close-screen");
+-    return;
+-  }
+-  /* 回想面板不是 .uiScreen，单独收一下 */
+-  if (backlogOpen) {
+-    toggleBacklog(false);
+-    return;
+-  }
+-
+-  var mode = "save";
+-  try {
+-    var P = (window.App && window.App.getPrefs) ? window.App.getPrefs() : {};
+-    if (P.rightClick) mode = P.rightClick;
+-  } catch (err) {}
+-
+-  if (window.__dbg) window.__dbg("RMB", mode);
+-
+-  if (mode === "hide") {
+-    document.body.classList.toggle("uiHidden");
+-    return;
+-  }
+-  if (mode === "options") {
+-    try { if (window.__openOptions) window.__openOptions(); } catch (err) {}
+-    return;
+-  }
+-  try { if (window.__openScreen) window.__openScreen("save", "save"); } catch (err) {}
+-});
+-
+-/* ---------- 滚轮上滑：对话界面直接打开回想 ----------
+-   只在对话界面响应（和右键一样）：标题画面、隐藏窗口、任意浮层（设置 / 存读档 / 回想 /
+-   特别模式）开着的时候都不抢；回想已经开着时滚轮交给面板自己翻。 */
+-document.addEventListener("wheel", function (e) {
+-  if (!(e.deltaY < 0)) return;                                      /* 只认上滑 */
+-  if (backlogOpen) return;
+-  if (document.body.classList.contains("uiHidden")) return;
+-  /* 调试面板里滚日志不该弹回想 */
+-  if (e.target && e.target.closest && e.target.closest("#dbgPanel")) return;
+-  var gs = $("gameScreen");
+-  if (!gs || !gs.classList.contains("active")) return;              /* 只在对话界面 */
+-  if (window.__isScreenOpen && window.__isScreenOpen()) return;     /* 浮层开着不抢 */
+-  toggleBacklog(true);
+-  e.preventDefault();
+-}, { passive: false });
+-
+-/* ---------- 右下角：本条 / 累计 token 与花费 ----------
+-   文案与 0~9 都是烤好的字模（tools/bake_cost_ui.py），这里只负责拼图，
+-   不再请求 /api/text —— 那个渲染器是中文网格，拉丁字母会被撑开。 */
+-var COST_EL = {};
+-/* renderCost / costNum / moneyStr 已搬到 cost.js（WA2.cost） */
+-
+-function applyStartupWinMode() {
+-  try {
+-    var P = (window.App && window.App.getPrefs) ? window.App.getPrefs() : {};
+-    if ((P.winMode || "full") !== "full") return;
+-    if (window.__setWinMode) window.__setWinMode("full");
+-  } catch (e) {}
+-}
+-document.addEventListener("DOMContentLoaded", function () {
+-  setTimeout(applyStartupWinMode, 900);
+-});
+-window.addEventListener("app:ready", function () {
+-  setTimeout(applyStartupWinMode, 300);
+-});
++// WHITE ALBUM 2 风格对话界面 —— 使用游戏原始素材
++const $ = (id) => document.getElementById(id);
++
++let history = [];
++window.__history = history;   // 同一引用：读档只改内容、不换数组
++let typing = false;
++let fullText = "";
++let turnCount = 0;
++let backlogOpen = false;
++/* 角色名：存在 char/name.txt，特别模式里改的就是它 */
++let CHAR_NAME = "角色";
++
++/* ---------- 素材表 ---------- */
++/* 旧的四张通用背景：新场景图还没导入、或读档时遇到旧存档的场景名，就退回这里 */
++const BGS = {
++  classroom: "assets/bg_classroom.png",
++  music:     "assets/bg_music.png",
++  corridor:  "assets/bg_corridor.png",
++  street:    "assets/bg_street.png",
++};
++
++/* 场景 CG：assets/cg/index.json 由 tools/import_cg.py 生成，id 就是图片文件名（去掉扩展名）。
++   对话里换场景时后端已经按文件名标签匹配好了（scene_cg.py），这里只负责按 id 取图。 */
++const CG_URL = {};
++fetch("assets/cg/index.json", { cache: "no-store" })
++  .then(function (r) { return r.json(); })
++  .then(function (d) {
++    (d && d.items || []).forEach(function (it) { CG_URL[it.id] = "assets/cg/" + it.file; });
++    /* 目录比背景晚到时（刚打开页面就读档）补渲染一次，免得停在兜底教室图上 */
++    if (currentBg) { var _n = currentBg; currentBg = null; setBg(_n); }
++  })
++  .catch(function () {});
++
++/* 场景名 → 图片地址。认三种：CG 的 id / 旧的四张背景 / 都没有就用教室 */
++function bgSrc(name) {
++  var url = "";
++  if (name && CG_URL[name]) url = CG_URL[name];
++  else if (name && BGS[name]) url = BGS[name];
++  else url = BGS.classroom;
++  /* #20 热重载：素材换了之后加 ?v= 强制重新取图 */
++  if (WA2.assetsVer) url += (url.indexOf("?") >= 0 ? "&" : "?") + "v=" + WA2.assetsVer;
++  return url;
++}
++
++
++/* 音量/BGM 已搬到 wt-audio.js（WA2.audio），这里只留薄封装 */
++function bgmVolume() { return WA2.audio.bgmVolume(); }
++function voiceVolume() { return WA2.audio.voiceVolume(); }
++
++/* ---------- 开场动画 ---------- */
++(function intro() {
++  const scr = $("introScreen");
++  const vid = $("introVideo");
++  if (!scr) return;
++  // 没有视频元素（已改成静态开场）：直接点任意处 / 1.2 秒后进入标题
++  if (!vid) {
++    let done2 = false;
++    function finish() {
++      if (done2) return;
++      done2 = true;
++      scr.classList.remove("active");
++      const t = document.getElementById("titleScreen");
++      if (t) t.classList.add("active");
++      try { setBgm("menu", 900); } catch (e) {}
++    }
++    window.__endIntro = finish;
++    scr.addEventListener("click", finish);
++    document.addEventListener("keydown", function (e) {
++      if (!done2 && (e.key === "Escape" || e.key === " " || e.key === "Enter")) finish();
++    });
++    setTimeout(finish, 1200);
++    return;
++  }
++  let done = false;
++
++  function endIntro() {
++    if (done) return;
++    done = true;
++    /* 跳过时必须把视频彻底停掉：只 pause 不够——fetch 完之后那串 play() 的异步链
++       可能在你点过之后又把音轨拉起来，于是画面没了声音还在放。
++       这里静音 + 断源 + load()，把解码器一起关掉。 */
++    try {
++      vid.pause();
++      vid.muted = true;
++      vid.removeAttribute("src");
++      vid.load();
++    } catch (e) {}
++    scr.classList.remove("active");
++    $("titleScreen").classList.add("active");
++    if (window.App && window.App.getPrefs) { try { setBgm("menu", 900); } catch (e) {} }
++  }
++  window.__endIntro = endIntro;
++
++  vid.muted = false;
++  vid.volume = 0.9;
++
++  /* 开屏按原版顺序播两段：Leaf 社 logo → 游戏 OP → 标题
++     点一下 / Esc = 跳过当前这一段，跳到下一段；最后一段再跳过才进标题 */
++  var SEQ = ["assets/leaf_logo.mp4", (vid.dataset.src || "assets/opening.mp4")];
++  var seqIdx = 0;
++
++  function playSeq(i) {
++    if (done) return;
++    if (i >= SEQ.length) { endIntro(); return; }
++    seqIdx = i;
++    var url = SEQ[i];
++    fetch(url, { cache: "force-cache" })
++      .then(function (r) { return r.blob(); })
++      .then(function (b) {
++        if (done || seqIdx !== i) return;
++        vid.src = URL.createObjectURL(b);
++        vid.load();          /* preload="none" 时必须显式 load，否则一直卡在 readyState=0 */
++        /* 一段播完再切下一段：用 onended（不用全局 ended 监听，避免旧段的残留事件把序列顶掉） */
++        vid.onended = function () {
++          if (done || seqIdx !== i) return;
++          playSeq(i + 1);
++        };
++        var p = vid.play();
++        if (p && p.catch) p.catch(function () {
++          try { vid.muted = true; vid.play().catch(function () {}); } catch (e) {}
++        });
++      })
++      .catch(function () { if (seqIdx === i) playSeq(i + 1); });   /* 取不到就跳下一段 */
++  }
++
++  function nextOrFinish() {
++    if (done) return;
++    if (seqIdx + 1 < SEQ.length) {
++      try { vid.pause(); } catch (e) {}
++      vid.onended = null;
++      playSeq(seqIdx + 1);
++    } else {
++      endIntro();
++    }
++  }
++
++  scr.addEventListener("click", nextOrFinish);
++  document.addEventListener("keydown", (e) => {
++    if (!done && (e.key === "Escape" || e.key === " " || e.key === "Enter")) nextOrFinish();
++  });
++
++  // 等首屏资源（界面图/字体/音频）都加载完再拉视频，避免抢带宽
++  function startVideo() {
++    if (vid.dataset.started) return;
++    vid.dataset.started = "1";
++    playSeq(0);          /* 从 Leaf logo 开始，后面的段由 playSeq 按顺序拉 */
++  }
++  if (document.readyState === "complete") {
++    setTimeout(startVideo, 300);
++  } else {
++    window.addEventListener("load", function () { setTimeout(startVideo, 300); });
++  }
++
++  // 开场视频是从本地 HTTP 服务慢慢下载的（38MB，可能要 20~30 秒），
++  // 所以不能按「3 秒没播起来就跳过」来判断——那会导致没点屏幕就自动跳过。
++  // 只在真正出错（解码失败 / 文件缺失）时才自动跳过；其余情况等用户点击或播完。
++  vid.addEventListener("stalled", () => {}, { passive: true });
++  let loadFail = 0;
++  const failTimer = setInterval(() => {
++    if (done) { clearInterval(failTimer); return; }
++    // readyState=0 且已经等很久，才认为加载失败
++    if (vid.readyState === 0 && ++loadFail >= 60) {   // 60 × 2s = 120s
++      clearInterval(failTimer);
++      endIntro();
++    }
++  }, 2000);
++})();
++
++/* ---------- 音频：实现搬到 wt-audio.js ---------- */
++function playSE(kind) { return WA2.audio.playSE(kind); }
++function setBgm(name, fadeMs) { return WA2.audio.setBgm(name, fadeMs); }
++
++/* ---------- 情绪判断 ---------- */
++/* detectMood / accumulateMood / currentBgmMood 已搬到 mood.js（WA2.mood） */
++
++function loadOpeningLine() {
++  return fetch("/api/character/opening", { cache: "no-store" })
++    .then(function (r) { return r.json(); })
++    .then(function (d) {
++      if (d && d.ok && (d.zh || d.ja)) {
++        OPENING_LINE = { zh: d.zh || "「……」", ja: d.ja || "", emo: d.emotion || "calm" };
++      }
++    })
++    .catch(function () {});
++}
++window.__loadOpeningLine = loadOpeningLine;
++loadOpeningLine();
++
++function openingLine() { return OPENING_LINE; }
++
++/* ---------- 会话存档 ---------- */
++/* sessionSave / sessionRestore 已搬到 session.js（WA2.session） */
++
++function setBg(name) {
++  if (currentBg === name) return;
++  currentBg = name;
++  /* 存档要记「当前背景」，但 currentBg 是 game.js 的内部变量；
++     顺手写到 body.dataset 上，session.js 直接读它（不新增全局） */
++  try { document.body.dataset.bg = name || ""; } catch (e) {}
++  const bgUrl = bgSrc(name);
++  window.__curBg = new Image();
++  window.__curBg.src = bgUrl;
++  /* 背景缺图时留个纯色底 + 提示一次，别让画面空成黑的 */
++  const missing = function () {
++    const l = $("bgLayer");
++    if (l) {
++      l.style.backgroundImage = "none";
++      l.style.backgroundColor = "#1b2430";
++    }
++    if (!window.__bgWarned) {
++      window.__bgWarned = true;
++      (window.__toast || function () {})("背景缺失，先用纯色底继续", 2500);
++    }
++  };
++  /* 双缓冲交叉淡化（200~300ms，设置里可关）；wt-fade 没加载时才走老办法 */
++  try {
++    if (WA2.fade && WA2.fade.crossBg) { WA2.fade.crossBg(bgUrl, null, missing); return; }
++  } catch (e) {}
++  const l = $("bgLayer");
++  if (!l) return;
++  l.style.opacity = "0.25";
++  setTimeout(() => {
++    const probe = new Image();
++    probe.onerror = missing;
++    probe.src = bgUrl;
++    l.style.backgroundImage = `url("${bgUrl}")`;
++    l.style.opacity = "1";
++  }, 260);
++}
++
++/* ---------- 立绘：实现搬到 wt-sprite.js（WA2.sprite） ---------- */
++/* 热重载（#20）：素材变了之后强制重画一次当前背景（setBg 同名的会早退） */
++window.__reapplyBg = function () {
++  var name = currentBg;
++  if (!name) return false;
++  currentBg = null;
++  try { setBg(name); return true; } catch (e) { return false; }
++};
++/* 切换/新建角色后重拉索引：带上当前场景，交给 wt-sprite 处理 */
++window.__reloadSprites = function () {
++  try { WA2.sprite.reload(currentBg || "classroom", window.__lastEmo || ""); } catch (e) {}
++};
++
++/* ---------- 飘雪 ---------- */
++(function snow() {
++  const box = $("snowLayer");
++  for (let i = 0; i < 34; i++) {
++    const f = document.createElement("div");
++    f.className = "flake";
++    const s = 1.4 + Math.random() * 3;
++    f.style.width = s + "px"; f.style.height = s + "px";
++    f.style.left = Math.random() * 100 + "vw";
++    f.style.animationDuration = (11 + Math.random() * 16) + "s";
++    f.style.animationDelay = (-Math.random() * 26) + "s";
++    f.style.opacity = 0.18 + Math.random() * 0.45;
++    box.appendChild(f);
++  }
++})();
++
++function showScreen(id) {
++  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
++  $(id).classList.add("active");
++}
++
++/* ---------- GDI 字体渲染(复刻游戏原生方案) ---------- */
++const NAME_BOOST = 1.0;   // 人名比正文大一点点(按像素比对)
++/* gdiRenderName / gdiRenderMsg / __gdiFallback 已搬到 gdi.js（WA2.gdi） */
++
++function emoOf(text) {
++  const m = detectMood(text || "");
++  if (m === "angry") return "angry";
++  if (m === "sad") return "sad";
++  if (m === "warm" || m === "smile") return "warm";
++  return "neutral";
++}
++
++/* currentVoiceLang / stopSpeak / fetchVoice 已搬到 voice.js（WA2.voice） */
++
++/* splitPages / renderPage / showReply 已搬到 text.js（WA2.text） */
++
++/* addHistory / rebuildBacklog / toggleBacklog 已搬到 backlog.js（WA2.backlog） */
++
++/* showChoices 已搬到 choices.js（WA2.choices） */
++
++/* send 已搬到 chat.js（WA2.chat） */
++
++/* playTitleBgm / quitGame / backToTitle 已搬到 nav.js（WA2.nav） */
++
++function syncHistThumb() {
++  const list = $("historyList"), thumb = $("hsThumb"), track = $("hsTrack");
++  if (!list || !thumb || !track) return;
++  const trackH = track.clientHeight || 1;
++  // 滑块长度固定，按轨道高度算，不随内容变化
++  const fixedH = Math.max(18, Math.round(trackH * HIST_THUMB_RATIO));
++  thumb.style.height = fixedH + "px";
++  const thumbH = fixedH;
++  histTopGap = 3; histBottomGap = 5;   // 底部留白（游戏实测 16px@2730 ≈ 4.7px@450）
++  histMaxTop = Math.max(1, trackH - thumbH - histBottomGap - histTopGap);
++  const scrollable = Math.max(0, list.scrollHeight - list.clientHeight);
++  // 内容不足一屏时停在顶部
++  // 打开即最新: 内容不足一屏时滑块也停在底部
++  const ratio = scrollable > 2 ? Math.min(1, Math.max(0, list.scrollTop / scrollable)) : 1;
++  thumb.style.top = Math.round(histTopGap + histMaxTop * ratio) + "px";
++  /* 内容不足一屏时不允许拖动 */
++  if (scrollable > 2) delete thumb.dataset.nodrag; else thumb.dataset.nodrag = "1";
++  thumb.style.display = "block";
++}
++
++(function initHistory() {
++  const list = $("historyList");
++  if (list) list.addEventListener("scroll", syncHistThumb);
++
++  // 上下箭头
++  document.querySelectorAll("#historyScroll .hsArrow").forEach((btn) => {
++    btn.addEventListener("click", () => {
++      const dir = parseInt(btn.dataset.dir || "1", 10);
++      if (list) list.scrollTop += dir * (list.clientHeight * 0.85);
++      playSE("click");
++    });
++  });
++
++  // 拖动滑块
++  const thumb = $("hsThumb"), track = $("hsTrack");
++  if (thumb && track) {
++    let dragging = false, startY = 0, startTop = 0;
++    thumb.addEventListener("mousedown", (e) => {
++      if (thumb.dataset.nodrag === "1") return;      /* 内容不足一屏：不给拖 */
++      dragging = true; startY = e.clientY;
++      startTop = Math.max(0, parseInt(thumb.style.top || "0", 10) - histTopGap);
++      e.preventDefault();
++    });
++    window.addEventListener("mousemove", (e) => {
++      if (!dragging || !list) return;
++      const maxTop = histMaxTop;
++      // 滑块位移 -> 文本滚动量：同样的位移，内容越多滚得越多
++      const scrollable = Math.max(0, list.scrollHeight - list.clientHeight);
++      let top = Math.min(maxTop, Math.max(0, startTop + (e.clientY - startY)));
++      thumb.style.top = (histTopGap + top) + "px";
++      list.scrollTop = (top / maxTop) * scrollable;
++    });
++    window.addEventListener("mouseup", () => { dragging = false; });
++  }
++
++  // 轨道点击翻页
++  if (track) {
++    track.addEventListener("click", (e) => {
++      if (e.target.closest("#hsThumb") || !list) return;
++      const r = track.getBoundingClientRect();
++      list.scrollTop += (e.clientY < r.top + r.height / 2 ? -1 : 1) * list.clientHeight * 0.85;
++    });
++  }
++
++  // EXIT 返回
++  const ex = $("historyExit");
++  if (ex) ex.addEventListener("click", () => toggleBacklog(false));
++
++  window.addEventListener("resize", syncHistThumb);
++})();
++
++/* 启动时问一次语音模型是否可用：可用 → 和纱的回想图标是白气泡（可重播），否则用灰气泡 */
++(function probeVoice() {
++  fetch("/api/voice/ok", { cache: "no-store" })
++    .then(function (r) { return r.json(); })
++    .then(function (d) {
++      window.__voiceOk = !!(d && d.ok);
++      try { rebuildBacklog(); } catch (e) {}
++    })
++    .catch(function () { window.__voiceOk = false; });
++})();
++/* 内容淡入淡出：换页/换标签时统一走这里，时长和实机一致（约 0.2s 出 + 0.2s 入） */
++
++/* 回想（历史对话）面板滚轮翻动时播翻页音 */
++(function () {
++  function attach() {
++    var box = document.getElementById("historyBox") || document.getElementById("blogList") ||
++              document.getElementById("histBox") || document.querySelector(".historyBox");
++    if (!box || box.dataset.seWheel) return;
++    box.dataset.seWheel = "1";
++    var acc = 0;
++    box.addEventListener("wheel", function (e) {
++      acc += Math.abs(e.deltaY);
++      if (acc < 60) return;          /* 累积一点再响，避免一滑响一串 */
++      acc = 0;
++      try { if (window.playSE) window.playSE("page"); } catch (err) {}
++    }, { passive: true });
++  }
++  document.addEventListener("DOMContentLoaded", attach);
++  window.addEventListener("load", attach);
++  setInterval(attach, 1500);
++})();
++
++/* 回想：已经翻到最底部时继续往下滚 = 直接退出回想（原版手感） */
++(function () {
++  var panel = document.getElementById("historyPanel");
++  if (!panel) return;
++  panel.addEventListener("wheel", function (e) {
++    if (!backlogOpen || e.deltaY <= 0) return;
++    var list = document.getElementById("historyList");
++    if (!list) return;
++    /* 还差 1px 以内都算到底（子像素滚动会差一点点） */
++    if (list.scrollTop + list.clientHeight < list.scrollHeight - 1) return;
++    toggleBacklog(false);
++    e.preventDefault();
++  }, { passive: false });
++})();
++
++/* ---------- 音量总控：BGM / 语音 / 音效都乘上主音量 ----------
++   注意这里必须用模块内的 bgmAudio / ttsAudio：
++   之前写的是 window.__bgmAudio / window.__voiceAudio，那两个变量从来没被赋值过，
++   所以「全体音量」「BGM」「VOICE」三个滑块都没有实际效果。 */
++window.__applyVolumes = function () {
++  var bv = 0, vv = 0;
++  try { bv = bgmVolume(); } catch (e) {}
++  try { vv = voiceVolume(); } catch (e) {}
++  try { WA2.audio.applyVolume(); } catch (e) {}
++  try { var _va = WA2.voice._tts(); if (_va) _va.volume = vv; } catch (e) {}
++  window.__volBgm = bv;
++  window.__volVoice = vv;
++};
++document.addEventListener("DOMContentLoaded", function () {
++  try { window.__applyVolumes(); } catch (e) {}
++});
++
++/* ---------- 界面显示（OPTION 1 的「窗口」那几项） ----------
++   窗口透明度（普通场景）：只淡 UI 底图（对话框发光框 / 输入栏底框 / 按钮底板），
++     字模（正文、名字、占位符、按钮标签）保持原样 —— 通过 CSS 变量 --ui-alpha 控制；
++   窗口 ON / OFF：整块显示/隐藏（连字一起），这是有意的。 */
++window.__applyUiPrefs = function () {
++  var P = (window.App && window.App.getPrefs) ? window.App.getPrefs() : {};
++  var on = (P.winVisible === undefined) ? true : !!P.winVisible;
++  var a = (P.winAlpha === undefined) ? 100 : P.winAlpha;
++  a = Math.max(0, Math.min(100, a)) / 100;
++  try { document.documentElement.style.setProperty("--ui-alpha", String(a)); } catch (e) {}
++  ["msgWrap", "inputBar"].forEach(function (id) {
++    var el = document.getElementById(id);
++    if (!el) return;
++    if (on) {
++      el.style.removeProperty("opacity");
++      el.style.removeProperty("pointer-events");
++    } else {
++      el.style.setProperty("opacity", "0", "important");
++      el.style.setProperty("pointer-events", "none", "important");
++    }
++  });
++  document.body.classList.toggle("dlgHidden", !on);
++};
++window.addEventListener("app:prefs", function () {
++  try { window.__applyUiPrefs(); } catch (e) {}
++});
++document.addEventListener("DOMContentLoaded", function () {
++  try { window.__applyUiPrefs(); } catch (e) {}
++});
++
++/* 窗口 / 全屏：和标题栏那条路一样走后端 pywebview 开关（不是浏览器 Fullscreen API） */
++window.__setWinMode = function (mode) {
++  var on = (mode === "full") ? "1" : "0";
++  try {
++    fetch("/api/window?action=fullscreen&on=" + on, { cache: "no-store" })
++      .then(function (r) { return r.json(); })
++      .then(function (d) {
++        try { if (window.__dbg) window.__dbg("WINMODE", mode + " " + JSON.stringify(d).slice(0, 36)); } catch (e) {}
++        /* 后端可能退回最大化，界面高亮要跟真实状态走 */
++        if (d && d.ok && typeof d.fullscreen === "boolean" && window.__ct1SetWinModeUI) {
++          window.__ct1SetWinModeUI(d.fullscreen);
++        }
++      })
++      .catch(function () {});
++  } catch (e) {}
++};
++
++/* 一组元素做淡出→改动→淡入（切标签页/切存档页时用，和实机一致约 0.2s） */
++/* 换页动画（按原版观感实现）：
++   旧页：向内收缩 + 虚化 + 变透明
++   新页：从略大开始，向内收缩同时由透明迅速实化
++   总时长默认 390ms（与翻页音 SE_9213 等长） */
++
++/* ---------- 滑鼠右键功能（OPTION 2 设置项） ----------
++   三种模式：hide = 隐藏所有界面只留 CG/立绘；options = 打开设置；save = 打开存档
++   只在「对话界面」生效：浮层（设置 / 存读档 / 回想 / 特别模式）开着时，右键 = 关掉当前这一层，
++   不再顺带触发下面的隐藏窗口，否则两个界面会同时响应同一个右键。 */
++document.addEventListener("contextmenu", function (e) {
++  // 输入框上仍然保留浏览器默认（方便复制粘贴）
++  if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
++  e.preventDefault();
++  /* 隐藏状态下右键 = 先把界面叫回来（不管右键功能设的是哪一项） */
++  if (document.body.classList.contains("uiHidden")) {
++    document.body.classList.remove("uiHidden");
++    return;
++  }
++
++  /* 浮层开着：右键只负责退出这一层（等同右下角 EXIT） */
++  if (window.__closeTopScreen && window.__closeTopScreen()) {
++    if (window.__dbg) window.__dbg("RMB", "close-screen");
++    return;
++  }
++  /* 回想面板不是 .uiScreen，单独收一下 */
++  if (backlogOpen) {
++    toggleBacklog(false);
++    return;
++  }
++
++  var mode = "save";
++  try {
++    var P = (window.App && window.App.getPrefs) ? window.App.getPrefs() : {};
++    if (P.rightClick) mode = P.rightClick;
++  } catch (err) {}
++
++  if (window.__dbg) window.__dbg("RMB", mode);
++
++  if (mode === "hide") {
++    document.body.classList.toggle("uiHidden");
++    return;
++  }
++  if (mode === "options") {
++    try { if (window.__openOptions) window.__openOptions(); } catch (err) {}
++    return;
++  }
++  try { if (window.__openScreen) window.__openScreen("save", "save"); } catch (err) {}
++});
++
++/* ---------- 滚轮上滑：对话界面直接打开回想 ----------
++   只在对话界面响应（和右键一样）：标题画面、隐藏窗口、任意浮层（设置 / 存读档 / 回想 /
++   特别模式）开着的时候都不抢；回想已经开着时滚轮交给面板自己翻。 */
++document.addEventListener("wheel", function (e) {
++  if (!(e.deltaY < 0)) return;                                      /* 只认上滑 */
++  if (backlogOpen) return;
++  if (document.body.classList.contains("uiHidden")) return;
++  /* 调试面板里滚日志不该弹回想 */
++  if (e.target && e.target.closest && e.target.closest("#dbgPanel")) return;
++  var gs = $("gameScreen");
++  if (!gs || !gs.classList.contains("active")) return;              /* 只在对话界面 */
++  if (window.__isScreenOpen && window.__isScreenOpen()) return;     /* 浮层开着不抢 */
++  toggleBacklog(true);
++  e.preventDefault();
++}, { passive: false });
++
++/* ---------- 右下角：本条 / 累计 token 与花费 ----------
++   文案与 0~9 都是烤好的字模（tools/bake_cost_ui.py），这里只负责拼图，
++   不再请求 /api/text —— 那个渲染器是中文网格，拉丁字母会被撑开。 */
++var COST_EL = {};
++/* renderCost / costNum / moneyStr 已搬到 cost.js（WA2.cost） */
++
++function applyStartupWinMode() {
++  try {
++    var P = (window.App && window.App.getPrefs) ? window.App.getPrefs() : {};
++    if ((P.winMode || "full") !== "full") return;
++    if (window.__setWinMode) window.__setWinMode("full");
++  } catch (e) {}
++}
++document.addEventListener("DOMContentLoaded", function () {
++  setTimeout(applyStartupWinMode, 900);
++});
++window.addEventListener("app:ready", function () {
++  setTimeout(applyStartupWinMode, 300);
++});
+diff --git a/program/src/ui/game450.css b/program/src/ui/game450.css
+index 6739873..9e5c4d0 100644
+--- a/program/src/ui/game450.css
++++ b/program/src/ui/game450.css
+@@ -1,560 +1,584 @@
+-* { margin:0; padding:0; box-sizing:border-box; }
+-
+-html, body {
+-  width:100%; height:100%; overflow:hidden;
+-  background:#000;
+-  font-family: "Microsoft YaHei", "微软雅黑", "PingFang SC", sans-serif;
+-  -webkit-font-smoothing:none;
+-  font-smooth:never;
+-  color:#fff;
+-  user-select:none;
+-}
+-
+-/* 画面层：都铺在 #stage（800x450）里，靠 .active 淡入淡出 */
+-.screen { position:absolute; inset:0; opacity:0; pointer-events:none; transition:opacity .5s; }
+-.screen.active { opacity:1; pointer-events:auto; }
+-
+-
+-/* ================= 800x450 舞台 ================= */
+-#stage {
+-  position:fixed; left:50%; top:50%;
+-  width:800px; height:450px;
+-  transform-origin:center center;
+-  overflow:hidden;
+-  background:#000;
+-}
+-
+-/* ================= 开场动画 ================= */
+-#introScreen { background:#000; cursor:pointer; }
+-#introVideo {
+-  position:absolute; inset:0;
+-  width:100%; height:100%;
+-  object-fit:cover;
+-  background:#000;
+-}
+-#introHint {
+-  position:absolute; right:26px; bottom:18px;
+-  font-family: inherit !important; font-size:7.2px; letter-spacing:0.9px;
+-  color:rgba(230,245,255,.55);
+-  text-shadow:0 1px 3px rgba(0,0,0,.9);
+-  animation:blink 2.4s infinite;
+-}
+-@keyframes blink { 0%,100%{opacity:.25;} 50%{opacity:.85;} }
+-
+-/* ================= 标题 ================= */
+-#titleScreen { background:#000; }
+-
+-.title-bg {
+-  position:absolute; inset:0;
+-  background-image:url("assets/title.png");
+-  background-size:cover;
+-  background-position:center center;
+-  background-repeat:no-repeat;
+-}
+-
+-.title-logo {
+-  position:absolute; left:50%; top:11.2%;
+-  transform:translateX(-50%);
+-  width:50%;
+-  max-width:none;
+-  pointer-events:none;
+-  filter:drop-shadow(0 0 5.4px rgba(90,175,240,.45));
+-}
+-
+-#mainMenu {
+-  position:absolute; left:45.9%; top:49.4%;
+-  display:flex; flex-direction:column; align-items:flex-start;
+-  gap:1.3px; z-index:5;
+-}
+-
+-#mainMenu button {
+-  position:relative;
+-  background:none; border:none; outline:none; cursor:pointer;
+-  padding:0; line-height:0;
+-  transition:transform .18s;
+-}
+-#mainMenu button img { display:block; width:75.2px; height:auto; }
+-#mainMenu button .on { display:none; position:absolute; left:0; top:0; }
+-#mainMenu button:hover .off { visibility:hidden; }
+-#mainMenu button:hover .on { display:block; }
+-#mainMenu button:hover { transform:translateX(1.8px); }
+-
+-/* 按钮底框：游戏原版 T0101（暗态常显，悬停变亮） */
+-#mainMenu button::before {
+-  content:"";
+-  position:absolute; left:-62px; top:50%;
+-  transform:translateY(-50%);
+-  width:200px; height:17.5px;
+-  background-image:url("assets/ui/menu_strip_off.png");
+-  background-size:100% 100%;
+-  background-repeat:no-repeat;
+-  opacity:1;
+-  z-index:-1;
+-  transition:none;
+-}
+-#mainMenu button:hover::before {
+-  background-image:url("assets/ui/menu_strip_on.png");
+-}
+-
+-#mainMenu button.last { margin-top:35.4px; }
+-
+-/* Title Menu：游戏原版 T0201 第一格（288x40） */
+-#titleMenuLabel {
+-  position:absolute; left:310px; width:180px;
+-  top:378.9px;
+-  height:25px;
+-  background-image:url("assets/ui/title_menu.png");
+-  background-size:100% 100%;
+-  background-repeat:no-repeat;
+-  border:0; padding:0;
+-  font-size:0; color:transparent; text-shadow:none;
+-}
+-
+-#copyright {
+-  position:absolute; right:1.2%; bottom:1.4%;
+-  height:11.7px; width:auto;
+-  opacity:.95;
+-}
+-
+-/* ================= 对话 ================= */
+-#gameScreen { background:#000; }
+-
+-/* 场景背景：两层双缓冲，#bgLayer 常驻当前图、#bgLayer2 只在交叉淡化时淡入（见 wt-fade.js）。
+-   过渡时长由 JS 给（200~300ms，设置里可关），所以这里不写 transition。
+-   两层都带同一层渐隐蒙版：淡化中途两个蒙版叠起来的透明度约等于一层，画面不会中途变亮。 */
+-#bgLayer, #bgLayer2 {
+-  position:absolute; inset:0; background-size:cover; background-position:center;
+-  opacity:0; transition:none;
+-}
+-#bgLayer { opacity:1; }
+-#bgLayer::after, #bgLayer2::after { content:""; position:absolute; inset:0;
+-  background:linear-gradient(to bottom, rgba(0,8,18,.05) 0%, rgba(0,0,0,0) 55%, rgba(0,6,14,.18) 100%); }
+-
+-#lightLayer { position:absolute; inset:0; pointer-events:none; }
+-#snowLayer { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+-.flake { position:absolute; top:-12px; border-radius:50%;
+-  background:rgba(230,250,255,.9); box-shadow:0 0 8px rgba(170,230,255,.9);
+-  animation:fall linear infinite; }
+-@keyframes fall {
+-  0% { transform:translateY(-20px) translateX(0); opacity:0; }
+-  8% { opacity:.85; } 92% { opacity:.4; }
+-  100% { transform:translateY(468px) translateX(40px); opacity:0; }
+-}
+-
+-#spriteWrap { position:absolute; left:50%; bottom:0; transform:translateX(-50%);
+-  height:450px; display:flex; align-items:flex-end; pointer-events:none; }
+-#sprite { height:450px; max-width:768px; object-fit:contain;
+-  opacity:0; transform:translateY(16px); transition:opacity .6s, transform .6s; }
+-#sprite.show { opacity:1; transform:translateY(0); }
+-
+-/* 交叉淡化用的叠层：和 #sprite 对齐，只负责淡入新图；淡完就把主图换掉、这层归零 */
+-#spriteGhost { position:absolute; left:50%; bottom:0; transform:translateX(-50%);
+-  height:450px; max-width:768px; object-fit:contain;
+-  opacity:0; pointer-events:none; }
+-
+-/* ---------- 对话框 ----------
+-   位置/尺寸是十几轮像素测量后的定稿值（历史见 git）。分三层：
+-     #msgBox          只负责尺寸和事件，不画背景
+-     #msgBox::before  填充层（渐变 + WHITE ALBUM 水印），screen 叠上去
+-     #msgBox::after   丝带层，单独一层才能跟着 OPTION 的 UI 透明度一起淡 */
+-#msgWrap {
+-  position:absolute; left:50%; right:auto; bottom:0;
+-  transform:translateX(-50%);
+-  width:780px; height:130px;      /* 780 * 208/1248，和素材 1:1 */
+-  padding:0; z-index:20;
+-}
+-
+-#namePlate {
+-  position:absolute; left:21.3%; top:5.2%;
+-  font-size:11.5px; letter-spacing:1.3px; color:#ffffff;
+-  text-shadow:0 0.5px 1.1px rgba(0,18,38,.95), 0 0 1.8px rgba(0,10,26,.5);
+-  z-index:1;
+-}
+-
+-#msgBox {
+-  position:relative; height:100%;
+-  background-image:none !important;        /* 丝带在 ::after，不在这里画 */
+-  background-size:100% 100%, 100% 100% !important;
+-  background-repeat:no-repeat, no-repeat !important;
+-  background-position:0 0, 0 0 !important;
+-  background-color:transparent !important;
+-  background-blend-mode:screen !important;
+-  filter:none !important;
+-  opacity:1;
+-  cursor:pointer;
+-}
+-#msgBox .fill { display:none !important; }
+-#msgBox .walogo { display:none !important; }
+-
+-#msgBox::before {
+-  content:"";
+-  position:absolute; inset:0;
+-  background:url("assets/ui/msgbox_fill.png") 0 0 / 100% 100% no-repeat !important;
+-  mix-blend-mode:screen !important;
+-  opacity:calc(.9 * var(--ui-alpha, 1)) !important;
+-  pointer-events:none;
+-  z-index:0;
+-}
+-#msgBox::after {
+-  content:"";
+-  position:absolute; left:0; top:0; right:0; bottom:0;
+-  background:url("assets/ui/msgbox_ribbon.png") 0 0 / 100% 100% no-repeat;
+-  opacity:var(--ui-alpha, 1);
+-  pointer-events:none;
+-  z-index:0;
+-}
+-
+-#msgText {
+-  position:relative;
+-  left:23.5%; right:10%; top:30.5%;
+-  font-size:15.5px; line-height:1.5; letter-spacing:0;
+-  color:#ffffff;
+-  -webkit-text-stroke:0.5px rgba(12,40,68,.95);
+-  paint-order:stroke fill;
+-  text-shadow:0 0.5px 1px rgba(0,10,24,.7);
+-  white-space:pre-wrap; word-break:break-word;
+-  z-index:1;
+-}
+-#msgText.gdi { -webkit-text-stroke:0; text-shadow:none; }
+-#msgText.gdi img { image-rendering:auto; }
+-
+-/* ---------- 底部工具栏 ---------- */
+-#toolbar {
+-  position:absolute; right:5.4px; bottom:4.5px; height:19.8px;
+-  background:none;
+-  display:flex; align-items:center; justify-content:flex-end; gap:6.8px;
+-  padding:0; z-index:26;
+-  font-size:11px; color:rgba(220,245,255,.9);
+-}
+-#toolbar .tb {
+-  width:18px; height:19.3px;
+-  display:flex; align-items:center; justify-content:center;
+-  background:none; border:none; cursor:pointer;
+-  transition:transform .16s, filter .16s;
+-}
+-#toolbar .tb img {
+-  max-width:100%; max-height:100%;
+-  display:block; pointer-events:none;
+-  filter:drop-shadow(0 0.7px 2px rgba(0,25,50,.8));
+-}
+-#toolbar .tb img.hv { display:none; }
+-#toolbar .tb:hover img.nm { display:none; }
+-#toolbar .tb:hover img.hv { display:block; }
+-#toolbar .tb:hover { transform:translateY(-1.1px) scale(1.12); filter:brightness(1.25); }
+-#toolbar .tb.txt {
+-  font-size:8.5px; color:#dff4ff; letter-spacing:0;
+-  text-shadow:0 0.7px 1.8px rgba(0,20,40,.85);
+-}
+-#toolbar .tb.close { filter:none; }
+-#toolbar .hint { margin-left:10px; letter-spacing:1px; opacity:.8; }
+-
+-/* ---------- 底部输入栏（定稿：原图直用，挪到右下角） ---------- */
+-#inputBar { position:absolute; left:512px; top:208px; bottom:auto;
+-  width:280px; height:65px; display:flex; align-items:flex-start; gap:0;
+-  z-index:25; opacity:1; transition:opacity .25s; }
+-#inputFrame {
+-  position:absolute; left:0; top:0; width:100%; height:100%;
+-  pointer-events:none;
+-  opacity:calc(.92 * var(--ui-alpha, 1)) !important;
+-}
+-#inputBar:hover, #inputBar:focus-within { opacity:1; }
+-#input { flex:1; position:relative; background:none; border:none;
+-  height:100%; padding:0 14px 0 26px; color:#eaf9ff;
+-  font-family: inherit !important; font-size:11px; letter-spacing:0.5px; outline:none; }
+-#input:focus { border-color:rgba(160,240,255,.95); }
+-
+-/* 思考 / 发送按钮：只留文字和定位，三态底板在 ::before 上（文件末尾） */
+-#thinkBtn, #sendBtn {
+-  position:absolute; bottom:-22px; height:20px;
+-  width:82px; padding:0 9px; flex:0 0 auto;
+-  font-size:7.6px;
+-  color:#f4fcff !important;
+-  font-family: inherit !important;
+-  text-shadow:0 1px 2px rgba(0,18,36,.95) !important;
+-  background-image:none !important;
+-  background-size:100% 300% !important;
+-  background-repeat:no-repeat !important;
+-  background-position:0 0 !important;
+-  background-color:transparent !important;
+-  border:0 !important; border-radius:0 !important;
+-  box-shadow:none !important; outline:0 !important;
+-  appearance:none !important; -webkit-appearance:none !important;
+-  cursor:pointer; isolation:isolate;
+-}
+-#thinkBtn { right:94px !important; margin:0 !important;
+-  line-height:1 !important; white-space:nowrap; }
+-#sendBtn { right:0 !important; margin-right:0; letter-spacing:1.3px; }
+-
+-.choice::before, .choice::after {
+-  content:""; position:absolute; top:50%; width:34px; height:34px;
+-  transform:translateY(-50%);
+-  background-image:url("assets/snowflake_right.png");
+-  background-size:contain; background-repeat:no-repeat;
+-  opacity:.9;
+-}
+-.choice::before { left:16px; }
+-.choice::after { right:16px; }
+-.choice:hover { filter:brightness(1.3); transform:scale(1.02); }
+-
+-
+-
+-
+-/* ---------- 设置面板 ---------- */
+-#cfgPanel {
+-  position:fixed; inset:0; z-index:60; display:none;
+-  align-items:center; justify-content:center;
+-  background:rgba(0,6,14,.72);
+-}
+-#cfgPanel.show { display:flex; }
+-.cfgCard {
+-  width:min(680px, 736px); max-height:387px; overflow-y:auto;
+-  background:linear-gradient(180deg, rgba(8,36,60,.98), rgba(3,16,30,.99));
+-  border:1px solid rgba(120,205,250,.4); border-radius:4px;
+-  padding:26px 30px; box-shadow:0 20px 60px rgba(0,0,0,.6);
+-}
+-.cfgTitle { font-size:19px; letter-spacing:5px; color:#dff6ff; margin-bottom:18px; }
+-.cfgSec { margin-bottom:18px; }
+-.cfgLbl { font-size:12px; color:#7fd4ff; letter-spacing:2px; margin-bottom:8px; }
+-.cfgRow { display:flex; align-items:center; gap:10px; margin:6px 0; font-size:14px; }
+-.cfgRow span { width:56px; color:#bfe6ff; }
+-.cfgRow select { flex:1; background:rgba(2,20,36,.9); color:#eaf9ff;
+-  border:1px solid rgba(120,205,250,.4); border-radius:2px; padding:5px 8px;
+-  font-family: inherit !important; font-size:13px; }
+-.cfgRow input[type=range] { flex:1; accent-color:#4fc3ff; }
+-.cfgRow b { width:44px; text-align:right; color:#9fe0ff; font-weight:400; font-size:12px; }
+-.cfgRow button { background:rgba(20,90,140,.7); color:#eaf9ff; font-family: inherit !important;
+-  border:1px solid rgba(120,205,250,.45); border-radius:2px; padding:5px 14px;
+-  font-size:12px; cursor:pointer; }
+-.cfgRow button:hover { background:rgba(40,140,200,.85); }
+-.cfgBtns { display:flex; gap:12px; justify-content:flex-end; margin-top:20px; }
+-.cfgBtns button { padding:8px 26px; background:linear-gradient(180deg, rgba(40,150,210,.9), rgba(10,70,120,.95));
+-  border:1px solid rgba(150,230,255,.6); border-radius:2px; color:#fff;
+-  font-family: inherit !important; font-size:14px; letter-spacing:2px; cursor:pointer; }
+-
+-/* ---------- 翻页提示：对话框文字末尾的页面图标 ----------
+-   原版 page_02 的 120 帧精灵（tools/bake_page_cursor.py 烤成一条横向图）：
+-   60fps、2 秒一轮。位置和缩放由 game.js 按文字图的格子算（每字 28×32）。 */
+-#pageCursor {
+-  position: absolute;
+-  left: 0; top: 0;
+-  width: 28px; height: 28px;
+-  background-image: url("assets/ui/text/page_cursor.png");
+-  background-repeat: no-repeat;
+-  background-size: 3360px 28px;
+-  transform-origin: top left;
+-  display: none;
+-  pointer-events: none;
+-  z-index: 2;
+-  animation: pageCursorRun 2s steps(120) infinite;
+-}
+-@keyframes pageCursorRun {
+-  from { background-position: 0 0; }
+-  to   { background-position: -3360px 0; }
+-}
+-
+-
+-/* ===== 思维文字: 左上区域, 不进对话框 ===== */
+-#thinkBox {
+-  position: absolute;
+-  left: 3.2%;
+-  top: 15%;
+-  right: 9%;                  /* 和 left+width 同时存在时 right 不参与布局，保留只为宽度约束一致 */
+-  width: 21%;
+-  max-height: 34%;
+-  overflow: hidden;
+-  font-size: 10.5px;
+-  line-height: 1.5;
+-  color: #8fd0ef;
+-  font-style: italic;
+-  pointer-events: none;
+-  text-shadow: 0 1px 3px rgba(0,10,24,.95), 0 0 6px rgba(0,20,40,.8);
+-  opacity: .95;
+-  word-break: break-all;
+-  white-space: pre-wrap;
+-  display: -webkit-box;
+-  -webkit-box-orient: vertical;
+-  -webkit-line-clamp: 7;      /* 最多 7 行, 超出显示省略号 */
+-  z-index: 5;
+-}
+-#thinkBox.hidden { display: none !important; }
+-
+-
+-
+-
+-
+-/* ===================== 历史对话（按截图逐像素实测） ===================== */
+-#historyPanel { position:absolute; inset:0; z-index:60; display:none; }
+-#historyPanel.show { display:block; }
+-/* 打开历史面板时收起其它 UI */
+-body.histOpen #msgWrap,
+-body.histOpen #inputBar,
+-body.histOpen #toolbar { display:none !important; }
+-
+-/* 顶栏: 通栏，下沿 y=4.04%（游戏实测 62/1536） */
+-#historyHead { position:absolute; left:0; right:0; top:0; height:auto; line-height:0; }
+-#historyHead img { width:100%; height:auto; display:block; }
+-
+-/* 面板: x 14.25% ~ 83.15%, y 4.04% ~ 93.68% */
+-#historyBox {
+-  position:absolute; left:14.25%; right:16.85%; top:4.028%; bottom:6.250%;
+-  background:url("assets/ui/history/panel.png") left top / 100% 100% no-repeat;
+-}
+-#historyBody { position:absolute; inset:0; }
+-#historyList {
+-  position:absolute; top:0; bottom:0; left:0; right:9.2%;   /* 右侧留出滑条宽度 */
+-  overflow-y:auto; overflow-x:hidden;
+-  padding: 4px 10px 6px 38.4px;
+-  scrollbar-width:none; -ms-overflow-style:none;
+-}
+-#historyList::-webkit-scrollbar { width:0; height:0; }
+-
+-/* 记录 */
+-.hline { display:flex; align-items:flex-start; margin:0 0 7px; }
+-.hline .ico { flex:0 0 auto; width:16.1px; margin:3px 7.3px 0 0; line-height:0; cursor:default; }
+-.hline .ico img { width:100%; display:block; }
+-.hline .body { flex:1 1 auto; min-width:0; }
+-.hline .who { display:block; font-size:18px; color:#eaf7ff; line-height:26px !important;
+-  letter-spacing:.06em; margin-bottom:0;
+-  text-shadow:0 1px 2px rgba(0,10,24,.95); }
+-/* uitext 生成的图片默认 inline-block，会撑高行盒导致行距不齐，改成块级 */
+-.hline .who img, .hline .txt img { display:block !important; }
+-.hline .txt { font-size:18px; line-height:26px !important; text-indent:10.9px; color:#eaf7ff;
+-  text-shadow:0 1px 2px rgba(0,10,24,.95); white-space:pre-wrap; }
+-.hline.me .who { color:#ffd9e2; }
+-.hline.me .txt { color:#f7ebf0; }
+-
+-/* 滑条: 在面板内部靠右，x 81.06%~82.60%，y 与面板同高 */
+-#historyScroll { -webkit-app-region:no-drag;
+-  /* 实测(模板匹配 0.98): x 80.88% 宽 2.01%; y 4.43%~93.36% */
+-  position:absolute; left:80.88%; width:2.01%;
+-  top:4.43%; bottom:6.64%;
+-  display:flex; flex-direction:column; align-items:center;
+-}
+-.hsArrow { width:100%; padding:0; border:0; background:none; cursor:pointer; line-height:0; }
+-.hsArrow img { width:100%; display:block; }
+-.hsArrow .on { display:none; }
+-.hsArrow:hover .off { display:none; }
+-.hsArrow:hover .on { display:block; }
+-
+-#hsTrack { position:relative; flex:1 1 auto; width:100%; margin:1px 0; min-height:20px; }
+-.hsTrackImg { width:100%; height:100%; display:block; }
+-/* 滑块: 宽 52% 滑条宽、左缩进 24%，高度由 JS 按轨道比例设定 */
+-#hsThumb { -webkit-app-region:no-drag; position:absolute; left:24%; width:52%; top:0; height:40px; cursor:grab; }
+-#hsThumb img { width:100%; height:100%; display:block; }
+-#hsThumb:active { cursor:grabbing; }
+-
+-/* 底栏: 上沿 y=93.68% */
+-#historyFoot { position:absolute; left:0; right:0; bottom:0; height:auto; line-height:0; }
+-#historyFoot img { width:100%; height:auto; display:block; }
+-
+-/* EXIT: 底栏右侧 */
+-#historyExit {
+-  position:absolute; right:2.4%; bottom:1.3%; height:3.2%;
+-  padding:0; border:0; background:none; cursor:pointer; line-height:0;
+-}
+-#historyExit img { height:100%; width:auto; display:block; }
+-#historyExit .on { display:none; }
+-#historyExit:hover .off { display:none; }
+-#historyExit:hover .on { display:block; }
+-
+-/* 对话界面底部蓝色微光条：素材 sys_00013.tga（1280x48）
+-   alpha 自 0 递增到 175，贴在画面最下沿形成渐亮 */
+-#glowBottom {
+-  position: absolute;
+-  left: 0;
+-  bottom: 0;
+-  width: 800px;
+-  height: 30px;
+-  z-index: 20;
+-  pointer-events: none;
+-}
+-#glowBottom img { width: 100%; height: 100%; display: block; }
+-
+-/* 长句折行容器：每行一个 .txt */
+-.hline .txtwrap { min-width:0; }
+-
+-/* 回想：悬停/重播时整句变黄。滤镜参数是解出来的：
+-   我们的字芯 RGB(228,228,228) 经过 sepia(1) saturate(1.73) brightness(.98)
+-   正好变成 RGB(250,250,164)，即游戏原图里黄字字芯色 #FAF6A4 */
+-.hline.hl .who img, .hline.hl .txt img {
+-  filter: sepia(1) saturate(2.05) brightness(1);
+-}
+-/* 对话界面按钮里的字模：按各自 CSS 字号换算高度 */
+-#thinkBtn img, #sendBtn img { height: 8.5px !important; width: auto !important; display: inline-block; vertical-align: middle; }
+-
+-/* 动作按钮：标签图 + 值图，按 7.6px 字号换算 */
+-#thinkBtn img.lbl { height: 8.5px !important; width: auto !important; vertical-align: middle; }
+-#thinkBtn img.val { height: 8.5px !important; width: auto !important; vertical-align: middle; margin-left: 1px; }
+-
+-/* ===== OPTION 1「窗口透明度（普通场景）」=====
+-   只淡 UI 底图，字模（正文 / 名字 / 占位符 / 按钮标签）一点不动。
+-   数值由 game.js 的 __applyUiPrefs() 写进 :root 的 --ui-alpha（0~1）。
+-
+-   对话框的 UI 是两层：丝带层在 #msgBox::after，填充层在 #msgBox::before，
+-   两层的 opacity 都乘上了 --ui-alpha（见文件前部）。
+-   发送 / 动作按钮的底板也挪到 ::before，跟着一起淡。 */
+-#thinkBtn::before, #sendBtn::before {
+-  content: "";
+-  position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+-  z-index: -1;
+-  background-image: url("assets/ui/btn_3state.png");
+-  background-size: 100% 300%;
+-  background-repeat: no-repeat;
+-  background-position: 0 0;
+-  opacity: var(--ui-alpha, 1);
+-  pointer-events: none;
+-}
+-#thinkBtn:active::before, #sendBtn:active::before { background-position: 0 50%; }
+-#thinkBtn.released::before, #sendBtn.released::before { background-position: 0 100%; }
+-
+-/* ===== 右下角：本条 / 累计 token 与花费 =====
+-   文案和数字都是烤好的字模（tools/bake_cost_ui.py），前端只拼图，不再请求 /api/text
+-   位置：发送按钮下方偏右（用户指定） */
+-#costBar {
+-  position: absolute;
+-  right: 72px;
+-  bottom: 101px;
+-  z-index: 24;
+-  pointer-events: none;
+-  opacity: .95;
+-}
+-#costBar .row {
+-  display: flex;
+-  justify-content: flex-end;
+-  align-items: center;
+-  height: 12px;
+-  margin-top: 2px;
+-  gap: 3px;
+-}
+-#costBar .row img { height: 12px; width: auto; display: block; }
+-#costBar .num { display: inline-flex; align-items: center; margin: 0 1px; }
+-#costBar .row img.lb { margin: 0 .5px; }
+-#costBar .num img { height: 12px; width: auto; display: block; margin: 0 .4px; }
+-
+-/* ===== 切角色过渡：整幕压黑 =====
+-   层级：.uiScreen 是 120，这里 200，标题栏 2147483000 —— 只盖舞台，不盖窗口按钮。
+-   流程见 sp-char.js：压黑 180ms → 换人 → 淡回 200ms；慢的时候中间显示角色名。 */
+-#charFade {
+-  position: absolute; inset: 0;
+-  background: #000;
+-  opacity: 0;
+-  pointer-events: none;
+-  transition: opacity .18s ease;
+-  z-index: 200;
+-}
+-#charFade.on {
+-  opacity: 1;
+-  pointer-events: auto;      /* 过渡期间挡住点击，别在换人的时候发消息 */
+-}
+-#charFadeName {
+-  position: absolute; left: 0; right: 0; top: 50%;
+-  transform: translateY(-50%);
+-  text-align: center;
+-  font-size: 14px;
+-  color: #dff6ff;
+-  opacity: 0;
+-  transition: opacity .15s ease;
+-  text-shadow: 0 1px 4px rgba(0,0,0,.9);
+-}
+-#charFade.slow #charFadeName { opacity: 1; }
+-#charFadeName img { height: 14px; width: auto; display: block; margin: 0 auto; }
++* { margin:0; padding:0; box-sizing:border-box; }
++
++html, body {
++  width:100%; height:100%; overflow:hidden;
++  background:#000;
++  font-family: "Microsoft YaHei", "微软雅黑", "PingFang SC", sans-serif;
++  -webkit-font-smoothing:none;
++  font-smooth:never;
++  color:#fff;
++  user-select:none;
++}
++
++/* 画面层：都铺在 #stage（800x450）里，靠 .active 淡入淡出 */
++.screen { position:absolute; inset:0; opacity:0; pointer-events:none; transition:opacity .5s; }
++.screen.active { opacity:1; pointer-events:auto; }
++
++
++/* ================= 800x450 舞台 ================= */
++#stage {
++  position:fixed; left:50%; top:50%;
++  width:800px; height:450px;
++  transform-origin:center center;
++  overflow:hidden;
++  background:#000;
++}
++
++/* ================= 开场动画 ================= */
++#introScreen { background:#000; cursor:pointer; }
++#introVideo {
++  position:absolute; inset:0;
++  width:100%; height:100%;
++  object-fit:cover;
++  background:#000;
++}
++#introHint {
++  position:absolute; right:26px; bottom:18px;
++  font-family: inherit !important; font-size:7.2px; letter-spacing:0.9px;
++  color:rgba(230,245,255,.55);
++  text-shadow:0 1px 3px rgba(0,0,0,.9);
++  animation:blink 2.4s infinite;
++}
++@keyframes blink { 0%,100%{opacity:.25;} 50%{opacity:.85;} }
++
++/* ================= 标题 ================= */
++#titleScreen { background:#000; }
++
++.title-bg {
++  position:absolute; inset:0;
++  background-image:url("assets/title.png");
++  background-size:cover;
++  background-position:center center;
++  background-repeat:no-repeat;
++}
++
++.title-logo {
++  position:absolute; left:50%; top:11.2%;
++  transform:translateX(-50%);
++  width:50%;
++  max-width:none;
++  pointer-events:none;
++  filter:drop-shadow(0 0 5.4px rgba(90,175,240,.45));
++}
++
++#mainMenu {
++  position:absolute; left:45.9%; top:49.4%;
++  display:flex; flex-direction:column; align-items:flex-start;
++  gap:1.3px; z-index:5;
++}
++
++#mainMenu button {
++  position:relative;
++  background:none; border:none; outline:none; cursor:pointer;
++  padding:0; line-height:0;
++  transition:transform .18s;
++}
++#mainMenu button img { display:block; width:75.2px; height:auto; }
++#mainMenu button .on { display:none; position:absolute; left:0; top:0; }
++#mainMenu button:hover .off { visibility:hidden; }
++#mainMenu button:hover .on { display:block; }
++#mainMenu button:hover { transform:translateX(1.8px); }
++
++/* 按钮底框：游戏原版 T0101（暗态常显，悬停变亮） */
++#mainMenu button::before {
++  content:"";
++  position:absolute; left:-62px; top:50%;
++  transform:translateY(-50%);
++  width:200px; height:17.5px;
++  background-image:url("assets/ui/menu_strip_off.png");
++  background-size:100% 100%;
++  background-repeat:no-repeat;
++  opacity:1;
++  z-index:-1;
++  transition:none;
++}
++#mainMenu button:hover::before {
++  background-image:url("assets/ui/menu_strip_on.png");
++}
++
++#mainMenu button.last { margin-top:35.4px; }
++
++/* Title Menu：游戏原版 T0201 第一格（288x40） */
++#titleMenuLabel {
++  position:absolute; left:310px; width:180px;
++  top:378.9px;
++  height:25px;
++  background-image:url("assets/ui/title_menu.png");
++  background-size:100% 100%;
++  background-repeat:no-repeat;
++  border:0; padding:0;
++  font-size:0; color:transparent; text-shadow:none;
++}
++
++#copyright {
++  position:absolute; right:1.2%; bottom:1.4%;
++  height:11.7px; width:auto;
++  opacity:.95;
++}
++
++/* ================= 对话 ================= */
++#gameScreen { background:#000; }
++
++/* 场景背景：两层双缓冲，#bgLayer 常驻当前图、#bgLayer2 只在交叉淡化时淡入（见 wt-fade.js）。
++   过渡时长由 JS 给（200~300ms，设置里可关），所以这里不写 transition。
++   两层都带同一层渐隐蒙版：淡化中途两个蒙版叠起来的透明度约等于一层，画面不会中途变亮。 */
++#bgLayer, #bgLayer2 {
++  position:absolute; inset:0; background-size:cover; background-position:center;
++  opacity:0; transition:none;
++}
++#bgLayer { opacity:1; }
++#bgLayer::after, #bgLayer2::after { content:""; position:absolute; inset:0;
++  background:linear-gradient(to bottom, rgba(0,8,18,.05) 0%, rgba(0,0,0,0) 55%, rgba(0,6,14,.18) 100%); }
++
++#lightLayer { position:absolute; inset:0; pointer-events:none; }
++#snowLayer { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
++.flake { position:absolute; top:-12px; border-radius:50%;
++  background:rgba(230,250,255,.9); box-shadow:0 0 8px rgba(170,230,255,.9);
++  animation:fall linear infinite; }
++@keyframes fall {
++  0% { transform:translateY(-20px) translateX(0); opacity:0; }
++  8% { opacity:.85; } 92% { opacity:.4; }
++  100% { transform:translateY(468px) translateX(40px); opacity:0; }
++}
++
++#spriteWrap { position:absolute; left:50%; bottom:0; transform:translateX(-50%);
++  height:450px; display:flex; align-items:flex-end; pointer-events:none; }
++#sprite { height:450px; max-width:768px; object-fit:contain;
++  opacity:0; transform:translateY(16px); transition:opacity .6s, transform .6s; }
++#sprite.show { opacity:1; transform:translateY(0); }
++
++/* 交叉淡化用的叠层：和 #sprite 对齐，只负责淡入新图；淡完就把主图换掉、这层归零 */
++#spriteGhost { position:absolute; left:50%; bottom:0; transform:translateX(-50%);
++  height:450px; max-width:768px; object-fit:contain;
++  opacity:0; pointer-events:none; }
++
++/* ---------- 对话框 ----------
++   位置/尺寸是十几轮像素测量后的定稿值（历史见 git）。分三层：
++     #msgBox          只负责尺寸和事件，不画背景
++     #msgBox::before  填充层（渐变 + WHITE ALBUM 水印），screen 叠上去
++     #msgBox::after   丝带层，单独一层才能跟着 OPTION 的 UI 透明度一起淡 */
++#msgWrap {
++  position:absolute; left:50%; right:auto; bottom:0;
++  transform:translateX(-50%);
++  width:780px; height:130px;      /* 780 * 208/1248，和素材 1:1 */
++  padding:0; z-index:20;
++}
++
++#namePlate {
++  position:absolute; left:21.3%; top:5.2%;
++  font-size:11.5px; letter-spacing:1.3px; color:#ffffff;
++  text-shadow:0 0.5px 1.1px rgba(0,18,38,.95), 0 0 1.8px rgba(0,10,26,.5);
++  z-index:1;
++}
++
++#msgBox {
++  position:relative; height:100%;
++  background-image:none !important;        /* 丝带在 ::after，不在这里画 */
++  background-size:100% 100%, 100% 100% !important;
++  background-repeat:no-repeat, no-repeat !important;
++  background-position:0 0, 0 0 !important;
++  background-color:transparent !important;
++  background-blend-mode:screen !important;
++  filter:none !important;
++  opacity:1;
++  cursor:pointer;
++}
++#msgBox .fill { display:none !important; }
++#msgBox .walogo { display:none !important; }
++
++#msgBox::before {
++  content:"";
++  position:absolute; inset:0;
++  background:url("assets/ui/msgbox_fill.png") 0 0 / 100% 100% no-repeat !important;
++  mix-blend-mode:screen !important;
++  opacity:calc(.9 * var(--ui-alpha, 1)) !important;
++  pointer-events:none;
++  z-index:0;
++}
++#msgBox::after {
++  content:"";
++  position:absolute; left:0; top:0; right:0; bottom:0;
++  background:url("assets/ui/msgbox_ribbon.png") 0 0 / 100% 100% no-repeat;
++  opacity:var(--ui-alpha, 1);
++  pointer-events:none;
++  z-index:0;
++}
++
++#msgText {
++  position:relative;
++  left:23.5%; right:10%; top:30.5%;
++  font-size:15.5px; line-height:1.5; letter-spacing:0;
++  color:#ffffff;
++  -webkit-text-stroke:0.5px rgba(12,40,68,.95);
++  paint-order:stroke fill;
++  text-shadow:0 0.5px 1px rgba(0,10,24,.7);
++  white-space:pre-wrap; word-break:break-word;
++  z-index:1;
++}
++#msgText.gdi { -webkit-text-stroke:0; text-shadow:none; }
++#msgText.gdi img { image-rendering:auto; }
++
++/* ---------- 底部工具栏 ---------- */
++#toolbar {
++  position:absolute; right:5.4px; bottom:4.5px; height:19.8px;
++  /* 右边留 10px：原来提示条靠 margin-left:10px 占着这块，
++     现在提示条改成绝对定位不占布局了，用 padding 把同样的内缩补回来，
++     否则整排按钮会比发布版往右挪约 10px。 */
++  background:none;
++  display:flex; align-items:center; justify-content:flex-end; gap:6.8px;
++  padding:0 10px 0 0; z-index:26;
++  font-size:11px; color:rgba(220,245,255,.9);
++}
++#toolbar .tb {
++  width:18px; height:19.3px;
++  display:flex; align-items:center; justify-content:center;
++  background:none; border:none; cursor:pointer;
++  transition:transform .16s, filter .16s;
++}
++#toolbar .tb img {
++  max-width:100%; max-height:100%;
++  display:block; pointer-events:none;
++  filter:drop-shadow(0 0.7px 2px rgba(0,25,50,.8));
++}
++#toolbar .tb img.hv { display:none; }
++#toolbar .tb:hover img.nm { display:none; }
++#toolbar .tb:hover img.hv { display:block; }
++#toolbar .tb:hover { transform:translateY(-1.1px) scale(1.12); filter:brightness(1.25); }
++#toolbar .tb.txt {
++  font-size:8.5px; color:#dff4ff; letter-spacing:0;
++  text-shadow:0 0.7px 1.8px rgba(0,20,40,.85);
++}
++#toolbar .tb.close { filter:none; }
++/* 固定宽度 + 不接收鼠标：提示文字出现/消失都不能改变整排按钮的位置，
++   否则会触发「提示出现→按钮左移→鼠标离开→提示消失→按钮弹回」的高速抖动 */
++#toolbar .hint { position:absolute; right:0; bottom:100%; margin-bottom:2px;
++  letter-spacing:1px; opacity:.8; white-space:nowrap; pointer-events:none; }
++/* 自动续说开着：这个按钮常亮（用类而不是内联 filter，免得盖掉 hover 的亮度） */
++#toolbar .tb.is-on { filter:drop-shadow(0 0 6px rgba(120,220,255,.95)); }
++
++/* ---------- 底部输入栏（定稿：原图直用，挪到右下角） ---------- */
++#inputBar { position:absolute; left:512px; top:208px; bottom:auto;
++  width:280px; height:65px; display:flex; align-items:flex-start; gap:0;
++  z-index:25; opacity:1; transition:opacity .25s; }
++#inputFrame {
++  position:absolute; left:0; top:0; width:100%; height:100%;
++  pointer-events:none;
++  opacity:calc(.92 * var(--ui-alpha, 1)) !important;
++}
++#inputBar:hover, #inputBar:focus-within { opacity:1; }
++#input { flex:1; position:relative; background:none; border:none;
++  height:100%; padding:0 14px 0 26px; color:#eaf9ff;
++  font-family: inherit !important; font-size:11px; letter-spacing:0.5px; outline:none; }
++#input:focus { border-color:rgba(160,240,255,.95); }
++
++/* 思考 / 发送按钮：只留文字和定位，三态底板在 ::before 上（文件末尾） */
++#thinkBtn, #sendBtn {
++  position:absolute; bottom:-22px; height:20px;
++  width:82px; padding:0 9px; flex:0 0 auto;
++  font-size:7.6px;
++  color:#f4fcff !important;
++  font-family: inherit !important;
++  text-shadow:0 1px 2px rgba(0,18,36,.95) !important;
++  background-image:none !important;
++  background-size:100% 300% !important;
++  background-repeat:no-repeat !important;
++  background-position:0 0 !important;
++  background-color:transparent !important;
++  border:0 !important; border-radius:0 !important;
++  box-shadow:none !important; outline:0 !important;
++  appearance:none !important; -webkit-appearance:none !important;
++  cursor:pointer; isolation:isolate;
++}
++#thinkBtn { right:94px !important; margin:0 !important;
++  line-height:1 !important; white-space:nowrap; }
++#sendBtn { right:0 !important; margin-right:0; letter-spacing:1.3px; }
++
++.choice::before, .choice::after {
++  content:""; position:absolute; top:50%; width:34px; height:34px;
++  transform:translateY(-50%);
++  background-image:url("assets/snowflake_right.png");
++  background-size:contain; background-repeat:no-repeat;
++  opacity:.9;
++}
++.choice::before { left:16px; }
++.choice::after { right:16px; }
++.choice:hover { filter:brightness(1.3); transform:scale(1.02); }
++
++
++
++
++/* ---------- 设置面板 ---------- */
++#cfgPanel {
++  position:fixed; inset:0; z-index:60; display:none;
++  align-items:center; justify-content:center;
++  background:rgba(0,6,14,.72);
++}
++#cfgPanel.show { display:flex; }
++.cfgCard {
++  width:min(680px, 736px); max-height:387px; overflow-y:auto;
++  background:linear-gradient(180deg, rgba(8,36,60,.98), rgba(3,16,30,.99));
++  border:1px solid rgba(120,205,250,.4); border-radius:4px;
++  padding:26px 30px; box-shadow:0 20px 60px rgba(0,0,0,.6);
++}
++.cfgTitle { font-size:19px; letter-spacing:5px; color:#dff6ff; margin-bottom:18px; }
++.cfgSec { margin-bottom:18px; }
++.cfgLbl { font-size:12px; color:#7fd4ff; letter-spacing:2px; margin-bottom:8px; }
++.cfgRow { display:flex; align-items:center; gap:10px; margin:6px 0; font-size:14px; }
++.cfgRow span { width:56px; color:#bfe6ff; }
++.cfgRow select { flex:1; background:rgba(2,20,36,.9); color:#eaf9ff;
++  border:1px solid rgba(120,205,250,.4); border-radius:2px; padding:5px 8px;
++  font-family: inherit !important; font-size:13px; }
++.cfgRow input[type=range] { flex:1; accent-color:#4fc3ff; }
++.cfgRow b { width:44px; text-align:right; color:#9fe0ff; font-weight:400; font-size:12px; }
++.cfgRow button { background:rgba(20,90,140,.7); color:#eaf9ff; font-family: inherit !important;
++  border:1px solid rgba(120,205,250,.45); border-radius:2px; padding:5px 14px;
++  font-size:12px; cursor:pointer; }
++.cfgRow button:hover { background:rgba(40,140,200,.85); }
++.cfgBtns { display:flex; gap:12px; justify-content:flex-end; margin-top:20px; }
++.cfgBtns button { padding:8px 26px; background:linear-gradient(180deg, rgba(40,150,210,.9), rgba(10,70,120,.95));
++  border:1px solid rgba(150,230,255,.6); border-radius:2px; color:#fff;
++  font-family: inherit !important; font-size:14px; letter-spacing:2px; cursor:pointer; }
++
++/* ---------- 翻页提示：对话框文字末尾的页面图标 ----------
++   原版 page_02 的 120 帧精灵（tools/bake_page_cursor.py 烤成一条横向图）：
++   60fps、2 秒一轮。位置和缩放由 game.js 按文字图的格子算（每字 28×32）。 */
++#pageCursor {
++  position: absolute;
++  left: 0; top: 0;
++  width: 28px; height: 28px;
++  background-image: url("assets/ui/text/page_cursor.png");
++  background-repeat: no-repeat;
++  background-size: 3360px 28px;
++  transform-origin: top left;
++  display: none;
++  pointer-events: none;
++  z-index: 2;
++  animation: pageCursorRun 2s steps(120) infinite;
++}
++@keyframes pageCursorRun {
++  from { background-position: 0 0; }
++  to   { background-position: -3360px 0; }
++}
++
++
++/* ===== 思维文字: 左上区域, 不进对话框 ===== */
++#thinkBox {
++  position: absolute;
++  left: 3.2%;
++  top: 15%;
++  right: 9%;                  /* 和 left+width 同时存在时 right 不参与布局，保留只为宽度约束一致 */
++  width: 21%;
++  max-height: 34%;
++  overflow: hidden;
++  font-size: 10.5px;
++  line-height: 1.5;
++  color: #8fd0ef;
++  font-style: italic;
++  pointer-events: none;
++  text-shadow: 0 1px 3px rgba(0,10,24,.95), 0 0 6px rgba(0,20,40,.8);
++  opacity: .95;
++  word-break: break-all;
++  white-space: pre-wrap;
++  display: -webkit-box;
++  -webkit-box-orient: vertical;
++  -webkit-line-clamp: 7;      /* 最多 7 行, 超出显示省略号 */
++  z-index: 5;
++}
++#thinkBox.hidden { display: none !important; }
++
++
++
++
++
++/* ===================== 历史对话（按截图逐像素实测） ===================== */
++#historyPanel { position:absolute; inset:0; z-index:60; display:none; }
++#historyPanel.show { display:block; }
++/* 打开历史面板时收起其它 UI */
++body.histOpen #msgWrap,
++body.histOpen #inputBar,
++body.histOpen #toolbar { display:none !important; }
++
++/* 顶栏: 通栏，下沿 y=4.04%（游戏实测 62/1536） */
++#historyHead { position:absolute; left:0; right:0; top:0; height:auto; line-height:0; }
++#historyHead img { width:100%; height:auto; display:block; }
++
++/* 面板: x 14.25% ~ 83.15%, y 4.04% ~ 93.68% */
++#historyBox {
++  position:absolute; left:14.25%; right:16.85%; top:4.028%; bottom:6.250%;
++  background:url("assets/ui/history/panel.png") left top / 100% 100% no-repeat;
++}
++#historyBody { position:absolute; inset:0; }
++#historyList {
++  position:absolute; top:0; bottom:0; left:0; right:9.2%;   /* 右侧留出滑条宽度 */
++  overflow-y:auto; overflow-x:hidden;
++  padding: 4px 10px 6px 38.4px;
++  scrollbar-width:none; -ms-overflow-style:none;
++}
++#historyList::-webkit-scrollbar { width:0; height:0; }
++
++/* 记录 */
++.hline { display:flex; align-items:flex-start; margin:0 0 7px; }
++.hline .ico { flex:0 0 auto; width:16.1px; margin:3px 7.3px 0 0; line-height:0; cursor:default; }
++.hline .ico img { width:100%; display:block; }
++.hline .body { flex:1 1 auto; min-width:0; }
++.hline .who { display:block; font-size:18px; color:#eaf7ff; line-height:26px !important;
++  letter-spacing:.06em; margin-bottom:0;
++  text-shadow:0 1px 2px rgba(0,10,24,.95); }
++/* uitext 生成的图片默认 inline-block，会撑高行盒导致行距不齐，改成块级 */
++.hline .who img, .hline .txt img { display:block !important; }
++.hline .txt { font-size:18px; line-height:26px !important; text-indent:10.9px; color:#eaf7ff;
++  text-shadow:0 1px 2px rgba(0,10,24,.95); white-space:pre-wrap; }
++.hline.me .who { color:#ffd9e2; }
++.hline.me .txt { color:#f7ebf0; }
++
++/* 滑条: 在面板内部靠右，x 81.06%~82.60%，y 与面板同高 */
++#historyScroll { -webkit-app-region:no-drag;
++  /* 实测(模板匹配 0.98): x 80.88% 宽 2.01%; y 4.43%~93.36% */
++  position:absolute; left:80.88%; width:2.01%;
++  top:4.43%; bottom:6.64%;
++  display:flex; flex-direction:column; align-items:center;
++}
++.hsArrow { width:100%; padding:0; border:0; background:none; cursor:pointer; line-height:0; }
++.hsArrow img { width:100%; display:block; }
++.hsArrow .on { display:none; }
++.hsArrow:hover .off { display:none; }
++.hsArrow:hover .on { display:block; }
++
++#hsTrack { position:relative; flex:1 1 auto; width:100%; margin:1px 0; min-height:20px; }
++.hsTrackImg { width:100%; height:100%; display:block; }
++/* 滑块: 宽 52% 滑条宽、左缩进 24%，高度由 JS 按轨道比例设定 */
++#hsThumb { -webkit-app-region:no-drag; position:absolute; left:24%; width:52%; top:0; height:40px; cursor:grab; }
++#hsThumb img { width:100%; height:100%; display:block; }
++#hsThumb:active { cursor:grabbing; }
++
++/* 底栏: 上沿 y=93.68% */
++#historyFoot { position:absolute; left:0; right:0; bottom:0; height:auto; line-height:0; }
++#historyFoot img { width:100%; height:auto; display:block; }
++
++/* EXIT: 底栏右侧 */
++#historyExit {
++  position:absolute; right:2.4%; bottom:1.3%; height:3.2%;
++  padding:0; border:0; background:none; cursor:pointer; line-height:0;
++}
++#historyExit img { height:100%; width:auto; display:block; }
++#historyExit .on { display:none; }
++#historyExit:hover .off { display:none; }
++#historyExit:hover .on { display:block; }
++
++/* 对话界面底部蓝色微光条：素材 sys_00013.tga（1280x48）
++   alpha 自 0 递增到 175，贴在画面最下沿形成渐亮 */
++#glowBottom {
++  position: absolute;
++  left: 0;
++  bottom: 0;
++  width: 800px;
++  height: 30px;
++  z-index: 20;
++  pointer-events: none;
++}
++#glowBottom img { width: 100%; height: 100%; display: block; }
++
++/* 长句折行容器：每行一个 .txt */
++.hline .txtwrap { min-width:0; }
++
++/* 回想：悬停/重播时整句变黄。滤镜参数是解出来的：
++   我们的字芯 RGB(228,228,228) 经过 sepia(1) saturate(1.73) brightness(.98)
++   正好变成 RGB(250,250,164)，即游戏原图里黄字字芯色 #FAF6A4 */
++.hline.hl .who img, .hline.hl .txt img {
++  filter: sepia(1) saturate(2.05) brightness(1);
++}
++/* 对话界面按钮里的字模：按各自 CSS 字号换算高度 */
++#thinkBtn img, #sendBtn img { height: 8.5px !important; width: auto !important; display: inline-block; vertical-align: middle; }
++
++/* 动作按钮：标签图 + 值图，按 7.6px 字号换算 */
++#thinkBtn img.lbl { height: 8.5px !important; width: auto !important; vertical-align: middle; }
++#thinkBtn img.val { height: 8.5px !important; width: auto !important; vertical-align: middle; margin-left: 1px; }
++
++/* ===== OPTION 1「窗口透明度（普通场景）」=====
++   只淡 UI 底图，字模（正文 / 名字 / 占位符 / 按钮标签）一点不动。
++   数值由 game.js 的 __applyUiPrefs() 写进 :root 的 --ui-alpha（0~1）。
++
++   对话框的 UI 是两层：丝带层在 #msgBox::after，填充层在 #msgBox::before，
++   两层的 opacity 都乘上了 --ui-alpha（见文件前部）。
++   发送 / 动作按钮的底板也挪到 ::before，跟着一起淡。 */
++#thinkBtn::before, #sendBtn::before {
++  content: "";
++  position: absolute; left: 0; top: 0; right: 0; bottom: 0;
++  z-index: -1;
++  background-image: url("assets/ui/btn_3state.png");
++  background-size: 100% 300%;
++  background-repeat: no-repeat;
++  background-position: 0 0;
++  opacity: var(--ui-alpha, 1);
++  pointer-events: none;
++}
++#thinkBtn:active::before, #sendBtn:active::before { background-position: 0 50%; }
++#thinkBtn.released::before, #sendBtn.released::before { background-position: 0 100%; }
++
++/* ===== 右下角：本条 / 累计 token 与花费 =====
++   文案和数字都是烤好的字模（tools/bake_cost_ui.py），前端只拼图，不再请求 /api/text
++   位置：发送按钮下方偏右（用户指定） */
++#costBar {
++  position: absolute;
++  right: 72px;
++  bottom: 101px;
++  z-index: 24;
++  pointer-events: none;
++  opacity: .95;
++}
++#costBar .row {
++  display: flex;
++  justify-content: flex-end;
++  align-items: center;
++  height: 12px;
++  margin-top: 2px;
++  gap: 3px;
++}
++#costBar .row img { height: 12px; width: auto; display: block; }
++#costBar .num { display: inline-flex; align-items: center; margin: 0 1px; }
++#costBar .row img.lb { margin: 0 .5px; }
++#costBar .num img { height: 12px; width: auto; display: block; margin: 0 .4px; }
++
++/* ===== 切角色过渡：整幕压黑 =====
++   层级：.uiScreen 是 120，这里 200，标题栏 2147483000 —— 只盖舞台，不盖窗口按钮。
++   流程见 sp-char.js：压黑 180ms → 换人 → 淡回 200ms；慢的时候中间显示角色名。 */
++#charFade {
++  position: absolute; inset: 0;
++  background: #000;
++  opacity: 0;
++  pointer-events: none;
++  transition: opacity .18s ease;
++  z-index: 200;
++}
++#charFade.on {
++  opacity: 1;
++  pointer-events: auto;      /* 过渡期间挡住点击，别在换人的时候发消息 */
++}
++#charFadeName {
++  position: absolute; left: 0; right: 0; top: 50%;
++  transform: translateY(-50%);
++  text-align: center;
++  font-size: 14px;
++  color: #dff6ff;
++  opacity: 0;
++  transition: opacity .15s ease;
++  text-shadow: 0 1px 4px rgba(0,0,0,.9);
++}
++#charFade.slow #charFadeName { opacity: 1; }
++#charFadeName img { height: 14px; width: auto; display: block; margin: 0 auto; }
++
++/* ---------- 左下角：自动模式指示 ----------
++   小白条一直显示（原版 AUTO 行的左侧图标），绿色 ▶ 只在自动续说开着时显示。 */
++#autoHud {
++  position: absolute; left: 14px; bottom: 8px;
++  display: flex; align-items: flex-end; gap: 5px;
++  pointer-events: none; z-index: 27;
++}
++#autoHud img { display: block; }
++#autoBar  { width: 13px; height: auto; opacity: .92; }
++/* 注意选择器要比 #autoHud img 更具体，否则 display:none 会被它盖掉 */
++#autoHud #autoIcon { width: 15px; height: auto; display: none; }
++body.autoOn #autoHud #autoIcon { display: block; }
++/* ON 用原素材（16×10），跟着绿色 ▶ 一起显隐；按比例缩到 10px 宽 */
++#autoHud #autoOnLabel { display: none; width: 10px; height: auto; margin-left: 2px; }
++body.autoOn #autoHud #autoOnLabel { display: block; }
+diff --git a/program/src/ui/index.html b/program/src/ui/index.html
+index f0b9002..e016182 100644
+--- a/program/src/ui/index.html
++++ b/program/src/ui/index.html
+@@ -7,12 +7,12 @@
+ <link rel="stylesheet" href="screens-base.css?v=202611051348">
+ <link rel="stylesheet" href="opt-screen.css?v=202611051348">
+ <link rel="stylesheet" href="save-screen.css?v=202611051348">
+-<link rel="stylesheet" href="game450.css?v=202611051348">
++<link rel="stylesheet" href="game450.css?v=202611071230">
+ <link rel="stylesheet" href="unifont.css?v=202611051348">
+ <link rel="stylesheet" href="opt.css?v=202611051348">
+   <link rel="stylesheet" href="menubar.css?v=202611051348">
+ <link rel="stylesheet" href="special.css?v=202611051348">
+-<link rel="stylesheet" href="choice.css?v=202611052330e">
++<link rel="stylesheet" href="choice.css?v=202611071140">
+ </head>
+ <body>
+ <div id="stage">
+@@ -271,7 +271,13 @@
+ 
+   <div id="glowBottom"><img src="assets/ui/glow_bottom.png" alt=""></div>
+   <div id="costBar"><div class="row"><img class="lb" src="assets/ui/text/cost_now.png" alt=""><img class="lb" src="assets/ui/text/cost_token.png" alt=""><span class="num" id="costNowT"></span><img class="lb" src="assets/ui/text/cost_sep.png" alt=""><img class="lb" src="assets/ui/text/cost_spend.png" alt=""><img class="lb" src="assets/ui/text/cost_yen.png" alt=""><span class="num" id="costNowC"></span></div><div class="row"><img class="lb" src="assets/ui/text/cost_cum.png" alt=""><img class="lb" src="assets/ui/text/cost_token.png" alt=""><span class="num" id="costTotalT"></span><img class="lb" src="assets/ui/text/cost_sep.png" alt=""><img class="lb" src="assets/ui/text/cost_spend.png" alt=""><img class="lb" src="assets/ui/text/cost_yen.png" alt=""><span class="num" id="costTotalC"></span></div></div>
+-  <div id="toolbar">
++    <!-- 左下角：小白条常显；绿色 ▶ 只在自动续说开着时出现（素材出自 sys_00011） -->
++  <div id="autoHud">
++    <img id="autoBar" src="assets/ui/auto/bar.png" alt="">
++    <img id="autoIcon" src="assets/ui/auto/auto_on.png" alt="">
++    <img id="autoOnLabel" src="assets/ui/auto/on_green.png" alt="">   <!-- 原素材里的绿色 ON，不是自己写的字 -->
++  </div>
++<div id="toolbar">
+     <div class="tb" data-act="qsave"><img class="nm" src="assets/tb2/save_0.png" alt=""><img class="hv" src="assets/tb2/save_1.png" alt=""></div>
+     <div class="tb" data-act="qload"><img class="nm" src="assets/tb2/qsave_0.png" alt=""><img class="hv" src="assets/tb2/qsave_1.png" alt=""></div>
+     <div class="tb" data-act="config"><img class="nm" src="assets/tb2/config_0.png" alt=""><img class="hv" src="assets/tb2/config_1.png" alt=""></div>
+@@ -304,12 +310,13 @@
+ <script src="wt-audio.js?v=202611051348"></script>
+ <script src="wt-sprite.js?v=202611062115"></script>
+ <script src="wt-hotreload.js?v=2026110521202611051550"></script>
+-<script src="wt-voice.js?v=202611062005"></script>
+-<script src="wt-text.js?v=202611051348"></script>
++<script src="wt-voice.js?v=202611071230"></script>
++<script src="wt-text.js?v=202611071230"></script>
+ <script src="wt-backlog.js?v=202611062300"></script>
+ <script src="wt-choices.js?v=202611061130"></script>
+-<script src="wt-chat.js?v=202611062300"></script>
+-<script src="wt-session.js?v=202611061245"></script>
++<script src="wt-chat.js?v=202611071230"></script>
++  <script src="wt-auto.js?v=202611071230"></script>
++  <script src="wt-session.js?v=202611071230"></script>
+ <script src="wt-cost.js?v=202611051348"></script>
+ <script src="wt-mood.js?v=202611062115"></script>
+ <script src="wt-gdi.js?v=202611051348"></script>
+diff --git a/program/src/ui/wt-auto.js b/program/src/ui/wt-auto.js
+new file mode 100644
+index 0000000..0e65fe9
+--- /dev/null
++++ b/program/src/ui/wt-auto.js
+@@ -0,0 +1,228 @@
++/* wt-auto.js —— 自动续说（工具栏 ▶）
++ *
++ * 需求（2026-11-07 用户）：
++ *   · 开着时不等人回话，她接着自己往下说；
++ *   · **最多只生成「当前正在播的那句」再往后的三条**，不许无限生成；
++ *   · 生成到三条就停：停在当前这句，之后像 galgame 一样**左键点一下出一句**，
++ *     出完这三条，输入框重新出现；
++ *   · 语音没播完不推进下一句（以前会抢话）。
++ *
++ * 做法：队列 + 上限。队列里放「已生成但还没显示」的回复。
++ *   显示一句 → 等这句语音播完（renderQueued 的 promise）→ 还开着就继续补队列。
++ *   补满 CAP 条就关掉自动模式、停在当前这句；之后左键一句句放完。
++ */
++(function () {
++  var WA2 = window.WA2 = window.WA2 || {};
++  var $ = (WA2.util && WA2.util.$) || function (id) { return document.getElementById(id); };
++
++  var CAP = 3;                 // 最多预生成三条
++  var GAP_MS = 900;            // 句与句之间的停顿
++
++  var state = {
++    on: false,
++    queue: [],                 // 已生成、待显示的回复
++    generating: false,
++    showing: false,            // 当前这句还在播
++    timer: null,
++    errors: 0,
++    budget: 0                  // 这次开启还能预生成几条
++  };
++
++  function btn() {
++    return document.querySelector('#toolbar .tb[data-act="play"]');
++  }
++
++  function toast(msg, ms) {
++    try { if (window.__toast) window.__toast(msg, ms || 2400); } catch (e) {}
++  }
++
++  function paint() {
++    var b = btn();
++    if (b) b.classList.toggle("is-on", !!state.on);
++    /* 左下角那块：小白条常在，绿色 ▶ 只在自动模式出现 */
++    try { document.body.classList.toggle("autoOn", !!state.on); } catch (e) {}
++  }
++
++  function savePref() {
++    try { window.App && window.App.setPref && window.App.setPref("autoContinue", state.on); } catch (e) {}
++  }
++
++  function clearTimer() {
++    if (state.timer) { clearTimeout(state.timer); state.timer = null; }
++  }
++
++  function chat() { return WA2.chat || {}; }
++
++  function busy() {
++    try { return !!(chat().isBusy && chat().isBusy()); } catch (e) { return false; }
++  }
++
++  function blocked() {
++    if (busy()) return "正在打字";
++    if (document.body.classList.contains("uiHidden")) return "界面已隐藏";
++    try {
++      var c = WA2.choices && WA2.choices.pendingOptions ? WA2.choices.pendingOptions() : null;
++      if (c && c.length) return "有选项";
++    } catch (e) {}
++    try { if (window.__charSwitching) return "切角色中"; } catch (e) {}
++    return "";
++  }
++
++  function stop(reason, keepQueue) {
++    clearTimer();
++    var was = state.on;
++    state.on = false;
++    paint();
++    savePref();
++    if (!keepQueue) state.queue.length = 0;
++    if (was && reason) toast("自动续说已关闭（" + reason + "）");
++  }
++
++  /* 显示队列里的下一条；队列空了就把输入框交还玩家 */
++  function showNext() {
++    if (state.showing) return false;
++    var d = state.queue.shift();
++    if (!d) return false;
++    state.showing = true;
++    var p = null;
++    try { p = chat().renderQueued ? chat().renderQueued(d) : null; } catch (e) { p = null; }
++    /* 关键：这句正在播的时候就把后面几条预生成出来（否则队列永远是空的，
++       因为生成只在“这句播完”之后才发生） */
++    if (state.on) pump();
++    Promise.resolve(p).then(function () {
++      state.showing = false;
++      if (state.on) {
++        if (state.queue.length) schedule(GAP_MS);
++        else pump();
++      } else if (!state.queue.length) {
++        backToPlayer();
++      }
++    }).catch(function () { state.showing = false; });
++    return true;
++  }
++
++  function backToPlayer() {
++    try { document.body.classList.remove("autoOn"); } catch (e) {}
++    try { var i = $("input"); if (i) i.focus(); } catch (e) {}
++  }
++
++  function schedule(ms) {
++    clearTimer();
++    if (!state.on) return;
++    state.timer = setTimeout(function () {
++      state.timer = null;
++      if (!state.on) return;
++      var why = blocked();
++      if (why) { stop(why); return; }
++      if (state.queue.length) showNext();
++      else pump();
++    }, ms === undefined ? GAP_MS : ms);
++  }
++
++  /* 补队列，直到 CAP 条 */
++  function pump() {
++    if (!state.on) return false;
++    if (state.budget <= 0) {
++      /* 三条预生成完了：停在当前这句，剩下靠左键一句句放 */
++      stop("已预生成后面 " + CAP + " 句，点左键继续", true);
++      return false;
++    }
++    if (state.generating) return false;
++    var why = blocked();
++    if (why) { stop(why); return false; }
++    if (!chat().generateContinue) return false;
++
++    state.generating = true;
++    chat().generateContinue().then(function (d) {
++      state.generating = false;
++      if (!d) {
++        state.errors++;
++        if (state.errors >= 3) stop("连续出错");
++        return;
++      }
++      state.errors = 0;
++      state.budget--;
++      state.queue.push(d);
++      if (!state.showing) showNext();
++      /* 还有预算就继续补；用尽则立刻停（当前这句照常播完） */
++      if (state.on) {
++        if (state.budget > 0) pump();
++        else stop("已预生成后面 " + CAP + " 句，点左键继续", true);
++      }
++    }).catch(function () {
++      state.generating = false;
++      state.errors++;
++      if (state.errors >= 3) stop("连续出错");
++    });
++    return true;
++  }
++
++  function start() {
++    if (state.on) return true;
++    state.queue.length = 0;
++    state.errors = 0;
++    /* 预算 = 当前这句之外还要预生成的条数（第一条是立刻要播的，不占预算） */
++    state.budget = CAP + 1;
++    state.on = true;
++    paint();
++    savePref();
++    toast("自动续说已开启（最多预生成 3 句）", 2400);
++    pump();
++    return true;
++  }
++
++  function toggle() {
++    if (state.on) { stop(); return false; }
++    return start();
++  }
++
++  /* wt-chat 每句语音播完后调 */
++  function lineDone() {
++    if (state.on) {
++      if (state.queue.length) schedule(GAP_MS);
++      else pump();
++      return true;
++    }
++    if (!state.queue.length) backToPlayer();
++    return false;
++  }
++
++  /* 左键点画面：还有预生成的句子就放下一句（galgame 手感） */
++  function onStageClick(e) {
++    if (state.on || state.showing || !state.queue.length || busy()) return;
++    var t = e.target;
++    if (t && t.closest && t.closest('#toolbar, #inputBar, #menuBar, .choiceWrap')) return;
++    e.preventDefault();
++    e.stopPropagation();
++    showNext();
++  }
++
++  function init() {
++    var b = btn();
++    if (b) {
++      b.addEventListener("click", function () { toggle(); });
++      delete b.dataset.tip;
++    }
++    try {
++      var p = window.App && window.App.getPrefs ? window.App.getPrefs() : {};
++      state.on = !!p.autoContinue;
++    } catch (e) {}
++    paint();
++    if (state.on) pump();
++    document.addEventListener("click", onStageClick, true);
++  }
++
++  var api = {
++    toggle: toggle, start: start, stop: stop, pump: pump, lineDone: lineDone,
++    showNext: showNext, isOn: function () { return state.on; },
++    queueLen: function () { return state.queue.length; }
++  };
++  WA2.auto = api;
++  WA2.register && WA2.register("auto", api);
++
++  if (document.readyState === "loading") {
++    document.addEventListener("DOMContentLoaded", init);
++  } else {
++    init();
++  }
++})();
+diff --git a/program/src/ui/wt-backlog.js b/program/src/ui/wt-backlog.js
+index f391bf7..b4e6e6e 100644
+--- a/program/src/ui/wt-backlog.js
++++ b/program/src/ui/wt-backlog.js
+@@ -94,7 +94,10 @@
+   let backlogPlayingRow = null;
+   function replayBacklogVoice(row) {
+     const ja = (row.dataset.ja || "").trim();
+-    if (!ja || !window.__voiceOk) return;
++    /* 以前这里还要 window.__voiceOk —— 那是页面加载时查一次的标志，
++       语音服务中途重启/没就绪就永远 false，点了回想一点反应都没有（连请求都不发）。
++       现在不拦：真没就绪服务端会返回 503，界面会给出提示。 */
++    if (!ja) return;
+     if (WA2.perf && !WA2.perf.can("REPLAYING")) return;   // 切角色 / 流式输出中不许重播
+     if (WA2.perf) { WA2.perf.interrupt("REPLAYING"); WA2.perf.begin("REPLAYING"); }
+     if (backlogPlayingRow && backlogPlayingRow !== row) {
+diff --git a/program/src/ui/wt-chat.js b/program/src/ui/wt-chat.js
+index c3ac871..27c773e 100644
+--- a/program/src/ui/wt-chat.js
++++ b/program/src/ui/wt-chat.js
+@@ -5,6 +5,97 @@
+   var WA2 = window.WA2 = window.WA2 || {};
+   var $ = (WA2.util && WA2.util.$) || function (id) { return document.getElementById(id); };
+ 
++  /* 渲染一条后端回复：更新历史/立绘/BGM/语音，返回「语音播完」的 Promise。
++     自动续说也走这里（先 generateContinue 预生成，再 renderQueued 显示）。 */
++  async function applyServerReply(d) {
++    if (d && d.usage) { try { (WA2.cost && WA2.cost.render ? WA2.cost.render : window.renderCost)(d.usage); } catch (e) {} }
++    if (d && d.error) { $("msgText").textContent = "[错误] " + d.error; return false; }
++
++      if (d && d.usage) { try { (WA2.cost && WA2.cost.render ? WA2.cost.render : window.renderCost)(d.usage); } catch (e) {} }
++      if (d.error) { $("msgText").textContent = "[错误] " + d.error; return; }
++      /* #24：静默降级会让人以为云端模型突然变笨了，所以降级要说一声；
++         预算提醒也搭这趟车（后端只在到 80% / 超额时才给这句话） */
++      try {
++        if (d.degraded && window.__toast) {
++          window.__toast("云端不可用（" + (d.degrade_reason || "错误") + "），这一轮用的是本地模型", 3200);
++        }
++        if (d.budget_warn && window.__toast) window.__toast(d.budget_warn, 4000);
++      } catch (e) {}
++      const reply = (d.reply || "").trim();
++        const replyZh = (d.reply_zh || "").trim();
++        const actZh = (d.action_zh || "").trim();
++    window.__lastEmo = (d.emotion || "").trim();   // 服务端给的情绪标签
++    window.__nextScene = (d.bg || "").trim();      // 服务端已按文件名标签匹配好；没匹配上就是空
++    window.__nextOutfit = (d.outfit || "").trim(); // 只有明确换衣服才有值
++    window.__lastThinking = (d.thinking || "").trim();
++    window.__lastAction = (d.action_zh || d.action || "").trim();
++    /* 当前是不是成人场面（后端判定）：写在 body 上，回想重放旧句时要读它（不新增全局） */
++    try { document.body.dataset.hscene = d.hscene ? "1" : "0"; } catch (e) {}
++    renderThinking();
++      history.push({ role: "assistant", content: reply });
++      window.__history = history;
++      // 对话框显示中文（有译文用译文），历史记录也显示中文
++      const shown = replyZh ? ("「" + replyZh.replace(/^「|」$/g, "") + "」") : reply;
++      window.__speakJa = replyZh ? reply.replace(/^「|」$/g, "") : "";
++      /* 中日对照：content 保留语言模型原句（含 action/emotion 未过滤），zh 存翻译模型原样输出 */
++      history[history.length - 1].zh = replyZh;
++      history[history.length - 1].emo = window.__lastEmo || "";   /* 重播要按当时的情绪算缓存 key */
++      addHistory("assistant", shown, reply, window.__lastEmo || "");   /* 三参：日文原句；四参：当时的情绪 */
++      // 先合成语音；语音没准备好就先不出文字，等语音出来一起出
++      try { if (WA2.backlog && WA2.backlog.setVoiceOnLast) WA2.backlog.setVoiceOnLast(window.__lastVoiceReq); } catch (e) {}
++      const mood = (window.__lastEmo || detectMood(shown));
++      /* 文字、立绘、背景在**语音开始播放**那一刻一起出（不能等播完） */
++      let _rendered = false;
++      const renderNow = function () {
++        if (_rendered) return;
++        _rendered = true;
++        try {
++          const _want = window.__lockOutfit ? "" : (window.__nextOutfit || "");
++          /* 被「锁定场景/锁定服装」挡住时要说一声 —— 否则表现就是「场景和立绘不自动切换」，
++             但界面上完全看不出原因（那两个开关在右键菜单里） */
++          if (window.__nextScene && window.__lockScene && !window.__lockSceneWarned) {
++            window.__lockSceneWarned = 1;
++            try { (window.__toast || function () {})("场景已锁定，不会自动切换（右键菜单可解锁）", 3000); } catch (e) {}
++          }
++          if (window.__nextOutfit && window.__lockOutfit && !window.__lockOutfitWarned) {
++            window.__lockOutfitWarned = 1;
++            try { (window.__toast || function () {})("服装已锁定，不会自动切换（右键菜单可解锁）", 3000); } catch (e) {}
++          }
++          if (window.__nextScene && !window.__lockScene) {
++            setBg(window.__nextScene);
++            /* 换场景给个短提示：没看到这条就说明后端这轮没给场景标签 */
++            try {
++              if (window.__lastSceneToasted !== window.__nextScene) {
++                window.__lastSceneToasted = window.__nextScene;
++                (window.__toast || function () {})("场景：" + window.__nextScene, 1600);
++              }
++            } catch (e) {}
++            try { console.info("[scene]", window.__nextScene); } catch (e) {}
++          }
++          window.__nextScene = "";
++          window.__nextOutfit = "";
++          setSpriteByScene((WA2.session && WA2.session.currentBg ? WA2.session.currentBg() : "") || "classroom", mood, true, _want);
++          showReply(shown);
++        } catch (e) {}
++      };
++      const voiceDone = speakReply(reply, renderNow).then(function () {
++        renderNow();          /* 没有语音 / 播失败时兜底：文字照样要出 */
++      });
++      // 立绘表情随情绪变，服装与场景只在模型明确标记时切换
++      // BGM 按累积氛围切换，不随单句变。
++      // 注意要喂**中文**那侧：detectMood 的规则全是中文词，喂日语原文永远判成 calm。
++      // 同时把模型给的 <emotion> 一起传进去 —— BGM 优先信它
++      // （毒舌是她日常嘴硬、算 calm；只有「沉重」才切冰之刃）。
++      accumulateMood(replyZh || shown, window.__lastEmo || "");
++      sessionSave();          // 自动存档
++      turnCount++;
++
++      /* 等这句语音真的播完，再告诉自动模式 —— 否则会抢下一句 */
++      try { await voiceDone; } catch (e) {}
++      try { if (WA2.auto && WA2.auto.lineDone) WA2.auto.lineDone(); } catch (e) {}
++    return true;
++  }
++
+   async function send() {
+     if (window.__charSwitching) return;      // 切角色过渡中：先别发，等新角色就位
+     /* 新消息先打断重播：回想里正在播的那句要停，状态机也清掉 */
+@@ -15,9 +106,9 @@
+     }
+     const inp = $("input");
+     const text = inp.value.trim();
+-    if (!text || typing) return;
++    if (typing || !text) return;
+     inp.value = "";
+-
++    if (WA2.auto && WA2.auto.isOn && WA2.auto.isOn()) WA2.auto.stop();   /* 玩家自己发话就退出自动 */
+     addHistory("user", text);
+     history.push({ role: "user", content: text });
+     window.__history = history;      // 用户消息也要同步到全局，否则存档规则读到的是旧长度
+@@ -41,71 +132,24 @@
+       // 不写死模型: 只有用户在设置里明确选过才传, 否则由后端用 DEFAULT_MODEL
+         // 注意：整段历史都发给后端 —— 裁剪/记忆书由后端按 token 预算决定（前端不砍）
+         const body = { messages: history.map(function (m) { return { role: m.role, content: m.content }; }) };
++
+         if (act.model) body.model = act.model;
+       if (act.url) body.base_url = act.url;
+       // 让后端做一次剧本检索：和这句话相关的「原作里发生过的事」会单独拼进 system
+       body.memory = true;
+       // 当前背景一并带上：模型只说地点没说时间时，新场景沿用现在的时段（白天/晚上）
+-      if (currentBg) body.bg = currentBg;
++      var _bgNow = (WA2.session && WA2.session.currentBg) ? WA2.session.currentBg() : "";
++      if (_bgNow) body.bg = _bgNow;
+       if (WA2.state.outfit) body.outfit = WA2.state.outfit;
+       try { var _pm = localStorage.getItem("app_period") || "auto"; if (_pm !== "auto") body.period = _pm; } catch (e) {}
+       return body;
+     })()),
+       });
+       const d = await r.json();
+-      if (d && d.usage) { try { (WA2.cost && WA2.cost.render ? WA2.cost.render : window.renderCost)(d.usage); } catch (e) {} }
+-      if (d.error) { $("msgText").textContent = "[错误] " + d.error; return; }
+-      /* #24：静默降级会让人以为云端模型突然变笨了，所以降级要说一声；
+-         预算提醒也搭这趟车（后端只在到 80% / 超额时才给这句话） */
+-      try {
+-        if (d.degraded && window.__toast) {
+-          window.__toast("云端不可用（" + (d.degrade_reason || "错误") + "），这一轮用的是本地模型", 3200);
+-        }
+-        if (d.budget_warn && window.__toast) window.__toast(d.budget_warn, 4000);
+-      } catch (e) {}
+-      const reply = (d.reply || "").trim();
+-        const replyZh = (d.reply_zh || "").trim();
+-        const actZh = (d.action_zh || "").trim();
+-    window.__lastEmo = (d.emotion || "").trim();   // 服务端给的情绪标签
+-    window.__nextScene = (d.bg || "").trim();      // 服务端已按文件名标签匹配好；没匹配上就是空
+-    window.__nextOutfit = (d.outfit || "").trim(); // 只有明确换衣服才有值
+-    window.__lastThinking = (d.thinking || "").trim();
+-    window.__lastAction = (d.action_zh || d.action || "").trim();
+-    /* 当前是不是成人场面（后端判定）：写在 body 上，回想重放旧句时要读它（不新增全局） */
+-    try { document.body.dataset.hscene = d.hscene ? "1" : "0"; } catch (e) {}
+-    renderThinking();
+-      history.push({ role: "assistant", content: reply });
+-      window.__history = history;
+-      // 对话框显示中文（有译文用译文），历史记录也显示中文
+-      const shown = replyZh ? ("「" + replyZh.replace(/^「|」$/g, "") + "」") : reply;
+-      window.__speakJa = replyZh ? reply.replace(/^「|」$/g, "") : "";
+-      /* 中日对照：content 保留语言模型原句（含 action/emotion 未过滤），zh 存翻译模型原样输出 */
+-      history[history.length - 1].zh = replyZh;
+-      history[history.length - 1].emo = window.__lastEmo || "";   /* 重播要按当时的情绪算缓存 key */
+-      addHistory("assistant", shown, reply, window.__lastEmo || "");   /* 三参：日文原句；四参：当时的情绪 */
+-      // 先合成语音；语音没准备好就先不出文字，等语音出来一起出
+-      try { if (WA2.backlog && WA2.backlog.setVoiceOnLast) WA2.backlog.setVoiceOnLast(window.__lastVoiceReq); } catch (e) {}
+-      speakReply(reply).then(() => {
+-        // 场景/服装只在模型明确标记时才切，且与文字同一时刻出现
+-        const _want = window.__lockOutfit ? "" : (window.__nextOutfit || "");
+-        if (window.__nextScene && !window.__lockScene) { setBg(window.__nextScene); }
+-        window.__nextScene = "";
+-        window.__nextOutfit = "";
+-        setSpriteByScene(currentBg || "classroom", mood, true, _want);
+-        showReply(shown);
+-      });
+-
+-      const mood = (window.__lastEmo || detectMood(shown));
+-      // 立绘表情随情绪变，服装与场景只在模型明确标记时切换
+-      // BGM 按累积氛围切换，不随单句变。
+-      // 注意要喂**中文**那侧：detectMood 的规则全是中文词，喂日语原文永远判成 calm。
+-      // 同时把模型给的 <emotion> 一起传进去 —— BGM 优先信它
+-      // （毒舌是她日常嘴硬、算 calm；只有「沉重」才切冰之刃）。
+-      accumulateMood(replyZh || shown, window.__lastEmo || "");
+-      sessionSave();          // 自动存档
+-      turnCount++;
++      await applyServerReply(d);
+     } catch (e) {
+       $("msgText").textContent = "[网络错误] " + e.message;
++
+     } finally {
+       if (WA2.perf) WA2.perf.end("DIALOGUE_STREAMING");
+     }
+@@ -124,7 +168,42 @@
+     return true;
+   }
+ 
+-  WA2.chat = { send: send, resetPending: resetPending };
++  /* 自动续说：只请求、不渲染（预生成用） */
++  async function generateContinue() {
++    try {
++      const r = await fetch("/api/chat", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify((function () {
++          let act = {};
++          try { act = JSON.parse(localStorage.getItem("app_active_model") || "{}"); } catch (e) {}
++          const b = { messages: history.map(function (m) { return { role: m.role, content: m.content }; }),
++                      continue: true, memory: true,
++                      last_emo: (window.__lastEmo || "") };
++          if (act.model) b.model = act.model;
++          if (act.url) b.base_url = act.url;
++          var _bgNow2 = (WA2.session && WA2.session.currentBg) ? WA2.session.currentBg() : "";
++          if (_bgNow2) b.bg = _bgNow2;
++          if (WA2.state.outfit) b.outfit = WA2.state.outfit;
++          try { var _pm = localStorage.getItem("app_period") || "auto"; if (_pm !== "auto") b.period = _pm; } catch (e) {}
++          return b;
++        })())
++      });
++      const d = await r.json();
++      if (!d || d.error) return null;
++      return d;
++    } catch (e) { return null; }
++  }
++
++  /* 显示一条预生成的回复（返回语音播完的 Promise） */
++  function renderQueued(d) {
++    if (!d) return Promise.resolve(false);
++    return applyServerReply(d);
++  }
++
++  WA2.chat = { send: send, resetPending: resetPending, generateContinue: generateContinue,
++              renderQueued: renderQueued,
++              isBusy: function () { return !!typing; } };
+   WA2.register("chat", WA2.chat);
+   window.send = send;
+   /* __export_all__ */
+diff --git a/program/src/ui/wt-session.js b/program/src/ui/wt-session.js
+index 2c5defe..0016a50 100644
+--- a/program/src/ui/wt-session.js
++++ b/program/src/ui/wt-session.js
+@@ -16,7 +16,7 @@
+           slot: "auto",
+           messages: (window.__history || history || []),
+           meta: (window.__saveMeta && window.__saveMeta()) ||
+-                { bg: currentBg || "", outfit: (WA2.state.outfit || ""), at: Date.now() }
++                { bg: (document.body.dataset.bg || ""), outfit: (WA2.state.outfit || ""), at: Date.now() }
+         })
+       }).catch(function () {});
+     } catch (e) { return null; }
+@@ -51,8 +51,10 @@
+   function lastAssistant() {
+     for (var i = history.length - 1; i >= 0; i--) {
+       if (history[i] && history[i].role === "assistant") {
++        /* 带上当时的情绪：不带就会退回 calm，重播既变平静又要重新合成 */
+         return { zh: history[i].zh || history[i].content || "",
+-                 ja: history[i].content || "" };
++                 ja: history[i].content || "",
++                 emo: history[i].emo || "" };
+       }
+     }
+     return { zh: "", ja: "" };
+@@ -73,11 +75,13 @@
+         if (!d.messages || !d.messages.length) return false;
+         applyHistory(d.messages);
+         const meta = d.meta || {};
+-        if (meta.bg) { currentBg = null; setBg(meta.bg); }
++        if (meta.bg) { setBg(meta.bg); }
++        else if (!currentBgName()) { setBg("classroom"); }   /* 旧档没存背景：别让它是空的，否则之后存的档也空 */
+         if (meta.outfit) { WA2.state.outfit = meta.outfit; }
+         /* 立绘表情 / BGM 按存档还原（以前这里只还原背景，表情停在默认） */
+         try {
+-          setSpriteByScene(meta.bg || "classroom", meta.emo || "calm", true, meta.outfit || "");
++          var _spriteEmo = (meta.hscene === 1 || meta.hscene === "1") ? "H" : (meta.emo || "calm");
++          setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
+           if (meta.bgm) setBgm(meta.bgm, 600);
+         } catch (e) {}
+         var line = lastAssistant();
+@@ -116,15 +120,23 @@
+   });
+ 
+   /* 读档：把存档恢复到当前对话并进入游戏 */
++  /* 当前背景名：真正的值由 game.js 的 setBg 写在 body.dataset.bg 上；
++     这个文件里那个 currentBg 从来没被赋过值，别再读它 */
++  function currentBgName() {
++    try { return document.body.dataset.bg || ""; } catch (e) { return ""; }
++  }
++
+   window.__loadSession = function (data) {
+     try {
+       applyHistory(data.messages);
+       const meta = data.meta || {};
+       showScreen("gameScreen");
+       titleBgmStarted = true;
+-      if (meta.bg) { currentBg = null; setBg(meta.bg); } else { setBg("classroom"); }
++      if (meta.bg) { setBg(meta.bg); }
++      else if (!currentBgName()) { setBg("classroom"); }
+       if (meta.outfit) { WA2.state.outfit = meta.outfit; }
+-      setSpriteByScene(meta.bg || "classroom", meta.emo || "calm", true, meta.outfit || "");
++      var _spriteEmo = (meta.hscene === 1 || meta.hscene === "1") ? "H" : (meta.emo || "calm");
++      setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
+       gdiRenderName(CHAR_NAME, $("namePlate"));
+       setBgm(meta.bgm || meta.emo || "calm", 600);
+       var line = lastAssistant();
+@@ -143,10 +155,13 @@
+      currentBg、currentOutfit 是模块内变量，这里只读不写 */
+   window.__saveMeta = function () {
+     var meta = {
+-      bg: (typeof currentBg !== "undefined" && currentBg) || "",
++      /* 背景名以 setBg 写进 body.dataset 的为准 */
++      bg: (document.body.dataset.bg || ""),
+       outfit: (WA2.state.outfit || ""),
+       /* 立绘表情和 BGM 也要存：以前读档写死 calm，导致「回到默认立绘和场景」 */
+       emo: (window.__lastEmo || ""),
++      /* 当时是不是成人场面：表情标签可能被写成 calm，光靠 emo 会还原成平静脸 */
++      hscene: (document.body.dataset.hscene === "1") ? 1 : 0,
+       bgm: (WA2.audio && WA2.audio.current) || "",
+       at: Date.now()
+     };
+@@ -161,7 +176,7 @@
+   /* 存档界面用：按场景名取背景图，给槽位缩略图用 */
+   window.__bgThumb = function (name) { return bgSrc(name); };
+   /* 调试/探针用：直接切到某张场景图（传 CG 的 id，或旧背景名） */
+-  window.__scenePreview = function (name) { currentBg = null; setBg(name); return { bg: currentBg, url: bgSrc(name) }; };
++  window.__scenePreview = function (name) { setBg(name); return { bg: currentBgName(), url: bgSrc(name) }; };
+   /* 工具栏提示（快速存档/读档暂未开放时用） */
+   window.__saveHint = function (msg) {
+     var h = document.getElementById("tbHint");
+@@ -205,7 +220,6 @@
+   };
+ 
+   /* ---------- 场景切换 ---------- */
+-  let currentBg = null;
+ 
+   /* 开新游戏：清空对话历史（**必须走这里**）。
+      以前 wt-nav 里直接写 `history = []` —— 那不是本模块的数组，而是浏览器的
+@@ -223,9 +237,11 @@
+     try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
+   }
+   WA2.session = _exp;
++  /* 用函数覆盖导出串里的同名变量（那个 currentBg 永远是 null） */
++  try { WA2.session.currentBg = currentBgName; } catch (e) {}
+   WA2.register("session", _exp);
+   /* __export_all__ */
+-  ["sessionRestore", "sessionSave", "clearHistory", "W", "WA2", "_exp", "_names", "bg", "currentBg", "cv", "g", "h", "meta", "r", "s", "sp", "sr", "stage", "w"].forEach(function (n) {
++  ["sessionRestore", "sessionSave", "clearHistory", "W", "WA2", "_exp", "_names", "bg", "cv", "g", "h", "meta", "r", "s", "sp", "sr", "stage", "w"].forEach(function (n) {
+     try { var v = eval(n); if (v !== undefined) { window[n] = v; } } catch (e) {}
+   });
+ })();
+diff --git a/program/src/ui/wt-sprite.js b/program/src/ui/wt-sprite.js
+index 6ffeab9..80df8d4 100644
+--- a/program/src/ui/wt-sprite.js
++++ b/program/src/ui/wt-sprite.js
+@@ -1,255 +1,258 @@
+-/* wt-sprite.js —— 立绘 / 服装 / 表情（从 game.js 搬出）
+- *
+- * 对外（WA2.sprite）：resolveOutfit / outfitOf / spritePath / setSpriteByScene /
+- *                      reload / summary / index（衣服索引）
+- * 兼容老调用：window.setSpriteByScene / resolveOutfit / outfitOf / spritePath /
+- *             __reloadSprites / __spriteSummary 都指到这里
+- *
+- * 衣服名和文件名都是中文：characters/<角色>/portrait/<衣服名>/<表情名>.png
+- */
+-(function () {
+-  var WA2 = window.WA2 = window.WA2 || {};
+-  var $ = (WA2.util && WA2.util.$) || function (id) { return document.getElementById(id); };
+-
+-  var OUTFIT_BY_SCENE = {
+-    classroom: "高中·春秋JK制服",
+-    corridor: "高中·春秋JK制服",
+-    music: "舞台演出服",       // 练琴 / 演奏
+-    stage: "舞台演出服",
+-    street: "coda·常服（眼镜）",
+-    cafe: "coda·第二套常服",
+-    home: "婚后·居家服",
+-    night: "睡衣",
+-    dress: "礼服",
+-    yukata: "和服（浴衣）",
+-    winter: "高中·冬装",
+-    summer: "高中·夏季JK制服"
+-  };
+-
+-  var SPRITE_INDEX = {};       // 衣服名 -> {code, label, default, emotions, variants}
+-  var currentSprite = null;
+-
+-  function loadIndex(cb) {
+-    fetch("/api/character/sprite/index.json", { cache: "no-store" })
+-      .then(function (r) { return r.json(); })
+-      .then(function (d) {
+-        Object.keys(SPRITE_INDEX).forEach(function (k) { delete SPRITE_INDEX[k]; });
+-        Object.assign(SPRITE_INDEX, (d && d.outfits) || {});
+-        /* 切角色后顺手重拉演出配置（#19）：每角色的 performance.json */
+-        try { if (WA2.perfCfg && WA2.perfCfg.refresh) WA2.perfCfg.refresh(); } catch (e) {}
+-        if (cb) cb();
+-      })
+-      .catch(function () {});
+-  }
+-  loadIndex(null);
+-
+-  /* #19：performance.json 里的映射表是「覆盖/追加」，没配就用内置表 */
+-  function cfgOverride(name) {
+-    try {
+-      if (WA2.perfCfg && typeof WA2.perfCfg[name] === "function") return WA2.perfCfg[name]() || {};
+-    } catch (e) {}
+-    return {};
+-  }
+-
+-  function mergeMap(base, extra) {
+-    var out = {}, k;
+-    for (k in base) { if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k]; }
+-    for (k in extra) { if (Object.prototype.hasOwnProperty.call(extra, k)) out[k] = extra[k]; }
+-    return out;
+-  }
+-
+-  /* 名字 / 旧编号 / label → index 里的衣服名（合并过的衣服有多个编号，都在 codes 里） */
+-  function resolveOutfit(v) {
+-    v = (v || "").trim();
+-    if (!v) return "";
+-    if (SPRITE_INDEX[v]) return v;
+-    for (var k in SPRITE_INDEX) {
+-      var o = SPRITE_INDEX[k] || {};
+-      if (o.code === v || o.label === v) return k;
+-      if (o.codes && o.codes.indexOf(v) >= 0) return k;
+-    }
+-    return "";
+-  }
+-
+-  function outfitOf(scene) {
+-    var name = mergeMap(OUTFIT_BY_SCENE, cfgOverride("outfitMap"))[scene];
+-    if (name && SPRITE_INDEX[name]) return name;
+-    /* 场景表没命中（或这套衣服没有立绘）：优先校服，再退到索引里的第一套 */
+-    var keys = Object.keys(SPRITE_INDEX);
+-    for (var i = 0; i < keys.length; i++) {
+-      var o = SPRITE_INDEX[keys[i]] || {};
+-      if (String(o.code || "") === "001") return keys[i];
+-    }
+-    return keys.length ? keys[0] : "";
+-  }
+-
+-  // 程序情绪（detectMood 给的英文）→ 立绘表情名。
+-  // 素材里表情名大多是**中文**（认真/微笑/生气/冷淡/惊讶/其他/其他2），
+-  // 所以这里直接映射到中文名；老素材用英文名时靠下面的别名表兜底。
+-  var MOOD_TO_EMO = { angry: "生气", sad: "其他2", cold: "冷淡", smile: "微笑", warm: "微笑" };
+-
+-  /* 情绪 → 立绘里可能叫的名字（按顺序试，第一个存在的就用）。
+-     模型 <emotion> 只会给这几个词：calm / soft / 毒舌 / 撒娇 / 哭腔 / 调侃吐槽 / 问句；
+-     本地 detectMood 给的是 calm / warm / sad / angry / smile。
+-     以前这里只认英文名、素材里又是中文名，查不到就一律退回「认真」，
+-     表现是「表情永远不变」（2026-11-06 用户反馈）。 */
+-  var EMO_ALIAS = {
+-    calm: ["认真", "calm", "serious"],
+-    soft: ["微笑", "soft", "smile"],
+-    warm: ["微笑", "warm", "smile"],
+-    smile: ["微笑", "smile"],
+-    "撒娇": ["害羞", "微笑", "其他", "smile"],
+-    "调侃吐槽": ["微笑", "其他", "smile"],
+-    "毒舌": ["冷淡", "生气", "cold", "angry"],
+-    cold: ["冷淡", "cold"],
+-    angry: ["生气", "angry"],
+-    sad: ["难过", "其他2", "其他", "sad"],
+-    "哭腔": ["难过", "其他2", "其他", "sad"],
+-    "问句": ["认真", "serious"],
+-    "惊讶": ["惊讶", "surprised"],
+-    "沉重": ["冷淡", "生气", "难过", "cold", "sad"],
+-    /* 新标签复用现有表情：立绘只有那么几张，按"最接近"的映射 */
+-    "紧张": ["紧张", "认真", "serious"],
+-    "激动": ["惊讶", "生气", "surprised"],
+-    "委屈巴巴": ["难过", "害羞", "sad"],
+-    "自怨自艾": ["难过", "其他2", "sad"],
+-    "故作轻松": ["微笑", "calm", "smile"],
+-    "气喘吁吁": ["害羞", "惊讶", "shy"],
+-    "H": ["害羞", "其他", "shy"],
+-    "睡觉时的呼吸": ["平静", "calm"],
+-    shy: ["害羞", "其他"]
+-  };
+-
+-  /* 挑一张表情图：先试模型/程序给的词，再试覆盖表，最后按别名表挨个试 */
+-  function pickEmotion(o, emotion) {
+-    var em = (o && o.emotions) || {};
+-    var raw = emotion || "";
+-    if (!raw) return "";
+-    var override = cfgOverride("moodMap") || {};
+-    var cands = [raw, override[raw], MOOD_TO_EMO[raw]]
+-      .concat(EMO_ALIAS[raw] || [])
+-      .concat(EMO_ALIAS[override[raw]] || [])
+-      .concat(EMO_ALIAS[MOOD_TO_EMO[raw]] || []);
+-    for (var i = 0; i < cands.length; i++) {
+-      if (cands[i] && em[cands[i]]) return em[cands[i]];
+-    }
+-    return "";
+-  }
+-
+-  function spritePath(outfit, emotion) {
+-    var o = SPRITE_INDEX[outfit];
+-    if (!o) return "assets/kaz_cold.png";
+-    var u = function (name) {
+-      var url = "/api/character/sprite/" + encodeURIComponent(outfit) + "/" + encodeURIComponent(name);
+-      /* #20 热重载：换了图之后靠 ?v= 让 WebView2 重新取，不然还吃旧缓存 */
+-      if (WA2.assetsVer) url += "?v=" + WA2.assetsVer;
+-      return url;
+-    };
+-    var file = pickEmotion(o, emotion);
+-    if (file) return u(file);
+-    // 该套衣服没有这个情绪 → 退到「认真」，再退到默认
+-    if (o.emotions && (o.emotions.认真 || o.emotions.serious)) return u(o.emotions.认真 || o.emotions.serious);
+-    return u(o.default);
+-  }
+-
+-  /** 按场景切换服装 */
+-  function setSpriteByScene(scene, mood, force, wantOutfit) {
+-    // 服装以 WA2.state.outfit 为准；只有对话明确换衣服（wantOutfit）才改
+-    var cur = (WA2.state && WA2.state.outfit) || "";
+-    var outfit = resolveOutfit(wantOutfit) || resolveOutfit(cur) || outfitOf(scene) || "";
+-    var key = outfit + "|" + (mood || "");
+-    if (currentSprite === key && !force) return;
+-    if (WA2.state) WA2.state.outfit = outfit;
+-    var sp = $("sprite");
+-    if (!sp) return;
+-    currentSprite = key;
+-
+-    /* 立绘缺图时别让画面留个破图标：藏起来（还在淡入的旧图保留）、提示一次 */
+-    var onMissing = function () {
+-      var fading = false;
+-      try { fading = !!(WA2.fade && WA2.fade.enabled()); } catch (e) {}
+-      if (!fading) sp.classList.remove("show");
+-      if (!window.__spriteWarned) {
+-        window.__spriteWarned = true;
+-        (window.__toast || function () {})("立绘缺失，先用文字继续", 2500);
+-      }
+-    };
+-
+-    /* 双缓冲交叉淡化：新图先预载，载完叠一层淡入，淡完把主图换掉（见 wt-fade.js） */
+-    try {
+-      if (WA2.fade && WA2.fade.crossSprite) { WA2.fade.crossSprite(spritePath(outfit, mood), null, onMissing); return; }
+-    } catch (e) {}
+-
+-    /* 兜底（wt-fade 没加载时）：一藏一换的老做法 */
+-    sp.classList.remove("show");
+-    setTimeout(function () {
+-      sp.onerror = onMissing;
+-      sp.src = spritePath(outfit, mood);
+-      sp.classList.add("show");
+-    }, 180);
+-  }
+-
+-  /* 切换 / 新建角色之后重拉索引，再强制重画一次当前立绘 */
+-  function reload(scene, emo) {
+-    loadIndex(function () {
+-      currentSprite = "";
+-      try { setSpriteByScene(scene || "classroom", emo || "", true); } catch (e) {}
+-    });
+-  }
+-
+-  function summary() {
+-  var outfits = 0, files = 0;
+-    for (var k in SPRITE_INDEX) {
+-      outfits++;
+-      var vs = (SPRITE_INDEX[k] || {}).variants || [];
+-      files += vs.length;
+-    }
+-    return outfits ? (outfits + " 套衣服 · " + files + " 张") : "";
+-  }
+-
+-  /* #20 热重载：素材变了就按「当前这套衣服 + 当前情绪」重画一次（URL 带 ?v= 绕过缓存） */
+-  function refreshCurrent() {
+-    if (!currentSprite) return false;
+-    var parts = String(currentSprite).split("|");
+-    var scene = (WA2.state && WA2.state.scene) || "";
+-    try {
+-      setSpriteByScene(scene, parts[1] || "", true, parts[0] || "");
+-      return true;
+-    } catch (e) {
+-      return false;
+-    }
+-  }
+-
+-  WA2.sprite = {
+-    resolveOutfit: resolveOutfit,
+-    outfitOf: outfitOf,
+-    spritePath: spritePath,
+-    setSpriteByScene: setSpriteByScene,
+-    reload: reload,
+-    refreshCurrent: refreshCurrent,
+-    summary: summary,
+-    index: SPRITE_INDEX
+-  };
+-
+-  // 兼容老调用点（game.js / menubar.js 直接用了这些全局名）
+-  window.__reloadSprites = function () { reload(window.__curBg || "classroom", window.__lastEmo || ""); };
+-  var _exp = {};
+-  var _names = ["loadIndex", "outfitOf", "reload", "refreshCurrent", "resolveOutfit", "setSpriteByScene", "spritePath", "summary"];
+-  for (var _i = 0; _i < _names.length; _i++) {
+-    try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
+-  }
+-  WA2.sprite = _exp;
+-  WA2.register("sprite", _exp);
+-  /* __export_all__ */
+-  ["loadIndex", "outfitOf", "reload", "resolveOutfit", "setSpriteByScene", "spritePath", "summary", "MOOD_TO_EMO", "OUTFIT_BY_SCENE", "SPRITE_INDEX", "WA2", "_exp", "_names", "cur", "currentSprite", "emo", "key", "keys", "name", "o", "outfit", "outfits", "sp", "u", "vs"].forEach(function (n) {
+-    try { var v = eval(n); if (v !== undefined) { window[n] = v; } } catch (e) {}
+-  });
+-})();
+-
+-/* 兼容层（必须在 IIFE 之后）：special.js 用 __spriteSummary；面板统计读 WA2.sprite.index */
+-(function () {
+-  var s = window.WA2 && window.WA2.sprite;
+-  if (!s) { return; }
+-  s.index = window.SPRITE_INDEX || {};
+-  window.__spriteSummary = s.summary || function () { return ""; };
+-})();
++/* wt-sprite.js —— 立绘 / 服装 / 表情（从 game.js 搬出）
++ *
++ * 对外（WA2.sprite）：resolveOutfit / outfitOf / spritePath / setSpriteByScene /
++ *                      reload / summary / index（衣服索引）
++ * 兼容老调用：window.setSpriteByScene / resolveOutfit / outfitOf / spritePath /
++ *             __reloadSprites / __spriteSummary 都指到这里
++ *
++ * 衣服名和文件名都是中文：characters/<角色>/portrait/<衣服名>/<表情名>.png
++ */
++(function () {
++  var WA2 = window.WA2 = window.WA2 || {};
++  var $ = (WA2.util && WA2.util.$) || function (id) { return document.getElementById(id); };
++
++  var OUTFIT_BY_SCENE = {
++    classroom: "高中·春秋JK制服",
++    corridor: "高中·春秋JK制服",
++    music: "舞台演出服",       // 练琴 / 演奏
++    stage: "舞台演出服",
++    street: "coda·常服（眼镜）",
++    cafe: "coda·第二套常服",
++    home: "婚后·居家服",
++    night: "睡衣",
++    dress: "礼服",
++    yukata: "和服（浴衣）",
++    winter: "高中·冬装",
++    summer: "高中·夏季JK制服"
++  };
++
++  var SPRITE_INDEX = {};       // 衣服名 -> {code, label, default, emotions, variants}
++  var currentSprite = null;
++
++  function loadIndex(cb) {
++    fetch("/api/character/sprite/index.json", { cache: "no-store" })
++      .then(function (r) { return r.json(); })
++      .then(function (d) {
++        Object.keys(SPRITE_INDEX).forEach(function (k) { delete SPRITE_INDEX[k]; });
++        Object.assign(SPRITE_INDEX, (d && d.outfits) || {});
++        /* 切角色后顺手重拉演出配置（#19）：每角色的 performance.json */
++        try { if (WA2.perfCfg && WA2.perfCfg.refresh) WA2.perfCfg.refresh(); } catch (e) {}
++        if (cb) cb();
++      })
++      .catch(function () {});
++  }
++  loadIndex(null);
++
++  /* #19：performance.json 里的映射表是「覆盖/追加」，没配就用内置表 */
++  function cfgOverride(name) {
++    try {
++      if (WA2.perfCfg && typeof WA2.perfCfg[name] === "function") return WA2.perfCfg[name]() || {};
++    } catch (e) {}
++    return {};
++  }
++
++  function mergeMap(base, extra) {
++    var out = {}, k;
++    for (k in base) { if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k]; }
++    for (k in extra) { if (Object.prototype.hasOwnProperty.call(extra, k)) out[k] = extra[k]; }
++    return out;
++  }
++
++  /* 名字 / 旧编号 / label → index 里的衣服名（合并过的衣服有多个编号，都在 codes 里） */
++  function resolveOutfit(v) {
++    v = (v || "").trim();
++    if (!v) return "";
++    if (SPRITE_INDEX[v]) return v;
++    for (var k in SPRITE_INDEX) {
++      var o = SPRITE_INDEX[k] || {};
++      if (o.code === v || o.label === v) return k;
++      if (o.codes && o.codes.indexOf(v) >= 0) return k;
++    }
++    return "";
++  }
++
++  function outfitOf(scene) {
++    var name = mergeMap(OUTFIT_BY_SCENE, cfgOverride("outfitMap"))[scene];
++    if (name && SPRITE_INDEX[name]) return name;
++    /* 场景表没命中（或这套衣服没有立绘）：优先校服，再退到索引里的第一套 */
++    var keys = Object.keys(SPRITE_INDEX);
++    for (var i = 0; i < keys.length; i++) {
++      var o = SPRITE_INDEX[keys[i]] || {};
++      if (String(o.code || "") === "001") return keys[i];
++    }
++    return keys.length ? keys[0] : "";
++  }
++
++  // 程序情绪（detectMood 给的英文）→ 立绘表情名。
++  // 素材里表情名大多是**中文**（认真/微笑/生气/冷淡/惊讶/其他/其他2），
++  // 所以这里直接映射到中文名；老素材用英文名时靠下面的别名表兜底。
++  var MOOD_TO_EMO = { angry: "生气", sad: "其他2", cold: "冷淡", smile: "微笑", warm: "微笑" };
++
++  /* 情绪 → 立绘里可能叫的名字（按顺序试，第一个存在的就用）。
++     模型 <emotion> 只会给这几个词：calm / soft / 毒舌 / 撒娇 / 哭腔 / 调侃吐槽 / 问句；
++     本地 detectMood 给的是 calm / warm / sad / angry / smile。
++     以前这里只认英文名、素材里又是中文名，查不到就一律退回「认真」，
++     表现是「表情永远不变」（2026-11-06 用户反馈）。 */
++  var EMO_ALIAS = {
++    calm: ["认真", "calm", "serious"],
++    soft: ["微笑", "soft", "smile"],
++    warm: ["微笑", "warm", "smile"],
++    smile: ["微笑", "smile"],
++    "撒娇": ["害羞", "微笑", "其他", "smile"],
++    "调侃吐槽": ["微笑", "其他", "smile"],
++    "毒舌": ["冷淡", "生气", "cold", "angry"],
++    cold: ["冷淡", "cold"],
++    angry: ["生气", "angry"],
++    sad: ["难过", "其他2", "其他", "sad"],
++    "哭腔": ["难过", "其他2", "其他", "sad"],
++    "问句": ["认真", "serious"],
++    "惊讶": ["惊讶", "surprised"],
++    "沉重": ["冷淡", "生气", "难过", "cold", "sad"],
++    /* 新标签复用现有表情：立绘只有那么几张，按"最接近"的映射 */
++    "紧张": ["紧张", "认真", "serious"],
++    "激动": ["惊讶", "生气", "surprised"],
++    "委屈巴巴": ["难过", "害羞", "sad"],
++    "自怨自艾": ["难过", "其他2", "sad"],
++    "故作轻松": ["微笑", "calm", "smile"],
++    "气喘吁吁": ["害羞", "惊讶", "shy"],
++    "H": ["害羞", "其他", "shy"],
++    "睡觉时的呼吸": ["平静", "calm"],
++    shy: ["害羞", "其他"]
++  };
++
++  /* 挑一张表情图：先试模型/程序给的词，再试覆盖表，最后按别名表挨个试 */
++  function pickEmotion(o, emotion) {
++    var em = (o && o.emotions) || {};
++    var raw = emotion || "";
++    if (!raw) return "";
++    var override = cfgOverride("moodMap") || {};
++    var cands = [raw, override[raw], MOOD_TO_EMO[raw]]
++      .concat(EMO_ALIAS[raw] || [])
++      .concat(EMO_ALIAS[override[raw]] || [])
++      .concat(EMO_ALIAS[MOOD_TO_EMO[raw]] || []);
++    for (var i = 0; i < cands.length; i++) {
++      if (cands[i] && em[cands[i]]) return em[cands[i]];
++    }
++    return "";
++  }
++
++  function spritePath(outfit, emotion) {
++    var o = SPRITE_INDEX[outfit];
++    if (!o) return "assets/kaz_cold.png";
++    var u = function (name) {
++      var url = "/api/character/sprite/" + encodeURIComponent(outfit) + "/" + encodeURIComponent(name);
++      /* #20 热重载：换了图之后靠 ?v= 让 WebView2 重新取，不然还吃旧缓存 */
++      if (WA2.assetsVer) url += "?v=" + WA2.assetsVer;
++      return url;
++    };
++    var file = pickEmotion(o, emotion);
++    if (file) return u(file);
++    // 该套衣服没有这个情绪 → 退到「认真」，再退到默认
++    if (o.emotions && (o.emotions.认真 || o.emotions.serious)) return u(o.emotions.认真 || o.emotions.serious);
++    return u(o.default);
++  }
++
++  /** 按场景切换服装 */
++  function setSpriteByScene(scene, mood, force, wantOutfit) {
++    // 服装以 WA2.state.outfit 为准；只有对话明确换衣服（wantOutfit）才改
++    var cur = (WA2.state && WA2.state.outfit) || "";
++    /* 顺序很重要：以前是「上次的衣服」压过「场景对应的衣服」，
++       结果换场景时立绘永远穿着同一套（看着就是“立绘不切换”）。
++       现在：模型明确换衣服 > 场景表 > 上次的衣服 > 场景兜底。 */
++    var outfit = resolveOutfit(wantOutfit) || outfitOf(scene) || resolveOutfit(cur) || "";
++    var key = outfit + "|" + (mood || "");
++    if (currentSprite === key && !force) return;
++    if (WA2.state) WA2.state.outfit = outfit;
++    var sp = $("sprite");
++    if (!sp) return;
++    currentSprite = key;
++
++    /* 立绘缺图时别让画面留个破图标：藏起来（还在淡入的旧图保留）、提示一次 */
++    var onMissing = function () {
++      var fading = false;
++      try { fading = !!(WA2.fade && WA2.fade.enabled()); } catch (e) {}
++      if (!fading) sp.classList.remove("show");
++      if (!window.__spriteWarned) {
++        window.__spriteWarned = true;
++        (window.__toast || function () {})("立绘缺失，先用文字继续", 2500);
++      }
++    };
++
++    /* 双缓冲交叉淡化：新图先预载，载完叠一层淡入，淡完把主图换掉（见 wt-fade.js） */
++    try {
++      if (WA2.fade && WA2.fade.crossSprite) { WA2.fade.crossSprite(spritePath(outfit, mood), null, onMissing); return; }
++    } catch (e) {}
++
++    /* 兜底（wt-fade 没加载时）：一藏一换的老做法 */
++    sp.classList.remove("show");
++    setTimeout(function () {
++      sp.onerror = onMissing;
++      sp.src = spritePath(outfit, mood);
++      sp.classList.add("show");
++    }, 180);
++  }
++
++  /* 切换 / 新建角色之后重拉索引，再强制重画一次当前立绘 */
++  function reload(scene, emo) {
++    loadIndex(function () {
++      currentSprite = "";
++      try { setSpriteByScene(scene || "classroom", emo || "", true); } catch (e) {}
++    });
++  }
++
++  function summary() {
++  var outfits = 0, files = 0;
++    for (var k in SPRITE_INDEX) {
++      outfits++;
++      var vs = (SPRITE_INDEX[k] || {}).variants || [];
++      files += vs.length;
++    }
++    return outfits ? (outfits + " 套衣服 · " + files + " 张") : "";
++  }
++
++  /* #20 热重载：素材变了就按「当前这套衣服 + 当前情绪」重画一次（URL 带 ?v= 绕过缓存） */
++  function refreshCurrent() {
++    if (!currentSprite) return false;
++    var parts = String(currentSprite).split("|");
++    var scene = (WA2.state && WA2.state.scene) || "";
++    try {
++      setSpriteByScene(scene, parts[1] || "", true, parts[0] || "");
++      return true;
++    } catch (e) {
++      return false;
++    }
++  }
++
++  WA2.sprite = {
++    resolveOutfit: resolveOutfit,
++    outfitOf: outfitOf,
++    spritePath: spritePath,
++    setSpriteByScene: setSpriteByScene,
++    reload: reload,
++    refreshCurrent: refreshCurrent,
++    summary: summary,
++    index: SPRITE_INDEX
++  };
++
++  // 兼容老调用点（game.js / menubar.js 直接用了这些全局名）
++  window.__reloadSprites = function () { reload(window.__curBg || "classroom", window.__lastEmo || ""); };
++  var _exp = {};
++  var _names = ["loadIndex", "outfitOf", "reload", "refreshCurrent", "resolveOutfit", "setSpriteByScene", "spritePath", "summary"];
++  for (var _i = 0; _i < _names.length; _i++) {
++    try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
++  }
++  WA2.sprite = _exp;
++  WA2.register("sprite", _exp);
++  /* __export_all__ */
++  ["loadIndex", "outfitOf", "reload", "resolveOutfit", "setSpriteByScene", "spritePath", "summary", "MOOD_TO_EMO", "OUTFIT_BY_SCENE", "SPRITE_INDEX", "WA2", "_exp", "_names", "cur", "currentSprite", "emo", "key", "keys", "name", "o", "outfit", "outfits", "sp", "u", "vs"].forEach(function (n) {
++    try { var v = eval(n); if (v !== undefined) { window[n] = v; } } catch (e) {}
++  });
++})();
++
++/* 兼容层（必须在 IIFE 之后）：special.js 用 __spriteSummary；面板统计读 WA2.sprite.index */
++(function () {
++  var s = window.WA2 && window.WA2.sprite;
++  if (!s) { return; }
++  s.index = window.SPRITE_INDEX || {};
++  window.__spriteSummary = s.summary || function () { return ""; };
++})();
+diff --git a/program/src/ui/wt-text.js b/program/src/ui/wt-text.js
+index eea1207..55cd6a3 100644
+--- a/program/src/ui/wt-text.js
++++ b/program/src/ui/wt-text.js
+@@ -1,251 +1,251 @@
+-/* text.js —— 从 game.js 搬出的功能块（逻辑未改）
+- * 挂载：WA2.text；同时同步到 window 以兼容旧调用。
+- */
+-(function () {
+-  var WA2 = window.WA2 = window.WA2 || {};
+-  var $ = (WA2.util && WA2.util.$) || function (id) { return document.getElementById(id); };
+-
+-  const PAGE_MAX_CHARS = 60;      // 3 行 × 每行 20 字（补丁 FONT_PER_LINE=20）
+-  const PAGE_MAX_LINES = 3;
+-
+-  let pageTexts = [];
+-  let pageIndex = 0;
+-
+-  function splitPages(text) {
+-    const raw = (text || "").replace(/\r/g, "").trim();
+-    if (!raw) return ["……"];
+-    const pages = [];
+-    let rest = raw;
+-    const BREAK = "。！？…，、；：」』）)]】";
+-    while (rest.length > 0) {
+-      if (rest.length <= PAGE_MAX_CHARS) { pages.push(rest); break; }
+-      let cut = PAGE_MAX_CHARS;
+-      // 在 60 字内找最后一个句读，找不到就硬切
+-      for (let i = PAGE_MAX_CHARS - 1; i >= PAGE_MAX_CHARS - 18 && i > 0; i--) {
+-        if (BREAK.indexOf(rest[i]) >= 0) { cut = i + 1; break; }
+-      }
+-      pages.push(rest.slice(0, cut));
+-      rest = rest.slice(cut);
+-    }
+-    return pages.length ? pages : ["……"];
+-  }
+-
+-  function renderPage() {
+-    const box = $("msgText");
+-    const txt = pageTexts[pageIndex] || "";
+-    hidePageCursor();                /* 换页先收起来，打完再出 */
+-    if (gdiRenderMsg && window.__gdiOK !== false) {
+-      gdiRenderMsg(txt, box, 56, 1200, 1).then((ok) => {
+-        if (ok) { box.classList.add("gdi"); startReveal(box, txt); }
+-        else { window.__gdiOK = false; legacyTypewriter(txt); }
+-        updatePageCursor();
+-      });
+-    } else {
+-      legacyTypewriter(txt);
+-    }
+-  }
+-
+-  /* ---------- 翻页提示：文字末尾的页面图标 ----------
+-     和原版一样：一段话打完、后面还有下一页时，在最后一个字后面闪动页面图标。
+-     文字是 /api/text 出的整段图（每字 28×32 的固定格子，见 sub_render.py），
+-     所以最后一字的位置可以直接由字数算出来，不用测量排版。 */
+-  function pageCursorEl() {
+-    const box = $("msgText");
+-    if (!box) return null;
+-    let cur = document.getElementById("pageCursor");
+-    if (!cur) {
+-      cur = document.createElement("div");
+-      cur.id = "pageCursor";
+-      box.appendChild(cur);
+-    } else if (cur.parentNode !== box) {
+-      box.appendChild(cur);          /* 每次重渲染 msgText 都会被清空，补回来 */
+-    }
+-    return cur;
+-  }
+-
+-  function hidePageCursor() {
+-    const cur = document.getElementById("pageCursor");
+-    if (cur) cur.style.display = "none";
+-  }
+-
+-  function updatePageCursor() {
+-    const cur = pageCursorEl();
+-    if (!cur) return;
+-    const text = pageTexts[pageIndex] || "";
+-    /* 只有「这一段还没打完 → 不能显示」和「还有下一页」两个条件同时不满足才显示 */
+-    if (typing || !text || pageIndex >= pageTexts.length - 1) {
+-      cur.style.display = "none";
+-      return;
+-    }
+-    const img = $("msgText") && $("msgText").querySelector("img");
+-    if (!img || !img.naturalWidth || !img.clientWidth) {
+-      hidePageCursor();              /* 兜底打字机走文字：没有格子可对，先不显示 */
+-      return;
+-    }
+-    const scale = img.clientWidth / img.naturalWidth;
+-    const n = text.length;                       /* 1 起算的最后一个字 */
+-    const line = Math.floor((n - 1) / PER_LINE);
+-    const col = ((n - 1) % PER_LINE) + 1;
+-    cur.style.left = Math.round(col * CHAR_ADV * scale) + "px";
+-    cur.style.top = Math.round((line * LINE_H + 2) * scale) + "px";
+-    cur.style.transform = "scale(" + scale + ")";
+-    cur.style.display = "block";
+-  }
+-
+-  function showReply(text) {
+-    pageTexts = splitPages(text);
+-    pageIndex = 0;
+-    renderPage();
+-  }
+-
+-  function nextPage() {
+-    if (pageIndex < pageTexts.length - 1) {
+-      pageIndex++;
+-      renderPage();
+-      return true;
+-    }
+-    return false;
+-  }
+-
+-  /* ---------- 打字机 ---------- */
+-  /* 文字显示速度（OPTION 1）：0 瞬间 / 1 高速 / 2 普通 / 3 顺滑，值是「每字毫秒」 */
+-  const SPEED_MS = [0, 14, 30, 50];
+-
+-  /* 服务端排版是固定的：每字占 32×32 格子、水平步进 28px、每行 20 字、行高 32px
+-     （见 sub_render.py 的 FONT_ADVANCE / FONT_PER_LINE / FONT_OCCUPATION）。
+-     所以拿到整段的渲染图后，可以由「显示到第几个字」反推裁剪区域，
+-     用 clip-path 把还没轮到的字裁掉：不用逐字出图，也不会重排。 */
+-  const PER_LINE = 20, CHAR_ADV = 28, LINE_H = 32;
+-
+-  function textSpeed() {
+-    const P = (window.App && window.App.getPrefs) ? window.App.getPrefs() : {};
+-    const s = parseInt(P.textSpeed, 10);
+-    return isNaN(s) ? 2 : Math.max(0, Math.min(3, s));
+-  }
+-
+-  let revealTimer = null, revealEl = null;
+-
+-  function stopReveal() {
+-    if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; }
+-    if (revealEl) {
+-      revealEl.style.clipPath = "";
+-      revealEl.style.webkitClipPath = "";
+-      revealEl = null;
+-    }
+-    typing = false;
+-  }
+-
+-  /* 只显示前 k 个字；返回 false 表示排版模型和图对不上（不做动画） */
+-  function revealTo(el, text, k) {
+-    const img = el.querySelector("img");
+-    if (!img || !img.naturalWidth) return false;
+-    const W = img.naturalWidth, H = img.naturalHeight;
+-    const lines = Math.ceil(text.length / PER_LINE);
+-    if (Math.abs(H - lines * LINE_H) > 2) return false;
+-    if (k >= text.length) {
+-      el.style.clipPath = ""; el.style.webkitClipPath = "";
+-      return true;
+-    }
+-    if (k <= 0) {
+-      el.style.clipPath = "polygon(0 0, 0 0, 0 0)";
+-      return true;
+-    }
+-    const line = Math.floor((k - 1) / PER_LINE);
+-    const col = ((k - 1) % PER_LINE) + 1;
+-    const y0 = line * LINE_H, y1 = (line + 1) * LINE_H;
+-    const x1 = col * CHAR_ADV + 4;                 /* 末字右侧还带 2px 描边 */
+-    const px = (v, total) => (v / total * 100).toFixed(3) + "%";
+-    const poly = "polygon(0 0, 100% 0, 100% " + px(y0, H) +
+-                 ", " + px(x1, W) + " " + px(y0, H) +
+-                 ", " + px(x1, W) + " " + px(y1, H) +
+-                 ", 0 " + px(y1, H) + ")";
+-    el.style.clipPath = poly;
+-    el.style.webkitClipPath = poly;
+-    return true;
+-  }
+-
+-  function startReveal(el, text) {
+-    stopReveal();
+-    text = text || "";
+-    if (!el || !text) return;
+-    const sp = textSpeed();
+-    if (sp === 0) { updatePageCursor(); return; }   /* 瞬间显示：整段直接出来 */
+-    const img = el.querySelector("img");
+-    if (!img) return;
+-    if (!img.complete || !img.naturalWidth) {
+-      img.addEventListener("load", () => startReveal(el, text), { once: true });
+-      return;
+-    }
+-    if (!revealTo(el, text, 0)) return;       /* 模型不匹配：直接整段显示，别卡住 */
+-    typing = true;
+-    revealEl = el;
+-    fullText = text;
+-    let i = 0;
+-    const step = () => {
+-      if (revealEl !== el) return;
+-      i++;
+-      if (!revealTo(el, text, i)) { stopReveal(); return; }
+-      if (i >= text.length) { stopReveal(); updatePageCursor(); return; }
+-      const ch = text.charAt(i - 1);
+-      const d = SPEED_MS[sp] * (/[，。！？…、,\.!?]/.test(ch) ? 3 : 1);
+-      revealTimer = setTimeout(step, d);
+-    };
+-    revealTimer = setTimeout(step, SPEED_MS[sp]);
+-  }
+-
+-  function typewriter(text, done) {
+-    const box = $("msgText");
+-    if (box && window.__gdiOK !== false) {
+-      // 先按 17px/520px 宽度渲染整段
+-      gdiRenderMsg(text, box, 56, 1200, 1).then((ok) => {
+-        if (ok) {
+-          fullText = text;
+-          box.classList.add("gdi");
+-          startReveal(box, text);
+-          if (done) done();
+-        } else {
+-          legacyTypewriter(text, done);
+-        }
+-      });
+-      return;
+-    }
+-    legacyTypewriter(text, done);
+-  }
+-
+-  function legacyTypewriter(text, done) {
+-    const el = $("msgText");
+-    fullText = text; el.textContent = ""; typing = true;
+-    let i = 0;
+-    const base = SPEED_MS[textSpeed()];
+-    if (base === 0) { el.textContent = text; typing = false; done && done(); hidePageCursor(); return; }
+-    const tick = () => {
+-      if (!typing) { el.textContent = fullText; typing = false; done && done(); hidePageCursor(); return; }
+-      if (i >= text.length) { typing = false; done && done(); hidePageCursor(); return; }
+-      const ch = text[i++];
+-      el.textContent += ch;
+-      setTimeout(tick, "，。！？…、".includes(ch) ? base * 3 : base);
+-    };
+-    tick();
+-  }
+-
+-  /* ---------- Backlog ---------- */
+-  var _exp = {};
+-  var _names = ["hidePageCursor", "legacyTypewriter", "nextPage", "pageCursorEl", "renderPage", "revealTo", "showReply", "splitPages", "startReveal", "stopReveal", "textSpeed", "typewriter", "updatePageCursor"];
+-  for (var _i = 0; _i < _names.length; _i++) {
+-    try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
+-  }
+-  WA2.text = _exp;
+-  WA2.register("text", _exp);
+-  /* __export_all__ */
+-  ["hidePageCursor", "legacyTypewriter", "nextPage", "pageCursorEl", "renderPage", "revealTo", "showReply", "splitPages", "startReveal", "stopReveal", "textSpeed", "typewriter", "updatePageCursor", "BREAK", "P", "PAGE_MAX_CHARS", "PAGE_MAX_LINES", "PER_LINE", "SPEED_MS", "W", "WA2", "_exp", "_names", "base", "box", "ch", "col", "cur", "cut", "d", "el", "i", "img", "line", "lines", "n", "pageIndex", "pageTexts", "pages", "poly", "px", "raw", "rest", "revealTimer", "s", "scale", "sp", "step", "text", "tick", "txt", "x1", "y0"].forEach(function (n) {
+-    try { var v = eval(n); if (v !== undefined) { window[n] = v; } } catch (e) {}
+-  });
+-})();
+-
+-/* 兼容：旧代码/探针会用这两个名字 */
+-if (typeof window.__startReveal !== "function") {
+-  window.__startReveal = function (el, text) { try { return startReveal(el, text); } catch (e) {} };
+-}
+-if (typeof window.__stopReveal !== "function") {
+-  window.__stopReveal = function () { try { return stopReveal(); } catch (e) {} };
+-}
++/* text.js —— 从 game.js 搬出的功能块（逻辑未改）
++ * 挂载：WA2.text；同时同步到 window 以兼容旧调用。
++ */
++(function () {
++  var WA2 = window.WA2 = window.WA2 || {};
++  var $ = (WA2.util && WA2.util.$) || function (id) { return document.getElementById(id); };
++
++  const PAGE_MAX_CHARS = 60;      // 3 行 × 每行 20 字（补丁 FONT_PER_LINE=20）
++  const PAGE_MAX_LINES = 3;
++
++  let pageTexts = [];
++  let pageIndex = 0;
++
++  function splitPages(text) {
++    const raw = (text || "").replace(/\r/g, "").trim();
++    if (!raw) return ["……"];
++    const pages = [];
++    let rest = raw;
++    const BREAK = "。！？…，、；：」』）)]】";
++    while (rest.length > 0) {
++      if (rest.length <= PAGE_MAX_CHARS) { pages.push(rest); break; }
++      let cut = PAGE_MAX_CHARS;
++      // 在 60 字内找最后一个句读，找不到就硬切
++      for (let i = PAGE_MAX_CHARS - 1; i >= PAGE_MAX_CHARS - 18 && i > 0; i--) {
++        if (BREAK.indexOf(rest[i]) >= 0) { cut = i + 1; break; }
++      }
++      pages.push(rest.slice(0, cut));
++      rest = rest.slice(cut);
++    }
++    return pages.length ? pages : ["……"];
++  }
++
++  function renderPage() {
++    const box = $("msgText");
++    const txt = pageTexts[pageIndex] || "";
++    hidePageCursor();                /* 换页先收起来，打完再出 */
++    if (gdiRenderMsg && window.__gdiOK !== false) {
++      gdiRenderMsg(txt, box, 56, 1200, 1).then((ok) => {
++        if (ok) { box.classList.add("gdi"); startReveal(box, txt); }
++        else { window.__gdiOK = false; legacyTypewriter(txt); }
++        updatePageCursor();
++      });
++    } else {
++      legacyTypewriter(txt);
++    }
++  }
++
++  /* ---------- 翻页提示：文字末尾的页面图标 ----------
++     和原版一样：一段话打完、后面还有下一页时，在最后一个字后面闪动页面图标。
++     文字是 /api/text 出的整段图（每字 28×32 的固定格子，见 sub_render.py），
++     所以最后一字的位置可以直接由字数算出来，不用测量排版。 */
++  function pageCursorEl() {
++    const box = $("msgText");
++    if (!box) return null;
++    let cur = document.getElementById("pageCursor");
++    if (!cur) {
++      cur = document.createElement("div");
++      cur.id = "pageCursor";
++      box.appendChild(cur);
++    } else if (cur.parentNode !== box) {
++      box.appendChild(cur);          /* 每次重渲染 msgText 都会被清空，补回来 */
++    }
++    return cur;
++  }
++
++  function hidePageCursor() {
++    const cur = document.getElementById("pageCursor");
++    if (cur) cur.style.display = "none";
++  }
++
++  function updatePageCursor() {
++    const cur = pageCursorEl();
++    if (!cur) return;
++    const text = pageTexts[pageIndex] || "";
++    /* 打完这一页就该出现（不管后面还有没有页）；自动续说时由她自己往下走，不需要这个提示 */
++    if (typing || !text || document.body.classList.contains("autoOn")) {
++      cur.style.display = "none";
++      return;
++    }
++    const img = $("msgText") && $("msgText").querySelector("img");
++    if (!img || !img.naturalWidth || !img.clientWidth) {
++      hidePageCursor();              /* 兜底打字机走文字：没有格子可对，先不显示 */
++      return;
++    }
++    const scale = img.clientWidth / img.naturalWidth;
++    const n = text.length;                       /* 1 起算的最后一个字 */
++    const line = Math.floor((n - 1) / PER_LINE);
++    const col = ((n - 1) % PER_LINE) + 1;
++    cur.style.left = Math.round(col * CHAR_ADV * scale) + "px";
++    cur.style.top = Math.round((line * LINE_H + 2) * scale) + "px";
++    cur.style.transform = "scale(" + scale + ")";
++    cur.style.display = "block";
++  }
++
++  function showReply(text) {
++    pageTexts = splitPages(text);
++    pageIndex = 0;
++    renderPage();
++  }
++
++  function nextPage() {
++    if (pageIndex < pageTexts.length - 1) {
++      pageIndex++;
++      renderPage();
++      return true;
++    }
++    return false;
++  }
++
++  /* ---------- 打字机 ---------- */
++  /* 文字显示速度（OPTION 1）：0 瞬间 / 1 高速 / 2 普通 / 3 顺滑，值是「每字毫秒」 */
++  const SPEED_MS = [0, 14, 30, 50];
++
++  /* 服务端排版是固定的：每字占 32×32 格子、水平步进 28px、每行 20 字、行高 32px
++     （见 sub_render.py 的 FONT_ADVANCE / FONT_PER_LINE / FONT_OCCUPATION）。
++     所以拿到整段的渲染图后，可以由「显示到第几个字」反推裁剪区域，
++     用 clip-path 把还没轮到的字裁掉：不用逐字出图，也不会重排。 */
++  const PER_LINE = 20, CHAR_ADV = 28, LINE_H = 32;
++
++  function textSpeed() {
++    const P = (window.App && window.App.getPrefs) ? window.App.getPrefs() : {};
++    const s = parseInt(P.textSpeed, 10);
++    return isNaN(s) ? 2 : Math.max(0, Math.min(3, s));
++  }
++
++  let revealTimer = null, revealEl = null;
++
++  function stopReveal() {
++    if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; }
++    if (revealEl) {
++      revealEl.style.clipPath = "";
++      revealEl.style.webkitClipPath = "";
++      revealEl = null;
++    }
++    typing = false;
++  }
++
++  /* 只显示前 k 个字；返回 false 表示排版模型和图对不上（不做动画） */
++  function revealTo(el, text, k) {
++    const img = el.querySelector("img");
++    if (!img || !img.naturalWidth) return false;
++    const W = img.naturalWidth, H = img.naturalHeight;
++    const lines = Math.ceil(text.length / PER_LINE);
++    if (Math.abs(H - lines * LINE_H) > 2) return false;
++    if (k >= text.length) {
++      el.style.clipPath = ""; el.style.webkitClipPath = "";
++      return true;
++    }
++    if (k <= 0) {
++      el.style.clipPath = "polygon(0 0, 0 0, 0 0)";
++      return true;
++    }
++    const line = Math.floor((k - 1) / PER_LINE);
++    const col = ((k - 1) % PER_LINE) + 1;
++    const y0 = line * LINE_H, y1 = (line + 1) * LINE_H;
++    const x1 = col * CHAR_ADV + 4;                 /* 末字右侧还带 2px 描边 */
++    const px = (v, total) => (v / total * 100).toFixed(3) + "%";
++    const poly = "polygon(0 0, 100% 0, 100% " + px(y0, H) +
++                 ", " + px(x1, W) + " " + px(y0, H) +
++                 ", " + px(x1, W) + " " + px(y1, H) +
++                 ", 0 " + px(y1, H) + ")";
++    el.style.clipPath = poly;
++    el.style.webkitClipPath = poly;
++    return true;
++  }
++
++  function startReveal(el, text) {
++    stopReveal();
++    text = text || "";
++    if (!el || !text) return;
++    const sp = textSpeed();
++    if (sp === 0) { updatePageCursor(); return; }   /* 瞬间显示：整段直接出来 */
++    const img = el.querySelector("img");
++    if (!img) return;
++    if (!img.complete || !img.naturalWidth) {
++      img.addEventListener("load", () => startReveal(el, text), { once: true });
++      return;
++    }
++    if (!revealTo(el, text, 0)) return;       /* 模型不匹配：直接整段显示，别卡住 */
++    typing = true;
++    revealEl = el;
++    fullText = text;
++    let i = 0;
++    const step = () => {
++      if (revealEl !== el) return;
++      i++;
++      if (!revealTo(el, text, i)) { stopReveal(); return; }
++      if (i >= text.length) { stopReveal(); updatePageCursor(); return; }
++      const ch = text.charAt(i - 1);
++      const d = SPEED_MS[sp] * (/[，。！？…、,\.!?]/.test(ch) ? 3 : 1);
++      revealTimer = setTimeout(step, d);
++    };
++    revealTimer = setTimeout(step, SPEED_MS[sp]);
++  }
++
++  function typewriter(text, done) {
++    const box = $("msgText");
++    if (box && window.__gdiOK !== false) {
++      // 先按 17px/520px 宽度渲染整段
++      gdiRenderMsg(text, box, 56, 1200, 1).then((ok) => {
++        if (ok) {
++          fullText = text;
++          box.classList.add("gdi");
++          startReveal(box, text);
++          if (done) done();
++        } else {
++          legacyTypewriter(text, done);
++        }
++      });
++      return;
++    }
++    legacyTypewriter(text, done);
++  }
++
++  function legacyTypewriter(text, done) {
++    const el = $("msgText");
++    fullText = text; el.textContent = ""; typing = true;
++    let i = 0;
++    const base = SPEED_MS[textSpeed()];
++    if (base === 0) { el.textContent = text; typing = false; done && done(); hidePageCursor(); return; }
++    const tick = () => {
++      if (!typing) { el.textContent = fullText; typing = false; done && done(); hidePageCursor(); return; }
++      if (i >= text.length) { typing = false; done && done(); hidePageCursor(); return; }
++      const ch = text[i++];
++      el.textContent += ch;
++      setTimeout(tick, "，。！？…、".includes(ch) ? base * 3 : base);
++    };
++    tick();
++  }
++
++  /* ---------- Backlog ---------- */
++  var _exp = {};
++  var _names = ["hidePageCursor", "legacyTypewriter", "nextPage", "pageCursorEl", "renderPage", "revealTo", "showReply", "splitPages", "startReveal", "stopReveal", "textSpeed", "typewriter", "updatePageCursor"];
++  for (var _i = 0; _i < _names.length; _i++) {
++    try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
++  }
++  WA2.text = _exp;
++  WA2.register("text", _exp);
++  /* __export_all__ */
++  ["hidePageCursor", "legacyTypewriter", "nextPage", "pageCursorEl", "renderPage", "revealTo", "showReply", "splitPages", "startReveal", "stopReveal", "textSpeed", "typewriter", "updatePageCursor", "BREAK", "P", "PAGE_MAX_CHARS", "PAGE_MAX_LINES", "PER_LINE", "SPEED_MS", "W", "WA2", "_exp", "_names", "base", "box", "ch", "col", "cur", "cut", "d", "el", "i", "img", "line", "lines", "n", "pageIndex", "pageTexts", "pages", "poly", "px", "raw", "rest", "revealTimer", "s", "scale", "sp", "step", "text", "tick", "txt", "x1", "y0"].forEach(function (n) {
++    try { var v = eval(n); if (v !== undefined) { window[n] = v; } } catch (e) {}
++  });
++})();
++
++/* 兼容：旧代码/探针会用这两个名字 */
++if (typeof window.__startReveal !== "function") {
++  window.__startReveal = function (el, text) { try { return startReveal(el, text); } catch (e) {} };
++}
++if (typeof window.__stopReveal !== "function") {
++  window.__stopReveal = function () { try { return stopReveal(); } catch (e) {} };
++}
+diff --git a/program/src/ui/wt-voice.js b/program/src/ui/wt-voice.js
+index 18fa6b2..62d82b2 100644
+--- a/program/src/ui/wt-voice.js
++++ b/program/src/ui/wt-voice.js
+@@ -1,153 +1,200 @@
+-/* voice.js —— 从 game.js 搬出的功能块（逻辑未改）
+- * 挂载：WA2.voice；同时同步到 window 以兼容旧调用。
+- */
+-(function () {
+-  var WA2 = window.WA2 = window.WA2 || {};
+-  var $ = (WA2.util && WA2.util.$) || function (id) { return document.getElementById(id); };
+-  /* 桥接：emoOf 还在 game.js（全局函数），语音对象由本模块持有 */
+-  var emoOf = function (t) { return window.emoOf ? window.emoOf(t) : "calm"; };
+-  var ttsAudio = null;
+-  function _tts(v) { if (v !== undefined) ttsAudio = v; return ttsAudio; }
+-
+-  function currentVoiceLang() {
+-    // 每次都用最新设置（菜单切换后立即生效）
+-    try {
+-      return localStorage.getItem("app_voiceLang") || window.voiceLang || "zh";
+-    } catch (e) {
+-      return "zh";
+-    }
+-  }
+-
+-  function stopSpeak() {
+-    if (ttsAudio) { try { ttsAudio.pause(); } catch (e) {} ttsAudio = null; }
+-    _devState = null;
+-  }
+-
+-  /* ---------- 音频设备变化（#7）----------
+-     拔耳机 / 切蓝牙之后，正在播的 <audio> 还挂在已经不存在的设备上：
+-     记下位置、暂停；设备重建完再从原位置续播。续不上由调用方提示「重播这句」。 */
+-  var _devState = null;
+-
+-  function suspendForDevice() {
+-    if (!ttsAudio) return false;
+-    try {
+-      _devState = { t: ttsAudio.currentTime || 0, playing: !ttsAudio.paused };
+-      ttsAudio.pause();
+-    } catch (e) {
+-      _devState = null;
+-      return false;
+-    }
+-    return !!(_devState && _devState.playing);
+-  }
+-
+-  function resumeAfterDevice() {
+-    var st = _devState;
+-    _devState = null;
+-    if (!st || !ttsAudio) return Promise.resolve(false);
+-    var a = ttsAudio;
+-    return new Promise(function (resolve) {
+-      try {
+-        if (st.t > 0) { try { a.currentTime = st.t; } catch (e) {} }
+-        try { a.volume = voiceVolume(); } catch (e) {}
+-        var p = a.play();
+-        if (p && p.then) p.then(function () { resolve(true); }).catch(function () { resolve(false); });
+-        else resolve(true);
+-      } catch (e) {
+-        resolve(false);
+-      }
+-    });
+-  }
+-
+-  /** 合成语音并返回 Audio（失败或超时返回 null） */
+-  function fetchVoice(text, timeoutMs) {
+-    if (!ttsOn) return Promise.resolve(null);
+-    /* 把这次真正用到的参数记下来：回想重放要原样复用，否则参数一漂就缓存未命中
+-       （用户报「同一句话重放还要等加载」）。 */
+-    try {
+-      window.__lastVoiceReq = {
+-        t: text,
+-        l: currentVoiceLang(),
+-        e: (window.__lastEmo || (window.emoOf ? window.emoOf(text) : "") || "")
+-      };
+-    } catch (e) {}
+-    return new Promise((resolve) => {
+-      const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+-      let done = false;
+-      const timer = setTimeout(() => {
+-        if (done) return;
+-        done = true;
+-        if (ctrl) { try { ctrl.abort(); } catch (e) {} }
+-        resolve(null);
+-      }, timeoutMs || 15000);
+-      fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() + "&emotion=" + (window.__lastEmo || emoOf(text)) + (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""), ctrl ? { signal: ctrl.signal } : {})
+-        .then((r) => {
+-          if (!r.ok) throw new Error("tts " + r.status);
+-          return r.blob();
+-        })
+-        .then((blob) => {
+-          if (done) return;
+-          done = true; clearTimeout(timer);
+-          const url = URL.createObjectURL(blob);
+-          const a = new Audio(url);
+-          a.onended = () => { URL.revokeObjectURL(url); };
+-          resolve(a);
+-        })
+-        .catch(() => {
+-          if (done) return;
+-          done = true; clearTimeout(timer);
+-          /* 语音服务没起来时别静默失败：提示一次（同一局里不反复弹） */
+-          if (!window.__voiceWarned) {
+-            window.__voiceWarned = true;
+-          if (window.__saveHint) window.__saveHint("语音暂时不可用，先显示文字");
+-          }
+-          resolve(null);
+-        });
+-    });
+-  }
+-
+-
+-  /* ---------- 开场白语音 ---------- */
+-  function waitTtsReady(cb, tries) {
+-    if (!ttsOn) return;
+-    fetch("/api/voice/ok", { cache: "no-store" })
+-      .then(function (r) { return r.json(); })
+-      .then(function (d) {
+-        if (d && d.ready) cb();
+-        else if (tries > 0) setTimeout(function () { waitTtsReady(cb, tries - 1); }, 1000);
+-      })
+-      .catch(function () {
+-        if (tries > 0) setTimeout(function () { waitTtsReady(cb, tries - 1); }, 1000);
+-      });
+-  }
+-
+-  function speakLineJa(ja, emo) {
+-    if (!ttsOn) return;
+-    var clean = (ja || "").replace(/^[「『]|[」』]$/g, "").trim();
+-    if (!clean) return;
+-    window.__speakJa = clean;
+-  window.__lastEmo = emo || window.__lastEmo || "soft";
+-    waitTtsReady(function () { speakReply(clean); }, 60);
+-  }
+-
+-  function speakReply(text) {
+-    stopSpeak();
+-    return fetchVoice(text, 15000).then((a) => {
+-      if (!a) return false;
+-      ttsAudio = a;
+-      try { a.volume = voiceVolume(); a.play(); } catch (e) {}
+-      return true;
+-    });
+-  }
+-  var _exp = {};
+-  var _names = ["_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak",
+-                "suspendForDevice", "resumeAfterDevice", "waitTtsReady"];
+-  for (var _i = 0; _i < _names.length; _i++) {
+-    try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
+-  }
+-  WA2.voice = _exp;
+-  WA2.register("voice", _exp);
+-  /* __export_all__ */
+-  ["_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak", "waitTtsReady", "WA2", "_exp", "_names", "a", "clean", "ctrl", "done", "emoOf", "timer", "ttsAudio", "url"].forEach(function (n) {
+-    try { var v = eval(n); if (v !== undefined) { window[n] = v; } } catch (e) {}
+-  });
+-})();
++/* voice.js —— 从 game.js 搬出的功能块（逻辑未改）
++ * 挂载：WA2.voice；同时同步到 window 以兼容旧调用。
++ */
++(function () {
++  var WA2 = window.WA2 = window.WA2 || {};
++  var $ = (WA2.util && WA2.util.$) || function (id) { return document.getElementById(id); };
++  /* 桥接：emoOf 还在 game.js（全局函数），语音对象由本模块持有 */
++  var emoOf = function (t) { return window.emoOf ? window.emoOf(t) : "calm"; };
++  var ttsAudio = null;
++  function _tts(v) { if (v !== undefined) ttsAudio = v; return ttsAudio; }
++
++  function currentVoiceLang() {
++    // 每次都用最新设置（菜单切换后立即生效）
++    try {
++      return localStorage.getItem("app_voiceLang") || window.voiceLang || "zh";
++    } catch (e) {
++      return "zh";
++    }
++  }
++
++  function stopSpeak() {
++    try { if (_voiceResolve) { _voiceResolve(false); _voiceResolve = null; } } catch (e) {}
++    if (ttsAudio) { try { ttsAudio.pause(); } catch (e) {} ttsAudio = null; }
++    _devState = null;
++  }
++
++  /* ---------- 音频设备变化（#7）----------
++     拔耳机 / 切蓝牙之后，正在播的 <audio> 还挂在已经不存在的设备上：
++     记下位置、暂停；设备重建完再从原位置续播。续不上由调用方提示「重播这句」。 */
++  var _devState = null;
++
++  function suspendForDevice() {
++    if (!ttsAudio) return false;
++    try {
++      _devState = { t: ttsAudio.currentTime || 0, playing: !ttsAudio.paused };
++      ttsAudio.pause();
++    } catch (e) {
++      _devState = null;
++      return false;
++    }
++    return !!(_devState && _devState.playing);
++  }
++
++  function resumeAfterDevice() {
++    var st = _devState;
++    _devState = null;
++    if (!st || !ttsAudio) return Promise.resolve(false);
++    var a = ttsAudio;
++    return new Promise(function (resolve) {
++      try {
++        if (st.t > 0) { try { a.currentTime = st.t; } catch (e) {} }
++        try { a.volume = voiceVolume(); } catch (e) {}
++        var p = a.play();
++        if (p && p.then) p.then(function () { resolve(true); }).catch(function () { resolve(false); });
++        else resolve(true);
++      } catch (e) {
++        resolve(false);
++      }
++    });
++  }
++
++  /** 合成语音并返回 Audio（失败或超时返回 null） */
++  function fetchVoice(text, timeoutMs) {
++    if (!ttsOn) return Promise.resolve(null);
++    /* 把这次真正用到的参数记下来：回想重放要原样复用，否则参数一漂就缓存未命中
++       （用户报「同一句话重放还要等加载」）。 */
++    try {
++      window.__lastVoiceReq = {
++        t: text,
++        l: currentVoiceLang(),
++        e: (window.__lastEmo || (window.emoOf ? window.emoOf(text) : "") || "")
++      };
++    } catch (e) {}
++    return new Promise((resolve) => {
++      const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
++      let done = false;
++      /* 超时要随文本长度放宽：长句合成实测要 17~20 秒，固定 15 秒会把整句丢掉
++         （表现就是「出字没出音」，稍后重播反而是好的 —— 服务端已经合成并缓存了）。 */
++      const _budget = (timeoutMs && timeoutMs > 0)
++        ? timeoutMs
++        : Math.min(60000, 20000 + (text || "").length * 500);
++      const timer = setTimeout(() => {
++        if (done) return;
++        done = true;
++        if (ctrl) { try { ctrl.abort(); } catch (e) {} }
++        console.warn("[voice] 等待超时（%dms），重试一次：", _budget, text && text.slice(0, 20));
++        /* 超时后服务端往往还在合成（实测长句 17~20 秒）。再请求一次：
++           它会排在合成锁后面，等前一次写进缓存后立刻命中 —— 通常这一下就有声了。 */
++        setTimeout(function () {
++          if (done) return;
++          done = true;
++          fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() +
++                "&emotion=" + (window.__lastEmo || emoOf(text)) +
++                (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""))
++            .then(function (r) { if (!r.ok) throw new Error("tts " + r.status); return r.blob(); })
++            .then(function (blob) {
++              const u = URL.createObjectURL(blob);
++              const a = new Audio(u);
++              a.onended = function () { URL.revokeObjectURL(u); };
++              resolve(a);
++            })
++            .catch(function () { resolve(null); });
++        }, 1500);
++        return;
++      }, _budget);
++      fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() + "&emotion=" + (window.__lastEmo || emoOf(text)) + (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""), ctrl ? { signal: ctrl.signal } : {})
++        .then((r) => {
++          if (!r.ok) throw new Error("tts " + r.status);
++          return r.blob();
++        })
++        .then((blob) => {
++          if (done) return;
++          done = true; clearTimeout(timer);
++          const url = URL.createObjectURL(blob);
++          const a = new Audio(url);
++          a.onended = () => { URL.revokeObjectURL(url); };
++          resolve(a);
++        })
++        .catch(() => {
++          if (done) return;
++          done = true; clearTimeout(timer);
++          /* 语音服务没起来时别静默失败：提示一次（同一局里不反复弹） */
++          if (!window.__voiceWarned) {
++            window.__voiceWarned = true;
++          if (window.__saveHint) window.__saveHint("语音暂时不可用，先显示文字");
++          }
++          resolve(null);
++        });
++    });
++  }
++
++
++  /* ---------- 开场白语音 ---------- */
++  function waitTtsReady(cb, tries) {
++    if (!ttsOn) return;
++    fetch("/api/voice/ok", { cache: "no-store" })
++      .then(function (r) { return r.json(); })
++      .then(function (d) {
++        if (d && d.ready) cb();
++        else if (tries > 0) setTimeout(function () { waitTtsReady(cb, tries - 1); }, 1000);
++      })
++      .catch(function () {
++        if (tries > 0) setTimeout(function () { waitTtsReady(cb, tries - 1); }, 1000);
++      });
++  }
++
++  function speakLineJa(ja, emo) {
++    if (!ttsOn) return;
++    var clean = (ja || "").replace(/^[「『]|[」』]$/g, "").trim();
++    if (!clean) return;
++    window.__speakJa = clean;
++  window.__lastEmo = emo || window.__lastEmo || "soft";
++    waitTtsReady(function () { speakReply(clean); }, 60);
++  }
++
++  /* 播放并**等它播完**再 resolve —— 自动续说靠这个避免"语音没说完就下一句"。
++     onStart：音频真正开始播放时回调一次，文字/立绘要跟它同时出，
++     不能等播完（否则就是「语音响了，字还没出」）。 */
++  function speakReply(text, onStart) {
++    stopSpeak();
++    return fetchVoice(text).then((a) => new Promise((resolve) => {
++      if (!a) { resolve(false); return; }
++      ttsAudio = a;
++      _voiceResolve = resolve;          /* stopSpeak 里用它收尾，别让 Promise 挂着 */
++      try { a.volume = voiceVolume(); } catch (e) {}
++      var fired = false;
++      var fire = function () {
++        if (fired) return;
++        fired = true;
++        _voiceResolve = null;
++        try { onStart && onStart(); } catch (e) {}
++      };
++      var finish = function (ok) { fire(); resolve(ok); };
++      /* 兜底：音频时长 + 3 秒还没结束（被暂停/切走/播放器卡住）也放行 */
++      var _dur = (a.duration && isFinite(a.duration)) ? a.duration : 12;
++      setTimeout(function () { finish(true); }, (_dur + 3) * 1000);
++      a.addEventListener("playing", fire, { once: true });   /* 真正开始出声 */
++      a.addEventListener("ended", function () { finish(true); }, { once: true });
++      a.addEventListener("pause", function () { finish(true); }, { once: true });   /* stopSpeak 会 pause */
++      a.addEventListener("error", function () { finish(false); }, { once: true });
++      try {
++        var pr = a.play();
++        if (pr && pr.then) pr.then(fire, function () { finish(false); });
++      } catch (e) { finish(false); }
++    }));
++  }
++  var _voiceResolve = null;
++  var _exp = {};
++  var _names = ["_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak",
++                "suspendForDevice", "resumeAfterDevice", "waitTtsReady"];
++  for (var _i = 0; _i < _names.length; _i++) {
++    try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
++  }
++  WA2.voice = _exp;
++  WA2.register("voice", _exp);
++  /* __export_all__ */
++  ["_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak", "waitTtsReady", "WA2", "_exp", "_names", "a", "clean", "ctrl", "done", "emoOf", "timer", "ttsAudio", "url"].forEach(function (n) {
++    try { var v = eval(n); if (v !== undefined) { window[n] = v; } } catch (e) {}
++  });
++})();
+diff --git a/program/src/version.py b/program/src/version.py
+index 1bdfd3a..bc7660a 100644
+--- a/program/src/version.py
++++ b/program/src/version.py
+@@ -1,7 +1,7 @@
+ # -*- coding: utf-8 -*-
+ """版本号与更新检查的常量（发布时改这里 + 仓库根目录 version.json）。"""
+ 
+-VERSION = "2026-11-07.1"                     # 本机版本：YYYY-MM-DD.N
++VERSION = "2026-11-08.1"                     # 本机版本：YYYY-MM-DD.N
+ REPO = "yiyusen1229-eng/ai-chat-ui-arch"     # GitHub 仓库
+ RAW_VERSION_URL = "https://raw.githubusercontent.com/%s/master/version.json" % REPO
+ REPO_URL = "https://github.com/%s" % REPO
+diff --git a/program/tools/arch_map.py b/program/tools/arch_map.py
+index 561d463..7abaae6 100644
+--- a/program/tools/arch_map.py
++++ b/program/tools/arch_map.py
+@@ -81,6 +81,7 @@ UI_LEVELS = {
+     "wt-backlog.js": ("二级 · 前端/回想", "对话历史与回想（WA2.backlog）"),
+     "wt-choices.js": ("二级 · 前端/选项", "选择分支选项条：/api/choice → 字模 + 贴图五层（WA2.choices）"),
+     "wt-chat.js": ("二级 · 前端/对话", "发送与分析回复（WA2.chat）"),
++"wt-auto.js": ("前端", "自动续说"),
+     "wt-session.js": ("二级 · 前端/存档", "存读档与缩略图（WA2.session）"),
+     "wt-cost.js": ("二级 · 前端/费用", "token/费用显示（WA2.cost）"),
+     "wt-mood.js": ("二级 · 前端/情绪", "情绪判断与 BGM 情绪（WA2.mood）"),
+diff --git a/program/tools/test_chat_hints.py b/program/tools/test_chat_hints.py
+index d8fdc06..d6e54c1 100644
+--- a/program/tools/test_chat_hints.py
++++ b/program/tools/test_chat_hints.py
+@@ -8,6 +8,7 @@
+ 跑：
+     cd program && .\\build_env\\venv\\Scripts\\python.exe tools\\test_chat_hints.py
+ """
++import io
+ import os
+ import sys
+ 
+@@ -63,6 +64,14 @@ def main():
+     check("示例里有 <hscene>否</hscene>", "<hscene>否</hscene>" in hints)
+     check("说明了只用来挑语音参考", "语音参考" in hints)
+ 
++
++    print("[续说] continue 模式要提示她接着说")
++    _src = io.open(os.path.join(os.path.dirname(os.path.dirname(
++        os.path.abspath(__file__))), "src", "api_chat.py"), encoding="utf-8").read()
++    check("后端有 continue 分支", "_auto_continue" in _src)
++    check("提示里写了续说", "【续说】" in _src)
++    check("明确要求不要等对方回答", "不要等对方回答" in _src)
++
+     print()
+     if _fail:
+         print("失败 %d 项：%s" % (len(_fail), "、".join(_fail)))
+diff --git a/program/tools/test_hscene.py b/program/tools/test_hscene.py
+index 80b064b..baebacc 100644
+--- a/program/tools/test_hscene.py
++++ b/program/tools/test_hscene.py
+@@ -75,22 +75,25 @@ def main():
+     print("[5] 场面状态跨请求（载入存档后的自动重播要用）")
+     hscene.set_last(True)
+     check("set_last(True) 读得到", hscene.last_scene() is True)
+-    # 有迟滞：一次判否不会立刻退出，要连续 3 次
++    # 有迟滞：一次判否不会立刻退出，要连续 EXIT_STREAK（5）次
+     hscene.set_last(False)
+     check("一次判否仍在场面里（迟滞）", hscene.last_scene() is True)
+-    hscene.set_last(False); hscene.set_last(False)
+-    check("连续三次判否才退出", hscene.last_scene() is False)
++    for _ in range(hscene.EXIT_STREAK - 2):
++        hscene.set_last(False)
++    check("差一次时仍在场面里", hscene.last_scene() is True)
++    hscene.set_last(False)
++    check("连续五次判否才退出", hscene.last_scene() is False)
+ 
+ 
+     print("[6] 迟滞：H 场面里的短句不能把语气拽回平静")
+     hscene.reset()
+-    seq = [(True, True), (False, True), (False, True), (False, False), (False, False)]
++    seq = [(True, True)] + [(False, True)] * (hscene.EXIT_STREAK - 1) + [(False, False)]
+     for i, (judge, want) in enumerate(seq, 1):
+         got = hscene.set_last(judge)
+         check("第 %d 次判定 %s → 生效 %s" % (i, judge, got), got == want, (judge, got, want))
+     hscene.reset()
+     check("reset 后是 None", hscene.last_scene() is None)
+-    check("EXIT_STREAK 是 3", getattr(hscene, "EXIT_STREAK", 0) == 3, getattr(hscene, "EXIT_STREAK", None))
++    check("EXIT_STREAK 是 5", getattr(hscene, "EXIT_STREAK", 0) == 5, getattr(hscene, "EXIT_STREAK", None))
+ 
+     print()
+     if FAILS:
+diff --git a/program/tools/test_ref_texts.py b/program/tools/test_ref_texts.py
+index 9930991..b4c0c27 100644
+--- a/program/tools/test_ref_texts.py
++++ b/program/tools/test_ref_texts.py
+@@ -147,7 +147,8 @@ def main():
+             TC._REFCER[k] = 0.9
+     p, txt = TC.pick_ref("H", target="あぁ…ちょっと、指、なら、いいけど…っ、そこは、だめ…")
+     folder = os.path.basename(os.path.dirname(p or ""))
+-    check("借到了其它情绪的参考", folder not in ("H", "接吻", ""), folder)
++    # 2026-11-07 用户要求：H 就该用 H 的语气，不要借平静音色（借了听起来就不是 H）
++    check("H 仍然用 H 自己的参考", folder.lower() in ("h",), folder)
+     TC._REFCER = saved
+ 
+     TC._REFS_OVERRIDE = ""
+diff --git a/version.json b/version.json
+index cbb837c..75011c4 100644
+--- a/version.json
++++ b/version.json
+@@ -1,5 +1,5 @@
+ {
+-  "version": "2026-11-07.1",
++  "version": "2026-11-08.1",
+   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
+-  "notes": "存档还原画面 / 界面不透明度键独立 / 自测扩充"
++  "notes": "自动续说 / 存档还原画面 / 场景与立绘切换 / 语音与界面修复"
+ }
