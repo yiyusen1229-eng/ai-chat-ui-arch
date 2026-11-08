@@ -1030,21 +1030,6 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
             return self._json(dict(ok=True, **powerwatch.state()))
         if self.path.startswith("/api/assets/wizard"):
             return self._wizard_get()
-        if self.path.split("?")[0] == "/api/group/cast":
-            try:
-                import group as _grp
-                return self._json({"ok": True, "items": _grp.list_cast(),
-                                   "prefs": _grp.load_prefs()})
-            except Exception as e:
-                return self._json({"ok": False, "error": str(e)}, 500)
-        if self.path.split("?")[0] == "/api/group/prefs":
-            try:
-                body = self._body()
-                import group as _grp
-                d = _grp.save_prefs(cast=body.get("cast"), story=body.get("story"))
-                return self._json({"ok": True, "prefs": d})
-            except Exception as e:
-                return self._json({"ok": False, "error": str(e)}, 400)
         if self.path.split("?")[0] == "/api/cleanup":
             # #17 数据清理入口：概览（各项体积 + 角色列表），只读不删
             return self._cleanup_get()

@@ -98,7 +98,6 @@ STEPS = [
     ("静态", "pref 键冲突 12 项", "py", ["tools/test_prefs_keys.py"], 60),
     ("核心", "语音缓存与重放 20 项", "py", ["tools/test_tts_cache.py"], 60),
     ("核心", "参考音频配对与随机 12 项", "py", ["tools/test_ref_texts.py"], 60),
-    ("核心", "多角色同场 9 项", "py", ["tools/test_group.py"], 60),
     ("核心", "情绪标签贯通 69 项", "py", ["tools/test_emotion_wiring.py"], 60),
     ("核心", "成人场面判定 13 项", "py", ["tools/test_hscene.py"], 60),
     ("核心", "合成参数与切分 9 项", "py", ["tools/test_tts_params.py"], 60),
