@@ -106,6 +106,10 @@ class ChatApi:
         # 自动续说：这一轮没有新的玩家消息，是她在接着自己刚才的话往下说
         _auto_continue = bool(req.get("continue"))
         _line_type = "her"          # 续写分句类型（her/you/narr/other），异常路径也要有值
+        _cast = [str(x).strip() for x in (req.get("cast") or []) if str(x).strip()]
+        _story = (req.get("story") or "").strip()
+        _group = len(_cast) >= 2     # 同场角色 ≥2 才算群聊模式
+        _speaker_name = ""
         _speaker = ""               # 非和纱的说话人名字
         # 成人场面：先听模型自己（<hscene> 标记），没给才退回关键词兜底
         _intimate = False
@@ -141,6 +145,22 @@ class ChatApi:
             msgs, period=period,
             max_entries=_sl["worldbook_entries"], max_chars=_sl["worldbook_chars"])
         system = persona_ctx.persona_text(raw_msgs, period=period)
+        if _group:
+            try:
+                import group as _grp
+                _cur = ""
+                try:
+                    import characters as _chs
+                    _fn = getattr(_chs, "active_id", None) or getattr(_chs, "current", None)
+                    _cur = (_fn() if callable(_fn) else "") or ""
+                except Exception:
+                    _cur = ""
+                _castinfo = [{"id": n, "name": n} for n in _cast]
+                system = _grp.build_block(_castinfo, _story, _cur) + system
+                log("同场角色：%s%s" % ("、".join(_cast),
+                                    ("／剧情：" + _story[:20]) if _story else ""))
+            except Exception as e:
+                log("同场角色块失败: %s" % e)
         if _auto_continue:
             # 续写模式：和"一句台词"的硬规则冲突，必须在最前面覆盖掉，
             # 否则模型会拒绝写旁白（实测返回空）。
@@ -403,7 +423,24 @@ class ChatApi:
             action = " ".join(a for a in acts if a).strip()
             # 自动续写：模型按约定用引号区分三类 —— 「」她说的、『』对方说的、无引号旁白。
             # 只有她的台词加「」并配语音；旁白和对方台词不配音。
-            if _auto_continue:
+            if _group:
+                try:
+                    import group as _grp2
+                    _castinfo2 = [{"id": n, "name": n} for n in _cast]
+                    _cur2 = ""
+                    try:
+                        import characters as _chs2
+                        _fn2 = getattr(_chs2, "active_id", None) or getattr(_chs2, "current", None)
+                        _cur2 = (_fn2() if callable(_fn2) else "") or ""
+                    except Exception:
+                        pass
+                    _pl = _grp2.parse_line(reply or "", _castinfo2, _cur2)
+                    _speaker_name = _pl.get("speaker") or ""
+                    _line_type = _pl.get("line_type") or "narr"
+                    reply = _pl.get("text") or ""
+                except Exception as e:
+                    log("同场分句失败: %s" % e)
+            if _auto_continue and not _group:
                 _ms = re.search(r"<say>(.*?)</say>", reply or "", re.S | re.I)
                 _my = re.search(r"<you>(.*?)</you>", reply or "", re.S | re.I)
                 _body = (reply or "").strip()
@@ -431,7 +468,12 @@ class ChatApi:
             _r = (reply or "").strip()
             if _r:
                 _r = _r.strip("「」『』")
-                reply = _r if _line_type != "her" else ("「" + _r + "」")
+                if _line_type == "her":
+                    reply = "「" + _r + "」"
+                elif _line_type == "other" and _speaker_name:
+                    reply = _speaker_name + "：「" + _r + "」"
+                else:
+                    reply = _r
 
             # 中文：优先用模型自己写的那句；没写 / 不像中文才回落翻译层
             reply_zh = ""
@@ -500,7 +542,7 @@ class ChatApi:
             except Exception:
                 pass
 
-            self._json({"reply": reply, "reply_zh": reply_zh, "line_type": _line_type, "thinking": think,
+            self._json({"reply": reply, "reply_zh": reply_zh, "line_type": _line_type, "speaker": _speaker_name, "thinking": think,
                         "action": action, "action_zh": action_zh,
                         "emotion": emo, "hscene": bool(_intimate),
                         "scene": scene_now, "outfit": outfit_now,

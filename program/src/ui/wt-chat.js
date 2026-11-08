@@ -144,6 +144,10 @@
 
         if (act.model) body.model = act.model;
       if (act.url) body.base_url = act.url;
+      try {
+        var _g = (WA2.group && WA2.group.payload) ? WA2.group.payload() : null;
+        if (_g && _g.cast && _g.cast.length >= 2) { body.cast = _g.cast; body.story = _g.story || ""; }
+      } catch (e) {}
       // 让后端做一次剧本检索：和这句话相关的「原作里发生过的事」会单独拼进 system
       body.memory = true;
       // 当前背景一并带上：模型只说地点没说时间时，新场景沿用现在的时段（白天/晚上）
@@ -191,6 +195,10 @@
                       last_emo: (window.__lastEmo || "") };
           if (act.model) b.model = act.model;
           if (act.url) b.base_url = act.url;
+          try {
+            var _g2 = (WA2.group && WA2.group.payload) ? WA2.group.payload() : null;
+            if (_g2 && _g2.cast && _g2.cast.length >= 2) { b.cast = _g2.cast; b.story = _g2.story || ""; }
+          } catch (e) {}
           var _bgNow2 = (WA2.session && WA2.session.currentBg) ? WA2.session.currentBg() : "";
           if (_bgNow2) b.bg = _bgNow2;
           if (WA2.state.outfit) b.outfit = WA2.state.outfit;
@@ -200,6 +208,7 @@
       });
       const d = await r.json();
       if (!d || d.error) return null;
+      if (!String(d.reply || "").trim()) return null;   /* 空回复别进队列，否则卡一条空白 */
       return d;
     } catch (e) { return null; }
   }
