@@ -408,6 +408,10 @@ class ChatApi:
                     log("场景匹配失败: %s" % e)
                 if not bg_hit:
                     log("场景没匹配上：%r（当前背景 %r）" % (scene_now, prev_bg))
+                else:
+                    log("场景：%r → %r" % (scene_now, bg_hit.get("id") or ""))
+            else:
+                log("场景：本轮模型没给 <scene>（沿用 %r）" % (prev_bg or "",))
             diag.note("scene", query=scene_now[:24], id=bg_hit.get("id", ""),
                       place=bg_hit.get("place", ""), time=bg_hit.get("time", ""),
                       score=bg_hit.get("score"))

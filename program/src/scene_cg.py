@@ -65,6 +65,30 @@ PLACE_ALIAS = {
     "classroom": "教室", "corridor": "教学楼走廊", "music": "第二音乐室",
     "street": "街上", "cafe": "咖啡厅", "home": "和纱家别墅",
     "night": "夜晚天空", "stage": "学园祭舞台",
+    "车站前": "站台",
+    "站前": "站台",
+    "电车站": "站台",
+    "校门前": "学校大门口",
+    "校门口": "学校大门口",
+    "学校门口": "学校大门口",
+    "楼道": "大学楼道",
+    "楼梯": "大学楼道",
+    "天台": "学校大门口",
+    "屋顶": "学校大门口",
+    "楼顶": "学校大门口",
+    "操场": "学校操场",
+    "体育馆": "学校体育馆",
+    "音乐厅": "市音乐馆",
+    "商店": "商业街的斑马线前",
+    "河边": "河边绿道",
+    "回家": "回家的路",
+    "飞机": "飞机机舱内",
+    "教室外": "教学楼走廊",
+    "教室门口": "教学楼走廊",
+    "走廊上": "教学楼走廊",
+    "便利店": "商业街的斑马线前",
+    "超市": "商业街的斑马线前",
+    "商店街": "商业街的斑马线前",
 }
 
 # 查询里常见的前缀（"在街上" "去咖啡厅"），比对地点名时去掉
@@ -306,6 +330,12 @@ def match(scene, prev=""):
     q = _parse_query(text, cat)
     if not q["place"]:
         return {}
+    # 复合场景名（「学校教学楼的天台」）直接匹配不上时，退一步看里面有没有认识的别名词
+    _alias_hit = ""
+    for _k, _v in sorted(PLACE_ALIAS.items(), key=lambda kv: -len(kv[0])):
+        if _k and _k in text:
+            _alias_hit = _v
+            break
 
     # 当前背景的时段（"咖啡厅（晚上）" → 晚上），用于"没说时间就沿用"
     prev_time = parse_name(prev)["time"]
@@ -328,8 +358,12 @@ def match(scene, prev=""):
         sc = max(_place_score(a, pl) for a in aliases)
         if sc > best_place_score:
             best_place, best_place_score = pl, sc
-    if not best_place or best_place_score < 0.55:
-        return {}
+    if (not best_place or best_place_score < 0.55) and _alias_hit:
+        # 退一步：用场景串里出现的别名词（「天台」→ 学校大门口）
+        for pl in cat["places"]:
+            if pl == _alias_hit:
+                best_place, best_place_score = pl, 0.6
+                break
 
     # 2. 在该地点的变体里挑
     pool = [it for it in cat["items"] if it.get("place") == best_place]
