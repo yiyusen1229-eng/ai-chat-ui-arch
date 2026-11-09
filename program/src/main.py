@@ -1030,6 +1030,37 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
             return self._json(dict(ok=True, **powerwatch.state()))
         if self.path.startswith("/api/assets/wizard"):
             return self._wizard_get()
+        if self.path.split("?")[0] == "/api/cast/status":
+            try:
+                import cast as _cast
+                return self._json({"ok": True, "cast": _cast.status()})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] == "/api/direct/status":
+            try:
+                import director as _dir
+                import playqueue as _pq
+                d = _dir.status()
+                d["queue"] = _pq.snapshot()
+                return self._json({"ok": True, "director": d})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] == "/api/play/next":
+            try:
+                import playqueue as _pq
+                return self._json({"ok": True, "line": _pq.pop(), "queue": _pq.snapshot()})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] == "/api/card":
+            try:
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                kind = (q.get("kind") or ["director"])[0]
+                import char_cards
+                return self._json({"ok": True, "kind": kind,
+                                   "text": char_cards.read_card(kind),
+                                   "info": char_cards.info()})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
         if self.path.split("?")[0] == "/api/char/model":
             try:
                 import char_model
@@ -1231,6 +1262,47 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
         if self.path.startswith("/api/update/apply"):
             # 一键更新：整份代码取最新，不走补丁链（漏几版都没关系）
             return self._update_apply()
+        if self.path.split("?")[0] == "/api/cast/set":
+            try:
+                body = self._body() or {}
+                import cast as _cast
+                r = _cast.set_cast(body.get("members"))
+                r["status"] = _cast.status()
+                return self._json(r)
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] == "/api/direct/options":
+            try:
+                body = self._body() or {}
+                import director as _dir
+                return self._json(_dir.set_options(body.get("enabled"), body.get("auto"),
+                                                   body.get("length"), body.get("direction")))
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] == "/api/direct/stub":
+            try:
+                body = self._body() or {}
+                import director as _dir
+                import playqueue as _pq
+                beats = _dir.stub_beats(int(body.get("n") or 2))
+                n = _pq.push(beats)
+                return self._json({"ok": True, "pushed": n, "queue": _pq.snapshot()})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] == "/api/play/clear":
+            try:
+                import playqueue as _pq
+                return self._json(_pq.clear())
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] == "/api/card":
+            try:
+                body = self._body() or {}
+                import char_cards
+                r = char_cards.write_card(body.get("kind") or "director", body.get("text") or "")
+                return self._json(r, 200 if r.get("ok") else 400)
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
         if self.path.split("?")[0].startswith("/api/char/model"):
             # 角色级模型配置：保存 / 连接 / 断开 / 切换
             try:
