@@ -60,6 +60,21 @@
   }
 
   /** 合成语音并返回 Audio（失败或超时返回 null） */
+  /* 这次合成该用哪个情绪参考：
+     模型标签优先，但当前场面是特殊场面时，平静/温柔/空 一律按特殊参考走
+     （后端只会纠正很短的纯拟声句，稍长的台词会漏过去，听起来就变平静）。 */
+  function emoFor(text) {
+    var e = (window.__lastEmo || (window.emoOf ? window.emoOf(text) : "") || "").trim();
+    var low = e.toLowerCase();
+    try {
+      if (document.body.dataset.hscene === "1" &&
+          (!e || low === "calm" || low === "soft" || low === "neutral" || low === "calm(平静)")) {
+        e = "H";
+      }
+    } catch (err) {}
+    return e;
+  }
+
   function fetchVoice(text, timeoutMs) {
     if (!ttsOn) return Promise.resolve(null);
     /* 把这次真正用到的参数记下来：回想重放要原样复用，否则参数一漂就缓存未命中
@@ -68,7 +83,7 @@
       window.__lastVoiceReq = {
         t: text,
         l: currentVoiceLang(),
-        e: (window.__lastEmo || (window.emoOf ? window.emoOf(text) : "") || "")
+        e: emoFor(text)
       };
     } catch (e) {}
     return new Promise((resolve) => {
@@ -90,7 +105,7 @@
           if (done) return;
           done = true;
           fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() +
-                "&emotion=" + (window.__lastEmo || emoOf(text)) +
+                "&emotion=" + encodeURIComponent(emoFor(text)) +
                 (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""))
             .then(function (r) { if (!r.ok) throw new Error("tts " + r.status); return r.blob(); })
             .then(function (blob) {
@@ -103,7 +118,7 @@
         }, 1500);
         return;
       }, _budget);
-      fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() + "&emotion=" + (window.__lastEmo || emoOf(text)) + (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""), ctrl ? { signal: ctrl.signal } : {})
+      fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() + "&emotion=" + encodeURIComponent(emoFor(text)) + (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""), ctrl ? { signal: ctrl.signal } : {})
         .then((r) => {
           if (!r.ok) throw new Error("tts " + r.status);
           return r.blob();
@@ -186,7 +201,7 @@
   }
   var _voiceResolve = null;
   var _exp = {};
-  var _names = ["_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak",
+  var _names = ["emoFor", "_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak",
                 "suspendForDevice", "resumeAfterDevice", "waitTtsReady"];
   for (var _i = 0; _i < _names.length; _i++) {
     try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
@@ -194,7 +209,7 @@
   WA2.voice = _exp;
   WA2.register("voice", _exp);
   /* __export_all__ */
-  ["_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak", "waitTtsReady", "WA2", "_exp", "_names", "a", "clean", "ctrl", "done", "emoOf", "timer", "ttsAudio", "url"].forEach(function (n) {
+  ["emoFor", "_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak", "waitTtsReady", "WA2", "_exp", "_names", "a", "clean", "ctrl", "done", "emoOf", "timer", "ttsAudio", "url"].forEach(function (n) {
     try { var v = eval(n); if (v !== undefined) { window[n] = v; } } catch (e) {}
   });
 })();
