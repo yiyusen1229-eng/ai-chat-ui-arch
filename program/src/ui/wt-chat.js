@@ -49,13 +49,16 @@
       history.push({ role: "assistant", content: reply });
       window.__history = history;
       // 对话框显示中文（有译文用译文），历史记录也显示中文
-      let shown = replyZh ? ("「" + replyZh.replace(/^「|」$/g, "") + "」") : reply;
+      /* 和原版一致：角色台词 = 「…」（名字在名字牌上）；旁白 = 没有名字、也没有「」 */
+      var _lineText = (replyZh || reply).trim();
+      let shown;
       if (_isNarr) {
-        /* 旁白：去掉外面的括号，直接给正文 */
-        shown = (replyZh || reply)
+        shown = _lineText
           .replace(/^[（(【\[「]+/, "")
           .replace(/[）)】\]」]+$/, "")
           .trim();
+      } else {
+        shown = "「" + _lineText.replace(/^[「『]+|[」』]+$/g, "") + "」";
       }
       window.__speakJa = replyZh ? reply.replace(/^「|」$/g, "") : "";
       /* 中日对照：content 保留语言模型原句（含 action/emotion 未过滤），zh 存翻译模型原样输出 */
