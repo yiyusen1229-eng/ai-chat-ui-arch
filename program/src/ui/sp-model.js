@@ -55,6 +55,7 @@
     el("spmdKey").value = "";   /* 原生 placeholder 会和字模层叠字，不用 */
     setText(el("spmdModel"), k.model || (k.globalModel ? (k.globalModel + "（全局）") : "—"));
     syncPh();
+    setConnectLabel(!!k.connected);
   }
 
   function load(kind, cb) {
@@ -97,7 +98,7 @@
       api("/api/char/model/connect", { kind: state.kind }).then(function (d) {
         state.busy = false;
         if (d && d.ok) {
-          load(state.kind, function () { paintStatus("已连接" + (d.model ? "：" + d.model : ""), true); });
+          load(state.kind, function () { setConnectLabel(true); paintStatus("已连接" + (d.model ? "：" + d.model : "")); });
         } else {
           paintStatus("连接失败：" + ((d && d.error) || "未知错误"), false);
         }
@@ -108,7 +109,7 @@
   function doDisconnect() {
     saveFields(function () {
       api("/api/char/model/disconnect", { kind: state.kind }).then(function (d) {
-        if (d && d.ok) { load(state.kind, function () { paintStatus("已断开", false); }); }
+        if (d && d.ok) { load(state.kind, function () { setConnectLabel(false); paintStatus("已断开"); }); }
         else toast((d && d.error) || "断开失败");
       });
     });
@@ -121,10 +122,22 @@
         el("spmdEndpoint").value = "";
         el("spmdKey").value = "";
         setText(el("spmdModel"), "—");
+        setConnectLabel(false);
+        syncPh();
         paintStatus("已清空，请重新输入端点与 API", true);
         el("spmdEndpoint").focus();
       } else toast((d && d.error) || "切换失败");
     });
+  }
+
+  /* 连接按钮的字样：已连接 ↔ 连接 */
+  function setConnectLabel(on) {
+    var btn = document.querySelector('.spmdBtn[data-act="connect"]');
+    if (!btn) return;
+    var img = btn.querySelector("img");
+    if (!img) return;
+    img.src = on ? "assets/ui/text/mgr_ok.png" : "assets/ui/text/mgr_connect.png";
+    img.alt = on ? "已连接" : "连接";
   }
 
   /* 占位图：输入框为空时显示，有内容时隐藏（占位本身是烘焙好的图） */
