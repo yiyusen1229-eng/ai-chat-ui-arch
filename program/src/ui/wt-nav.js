@@ -209,11 +209,9 @@
       // 模型有时自己带了（）/「」，先剥掉再统一包一层
       var clean = body.replace(/^[（(【\[]+/, "").replace(/[）)】\]]+$/, "").trim();
       box.textContent = "（" + clean + "）";
-      // 文字越长字号越小，保证不超出左上角区域
-      const L = body.length;
-      const fs = L <= 40 ? 9 : L <= 80 ? 8 : L <= 140 ? 7 : 6.2;
-      box.style.fontSize = fs + "px";
-      box.style.webkitLineClamp = L <= 40 ? 7 : L <= 80 ? 8 : 9;
+      /* 字号固定成和对话框一致（15.5px），不再按长度缩 */
+      box.style.fontSize = "";
+      box.style.webkitLineClamp = 4;
       box.classList.remove("hidden");
     } else {
       box.textContent = "";

@@ -1,16 +1,18 @@
-/* wt-play.js —— 播放队列的消费端（最小闭环）
+/* wt-play.js —— 播放队列的消费端
  *
- * 后端 playqueue 里排好的「拍」由这里取出来显示。
- * 现在只做最朴素的一条：取一条 → 当成一句台词显示 → 再取下一条。
- * 多角色排版、按角色说话、语音，都等导演接上后再细化。
- *
- * 触发方式：轮询 /api/play/next（1.2 秒一次，只在空闲时取）。
+ * 从后端取「拍」显示到对话框：
+ *   · 角色台词 → 「名字：「…」」，若是当前角色（有音色）就同时出语音
+ *   · 旁白     → 直接显示，不出声
+ *   · 翻页节奏：按字数给阅读时间（最短 2.2 秒），有语音就等语音播完
+ *   · 队列空了、多角色开着，就请导演再写一拍（5 秒冷却）
  */
 (function () {
   var WA2 = window.WA2 = window.WA2 || {};
   var timer = null;
   var busy = false;
-  var playing = false;
+  var holdUntil = 0;
+  var lastGen = 0;
+  var genOn = false;
 
   function idle() {
     try {
@@ -21,27 +23,55 @@
     return true;
   }
 
-  function show(line) {
-    if (!line || !line.text) return Promise.resolve();
-    var speaker = line.speaker || "";
-    var text = line.text;
-    /* 多人台词先用「名字：「…」」的形式，等排版做好再换成正式版 */
-    var body = speaker ? (speaker + "：「" + text + "」") : text;
-    try {
-      if (WA2.chat && WA2.chat.renderQueued) {
-        /* 只给 reply，别带空字段：applyServerReply 会拿 scene/emo 去改画面 */
-        return WA2.chat.renderQueued({ reply: body });
-      }
-    } catch (e) {}
-    var el = document.getElementById("msgText");
-    if (el) el.textContent = body;
-    return Promise.resolve();
+  function readMs(text) {
+    var n = (text || "").length;
+    return Math.min(9000, Math.max(2200, Math.round(n * 130)));
   }
 
-  var lastGen = 0;
-  var genOn = false;
+  function sleep(ms) {
+    return new Promise(function (res) { setTimeout(res, ms); });
+  }
 
-  /* 队列空了就请导演再写一拍（多角色开、且距上次生成够久） */
+  /* 当前角色的名字：只有她/他有音色 */
+  function ownName() {
+    try {
+      if (window.CHAR_NAME) return String(window.CHAR_NAME);
+    } catch (e) {}
+    var el = document.querySelector("#namePlate");
+    return el ? (el.textContent || "").trim() : "";
+  }
+
+  function show(line) {
+    if (!line || !line.text) return Promise.resolve(0);
+    var speaker = line.speaker || "";
+    var text = line.text;
+    var isNarr = (line.type === "narr") || !speaker;
+    var body = isNarr ? text : (speaker + "：「" + text + "」");
+
+    var p = Promise.resolve();
+    try {
+      if (WA2.chat && WA2.chat.renderQueued) p = WA2.chat.renderQueued({ reply: body });
+    } catch (e) {}
+    if (!p || !p.then) {
+      var el = document.getElementById("msgText");
+      if (el) el.textContent = body;
+      p = Promise.resolve();
+    }
+
+    return p.then(function () {
+      /* 有语音的角色：出声音（旁白、龙套、其他角色都不出声） */
+      var voiced = !isNarr && line.voice && speaker && speaker === ownName();
+      if (voiced && WA2.voice && WA2.voice.speakReply) {
+        try {
+          return WA2.voice.speakReply(text).then(function () { return readMs(text); });
+        } catch (e) {}
+      }
+      return readMs(text);
+    }).then(function (ms) {
+      return sleep(ms || 0).then(function () { return ms; });
+    });
+  }
+
   function maybeGenerate() {
     if (!genOn) return Promise.resolve(false);
     var now = Date.now();
@@ -50,13 +80,14 @@
     return fetch("/api/direct/gen", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ n: 1 })
-    }).then(function (r) { return r.json(); }).then(function (d) {
-      return !!(d && d.ok);
-    }).catch(function () { return false; });
+    }).then(function (r) { return r.json(); })
+      .then(function (d) { return !!(d && d.ok); })
+      .catch(function () { return false; });
   }
 
   function tick() {
     if (busy || !idle()) return;
+    if (Date.now() < holdUntil) return;
     busy = true;
     fetch("/api/play/next", { cache: "no-store" })
       .then(function (r) { return r.json(); })
@@ -64,8 +95,10 @@
         if (!d || !d.ok || !d.line) {
           return maybeGenerate().then(function () { busy = false; });
         }
-        playing = true;
-        return show(d.line).then(function () { playing = false; busy = false; });
+        return show(d.line).then(function () {
+          busy = false;
+          holdUntil = Date.now() + 400;
+        });
       })
       .catch(function () { busy = false; });
   }
@@ -73,17 +106,15 @@
   function syncFlags() {
     fetch("/api/direct/status", { cache: "no-store" })
       .then(function (r) { return r.json(); })
-      .then(function (d) {
-        var dir = (d && d.director) || {};
-        genOn = !!dir.enabled;
-      }).catch(function () {});
+      .then(function (d) { genOn = !!((d && d.director) || {}).enabled; })
+      .catch(function () {});
   }
 
   function start() {
+    if (timer) return;
     syncFlags();
     setInterval(syncFlags, 5000);
-    if (timer) return;
-    timer = setInterval(tick, 1200);
+    timer = setInterval(tick, 400);
     window.__playRunning = true;
   }
 
@@ -92,7 +123,7 @@
     window.__playRunning = false;
   }
 
-  var api = { start: start, stop: stop, tick: tick, isPlaying: function () { return playing; } };
+  var api = { start: start, stop: stop, tick: tick, isPlaying: function () { return busy; } };
   WA2.play = api;
   WA2.register && WA2.register("play", api);
   window.__playStart = start;

@@ -4,7 +4,7 @@
  *   · 连接状态：每个角色 聊天模型 / 语音 是否连上
  *   · 阵容：本场有谁、谁是主角、谁是龙套
  *   · 队列：后台待播条数、清空
- *   · 开关：多角色 / 自动续写
+ *   · 开关：多角色（自动模式仍用右下角那个按钮）
  *   · 长度：小 / 中 / 大
  *   · 测试：往队列里塞两条占位台词（不接模型，验证链路）
  *
@@ -149,9 +149,6 @@
       subRow("多角色：" + (d && d.enabled ? "开" : "关"), function () {
         api("/api/direct/options", { enabled: !(d && d.enabled) }).then(refresh);
       }),
-      subRow("自动续写：" + (d && d.auto ? "开" : "关"), function () {
-        api("/api/direct/options", { auto: !(d && d.auto) }).then(refresh);
-      })
     ]));
 
     /* 长度 */

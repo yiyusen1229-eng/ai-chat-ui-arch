@@ -367,10 +367,10 @@ html, body {
   left: 3.2%;
   top: 15%;
   right: 9%;                  /* 和 left+width 同时存在时 right 不参与布局，保留只为宽度约束一致 */
-  width: 21%;
-  max-height: 34%;
+  width: 30%;
+  max-height: 38%;
   overflow: hidden;
-  font-size: 10.5px;
+  font-size: 15.5px;          /* 和 #msgText 一致 */
   line-height: 1.5;
   color: #8fd0ef;
   font-style: italic;
