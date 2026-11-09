@@ -33,7 +33,6 @@ var CT, CT2;
     // 界面显示后让统一文字渲染器补扫一遍（隐藏时它不会处理）
     if (window.__uiTextScan) {
       window.__uiTextScan(s);
-      window.__uiTextScan(byId("optContent3"));
     }
   }
 
