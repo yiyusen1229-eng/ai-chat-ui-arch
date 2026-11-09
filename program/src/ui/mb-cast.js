@@ -24,6 +24,10 @@
     return d;
   }
 
+  function toast(msg) {
+    try { if (window.__toast) window.__toast(msg, 2200); } catch (e) {}
+  }
+
   function api(path, body) {
     var opt = body ? {
       method: "POST",
@@ -160,6 +164,14 @@
     menu.appendChild(el("div", "mi-sep"));
 
     /* 测试 */
+    menu.appendChild(row("写一拍（用模型）", function () {
+      toast("导演正在写…");
+      api("/api/direct/gen", { n: 2 }).then(function (r) {
+        if (!r || !r.ok) toast((r && r.error) || "导演没写出来");
+        else toast("收到 " + (r.pushed || 0) + " 条");
+        refresh();
+      });
+    }));
     menu.appendChild(row("塞两条占位台词", function () {
       api("/api/direct/stub", { n: 2 }).then(refresh);
     }));

@@ -1279,6 +1279,18 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
                                                    body.get("length"), body.get("direction")))
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] == "/api/direct/gen":
+            try:
+                body = self._body() or {}
+                import director_gen
+                import playqueue as _pq
+                r = director_gen.generate(int(body.get("n") or 2))
+                if r.get("ok"):
+                    r["pushed"] = _pq.push(r.get("beats"))
+                    r["queue"] = _pq.snapshot()
+                return self._json(r, 200 if r.get("ok") else 400)
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
         if self.path.split("?")[0] == "/api/direct/stub":
             try:
                 body = self._body() or {}

@@ -38,20 +38,50 @@
     return Promise.resolve();
   }
 
+  var lastGen = 0;
+  var genOn = false;
+
+  /* 队列空了就请导演再写一拍（多角色开、且距上次生成够久） */
+  function maybeGenerate() {
+    if (!genOn) return Promise.resolve(false);
+    var now = Date.now();
+    if (now - lastGen < 5000) return Promise.resolve(false);
+    lastGen = now;
+    return fetch("/api/direct/gen", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ n: 1 })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      return !!(d && d.ok);
+    }).catch(function () { return false; });
+  }
+
   function tick() {
     if (busy || !idle()) return;
     busy = true;
     fetch("/api/play/next", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d || !d.ok || !d.line) { busy = false; return; }
+        if (!d || !d.ok || !d.line) {
+          return maybeGenerate().then(function () { busy = false; });
+        }
         playing = true;
         return show(d.line).then(function () { playing = false; busy = false; });
       })
       .catch(function () { busy = false; });
   }
 
+  function syncFlags() {
+    fetch("/api/direct/status", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var dir = (d && d.director) || {};
+        genOn = !!dir.enabled;
+      }).catch(function () {});
+  }
+
   function start() {
+    syncFlags();
+    setInterval(syncFlags, 5000);
     if (timer) return;
     timer = setInterval(tick, 1200);
     window.__playRunning = true;
