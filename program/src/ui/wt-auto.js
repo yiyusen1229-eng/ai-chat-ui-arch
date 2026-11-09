@@ -121,6 +121,8 @@
   /* 补队列，直到 CAP 条 */
   function pump() {
     if (!state.on) return false;
+    /* 多角色/导演在跑：演出由导演那条链路负责，这里不要再自己调模型 */
+    try { if (window.__directorOn) return false; } catch (e) {}
     /* 缓冲语义：最多领先「正在播的那句」CAP 条；满了就等播完再补，**不是**总共只生成三条 */
     if (state.queue.length >= CAP) return false;
     if (state.generating) return false;
@@ -141,15 +143,8 @@
         return;
       }
       state.errors = 0;
-      /* 模型不能只写旁白（主提示词强制「只输出一句台词」），
-         但它本来就会给动作/神态描写 —— 拿它当旁白，先放一条无语音的叙述。 */
-      try {
-        var _act = ((d && (d.action_zh || d.action)) || "").trim();
-        if (_act && (d.line_type || "her") === "her") {
-          state.queue.push({ line_type: "narr", reply: _act, reply_zh: _act,
-                             emotion: "", bg: "", outfit: "", hscene: 0, action: "" });
-        }
-      } catch (e) {}
+      /* 动作/神态只留在左上角动作区（renderThinking 已经会显示），
+         不再另外推一条 narr 进对话框——否则同一句话会出现两次。 */
       state.queue.push(d);
       if (!state.showing) showNext();
       /* 还没满就继续补（播完一条会自动再补一条） */

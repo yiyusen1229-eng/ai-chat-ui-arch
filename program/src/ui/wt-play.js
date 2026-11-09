@@ -135,7 +135,12 @@
   function syncFlags() {
     fetch("/api/direct/status", { cache: "no-store" })
       .then(function (r) { return r.json(); })
-      .then(function (d) { genOn = !!((d && d.director) || {}).enabled; })
+      .then(function (d) {
+        var dir = (d && d.director) || {};
+        genOn = !!dir.enabled;
+        /* 告诉自动模式：导演在跑，别再用 /api/chat 并行写 */
+        window.__directorOn = !!dir.enabled;
+      })
       .catch(function () {});
   }
 
