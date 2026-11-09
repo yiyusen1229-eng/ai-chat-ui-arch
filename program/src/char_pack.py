@@ -40,7 +40,7 @@ FORMAT = "wa2-char-pack"
 FORMAT_VERSION = 1
 
 # 包里的「角色本体」：5 个资源目录 + 显示名
-PACK_DIRS = ("prompt", "worldbook", "memory", "portrait", "voice")
+PACK_DIRS = ("prompt", "worldbook", "memory", "portrait", "voice", "voice_model", "card")
 PACK_FILES = ("name.txt",)
 MANIFEST = "manifest.json"
 

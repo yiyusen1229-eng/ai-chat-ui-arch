@@ -84,8 +84,9 @@ def bind_host():
     return (os.environ.get("WA2_TTS_BIND") or HOST).strip() or HOST
 
 # 本地 TTS 权重（由使用者自行准备并放入对应目录）
-GPT_W = os.path.join(GSV, "GPT_weights_v4", "Touma_Kazusa-e15.ckpt")
-SOVITS_W = os.path.join(GSV, "SoVITS_weights_v4", "Touma_Kazusa_e8_s33072_l32.pth")
+# 默认用预训练底模（零样本）：角色包里带权重的，切角色时再热切换过去
+GPT_W = os.path.join(GSV, "GPT_SoVITS", "pretrained_models", "s1v3.ckpt")
+SOVITS_W = os.path.join(GSV, "GPT_SoVITS", "pretrained_models", "gsv-v4-pretrained", "s2Gv4.pth")
 
 _model_key = ""      # 合并版：当前已加载的角色语音配置签名
 
@@ -106,7 +107,23 @@ def _char_json(name):
 
 
 def _character_tts():
-    """角色的 tts.json：{gpt, sovits}；相对路径按 GPT-SoVITS 根目录解析"""
+    """角色自己的语音权重：
+
+    1. 角色包里的 voice_model/ —— 有 .ckpt + .pth 就直接用（推荐，权重跟着角色走）；
+    2. 老办法 tts.json —— {gpt, sovits}，相对路径按 GPT-SoVITS 根目录解析；
+    3. 都没有 → 返回 {}，走预训练底模（零样本，只靠参考音频）。
+    """
+    try:
+        import characters
+        vm = os.path.join(characters.active_dir() or "", "voice_model")
+        if os.path.isdir(vm):
+            ckpt = [f for f in os.listdir(vm) if f.lower().endswith(".ckpt")]
+            pth = [f for f in os.listdir(vm) if f.lower().endswith(".pth")]
+            if ckpt and pth:
+                return {"gpt": os.path.join(vm, ckpt[0]),
+                        "sovits": os.path.join(vm, pth[0])}
+    except Exception:
+        pass
     d = _char_json("tts.json")
     g = (d.get("gpt") or "").strip()
     s = (d.get("sovits") or "").strip()
@@ -617,7 +634,11 @@ def _ensure_char_model():
     global _model_key, _last_err
     m = _character_tts()
     if not m:
-        return True
+        # 这个角色没有自己的权重：开机就是底模时不用切；
+        # 如果之前加载过别的角色的权重，才切回底模。
+        if not _model_key:
+            return True
+        m = {"gpt": GPT_W, "sovits": SOVITS_W}
     key = m["gpt"] + "|" + m["sovits"]
     if key == _model_key:
         return True
