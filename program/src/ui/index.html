@@ -201,26 +201,26 @@
     <!-- 角色模型：聊天模型 / 语音模型 的连接设置（底板 sys_00100，输入框 sys_00110） -->
     <div id="spModelDlg" class="spModelDlg" data-no-uitext="1" role="dialog" aria-hidden="true">
       <div class="spmdWrap">
-        <div class="spmdTitle"><img id="spmdTitleImg" src="assets/ui/text/mgr_dialog.png" alt=""><span id="spmdKindText"></span></div>
+        <div class="spmdTitle" id="spmdTitle">聊天模型</div>
         <div class="spmdRow">
           <span class="spmdLabel"><img src="assets/ui/text/mgr_endpoint.png" alt="端点"></span>
-          <span class="spmdField"><span class="spmdFieldBg"></span><input id="spmdEndpoint" class="spmdInput" type="text" spellcheck="false" placeholder="https://api.example.com/v1"></span>
+          <span class="spmdField"><input id="spmdEndpoint" class="spmdInput" type="text" spellcheck="false" placeholder="https://api.example.com/v1"></span>
+          <button class="spmdBtn" type="button" data-act="switch"><img src="assets/ui/text/mgr_conn_switch.png" alt="切换连接"></button>
         </div>
         <div class="spmdRow">
           <span class="spmdLabel"><img src="assets/ui/text/mgr_apikey.png" alt="API 密钥"></span>
-          <span class="spmdField"><span class="spmdFieldBg"></span><input id="spmdKey" class="spmdInput" type="password" spellcheck="false" placeholder="sk-..."></span>
+          <span class="spmdField"><input id="spmdKey" class="spmdInput" type="password" spellcheck="false" placeholder="sk-..."></span>
+          <button class="spmdBtn" type="button" data-act="disconnect"><img src="assets/ui/text/mgr_conn_off.png" alt="断开连接"></button>
         </div>
         <div class="spmdRow">
           <span class="spmdLabel"><img src="assets/ui/text/mgr_model.png" alt="模型名称"></span>
           <span class="spmdField spmdFieldPlain"><span id="spmdModel">—</span></span>
-        </div>
-        <div class="spmdStatus" id="spmdStatus"></div>
-        <div class="spmdBtns">
-          <button class="spmdBtn" type="button" data-act="switch"><img src="assets/ui/text/mgr_conn_switch.png" alt="切换连接"></button>
-          <button class="spmdBtn" type="button" data-act="disconnect"><img src="assets/ui/text/mgr_conn_off.png" alt="断开连接"></button>
           <button class="spmdBtn" type="button" data-act="connect"><img src="assets/ui/text/mgr_connect.png" alt="连接"></button>
         </div>
-        <button id="spmdClose" class="spmdClose" type="button" title="关闭">×</button>
+        <div class="spmdStatus" id="spmdStatus"></div>
+        <div class="spmdFoot">
+          <button class="spmdBtn spmdExit" type="button" data-act="exit"><img src="assets/ui/text/mgr_exit.png" alt="退出"></button>
+        </div>
       </div>
     </div>
     <div class="uiFoot"><img src="assets/ui/sys_09000.png" alt=""></div>

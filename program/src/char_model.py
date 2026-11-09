@@ -173,20 +173,13 @@ def disconnect(kind):
 
 
 def switch(kind):
-    """在「角色自己的配置」与「全局默认」之间切换。
+    """切换连接 = 清空这一类的配置，准备重新输入端点/API 连新的模型。
 
-    角色侧有配置 → 清空（回到全局默认）；没有 → 用全局默认填一份，可再改。
+    （2026-11-09 用户澄清：不是切回全局默认，而是清空重填）
     """
     if kind not in KINDS:
         return {"ok": False, "error": "bad kind"}
     raw = _load_raw()
-    sec = raw.get(kind) or {}
-    g = _global_default(kind)
-    if sec.get("endpoint") or sec.get("key"):
-        raw[kind] = {"endpoint": "", "key": "", "model": "", "connected": False}
-        _save_raw(raw)
-        return {"ok": True, "usingGlobal": True}
-    raw[kind] = {"endpoint": g.get("endpoint") or "", "key": g.get("key") or "",
-                 "model": g.get("model") or "", "connected": False}
-    _save_raw(raw)
-    return {"ok": True, "usingGlobal": False}
+    raw[kind] = {"endpoint": "", "key": "", "model": "", "connected": False}
+    ok = _save_raw(raw)
+    return {"ok": ok, "cleared": True}

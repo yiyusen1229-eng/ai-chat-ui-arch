@@ -37,7 +37,8 @@
   function fill(kind) {
     state.kind = kind;
     var k = (state.data && state.data.kinds && state.data.kinds[kind]) || {};
-    el("spmdKindText").textContent = (kind === "chat" ? "聊天模型" : "语音模型");
+    var _title = el("spmdTitle");
+    if (_title) _title.textContent = (kind === "chat" ? "聊天模型" : "语音模型");
     el("spmdEndpoint").value = k.endpoint || "";
     el("spmdKey").value = "";
     el("spmdKey").placeholder = k.hasKey ? ("已保存：" + (k.keyMask || "")) : "sk-...";
@@ -104,15 +105,16 @@
     });
   }
 
+  /* 切换连接：一键清空输入框与已存配置，重新输入端点/API 连新的模型 */
   function doSwitch() {
-    saveFields(function () {
-      api("/api/char/model/switch", { kind: state.kind }).then(function (d) {
-        if (d && d.ok) {
-          load(state.kind, function () {
-            paintStatus(d.usingGlobal ? "已切回全局默认" : "已切到角色自己的配置", true);
-          });
-        } else toast((d && d.error) || "切换失败");
-      });
+    api("/api/char/model/switch", { kind: state.kind }).then(function (d) {
+      if (d && d.ok) {
+        el("spmdEndpoint").value = "";
+        el("spmdKey").value = "";
+        el("spmdModel").textContent = "—";
+        paintStatus("已清空，请重新输入端点与 API", true);
+        el("spmdEndpoint").focus();
+      } else toast((d && d.error) || "切换失败");
     });
   }
 
@@ -126,10 +128,9 @@
         if (a === "connect") doConnect();
         if (a === "disconnect") doDisconnect();
         if (a === "switch") doSwitch();
+        if (a === "exit") close();
       });
     });
-    var cl = el("spmdClose");
-    if (cl) cl.addEventListener("click", close);
     dlg.addEventListener("click", function (e) { if (e.target === dlg) close(); });
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape" && dlg.classList.contains("show")) close();
