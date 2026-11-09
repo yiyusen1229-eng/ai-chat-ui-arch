@@ -201,15 +201,15 @@
     <!-- 角色模型：聊天模型 / 语音模型 的连接设置（底板 sys_00100，输入框 sys_00110） -->
     <div id="spModelDlg" class="spModelDlg" role="dialog" aria-hidden="true">
       <div class="spmdWrap">
-        <div class="spmdTitle" id="spmdTitle">聊天模型</div>
+        <div class="spmdTitle"><img id="spmdTitleImg" src="assets/ui/text/mgr_chat.png" alt="聊天模型"></div>
         <div class="spmdRow">
           <span class="spmdLabel"><img src="assets/ui/text/mgr_endpoint.png" alt="端点"></span>
-          <span class="spmdField"><input id="spmdEndpoint" class="spmdInput" type="text" spellcheck="false"></span>
+          <span class="spmdField"><img class="spmdPh" id="spmdPhUrl" src="assets/ui/text/spmd_ph_url.png" alt=""><input id="spmdEndpoint" class="spmdInput" type="text" spellcheck="false"></span>
           <button class="spmdBtn" type="button" data-act="switch"><img src="assets/ui/text/mgr_conn_switch.png" alt="切换连接"></button>
         </div>
         <div class="spmdRow">
           <span class="spmdLabel"><img src="assets/ui/text/mgr_apikey.png" alt="API 密钥"></span>
-          <span class="spmdField"><input id="spmdKey" class="spmdInput" type="password" spellcheck="false"></span>
+          <span class="spmdField"><img class="spmdPh" id="spmdPhKey" src="assets/ui/text/spmd_ph_key.png" alt=""><input id="spmdKey" class="spmdInput" type="password" spellcheck="false"></span>
           <button class="spmdBtn" type="button" data-act="disconnect"><img src="assets/ui/text/mgr_conn_off.png" alt="断开连接"></button>
         </div>
         <div class="spmdRow">
@@ -217,7 +217,6 @@
           <span class="spmdField spmdFieldPlain"><span id="spmdModel">—</span></span>
           <button class="spmdBtn" type="button" data-act="connect"><img src="assets/ui/text/mgr_connect.png" alt="连接"></button>
         </div>
-        <div class="spmdStatus" id="spmdStatus"></div>
         <div class="spmdFoot">
           <button class="spmdBtn spmdExit" type="button" data-act="exit"><img src="assets/ui/text/mgr_exit.png" alt="退出"></button>
         </div>

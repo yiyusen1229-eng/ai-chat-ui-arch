@@ -82,6 +82,8 @@ ITEMS = {
     "mgr_conn_switch":  ("切换连接", 11, True, None),
     "mgr_conn_off":     ("断开连接", 11, True, None),
     "mgr_exit":         ("退出", 11, True, None),
+    "spmd_ph_url":      ("api.deepseek.com", 10, False, None),
+    "spmd_ph_key":      ("sk-...", 10, False, None),
     "sp_pct":           ("%", 12, False, None),
     "sp_eq":            ("=", 12, False, None),
     "sp_approx":        ("≈", 12, False, None),

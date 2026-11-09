@@ -525,9 +525,9 @@
 }
 #specialScreen .spmdTitle {
   text-align: center; margin-bottom: 16px;
-  font-size: 14px; color: #eaf9ff; letter-spacing: 2px;
-  text-shadow: 0 1px 3px rgba(0, 20, 40, .9);
+  height: 17px; display: flex; align-items: center; justify-content: center;
 }
+#specialScreen .spmdTitle img { height: 15px; width: auto; }
 #specialScreen .spmdRow { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 #specialScreen .spmdLabel { width: 66px; flex: 0 0 auto; display: flex; align-items: center; }
 #specialScreen .spmdLabel img { height: 11px; width: auto; }
@@ -573,6 +573,15 @@
 #specialScreen .spmdPh {
   position: absolute; left: 20px; top: 50%; transform: translateY(-50%);
   pointer-events: none; opacity: .72;
-  white-space: nowrap; max-width: none;
+  height: 10px; width: auto; max-width: none;
 }
-#specialScreen .spmdPh img { height: 11px; width: auto; max-width: none; }
+
+/* ---------- 按钮悬停变黄线（btn_3state 第 2 帧） ---------- */
+#sendBtn:hover::before,
+#thinkBtn:hover::before { background-position: 0 50%; }
+#sendBtn:active::before,
+#thinkBtn:active::before { background-position: 0 100%; }
+#specialScreen .spSave:hover { background-position: 0 50%; }
+#specialScreen .spSave:active { background-position: 0 100%; }
+#specialScreen .spRoleBtn:hover::before { background-position: 0 50%; }
+#specialScreen .spRoleBtn:active::before { background-position: 0 100%; }
