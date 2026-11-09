@@ -234,6 +234,14 @@
   }
 
   /* 自动续说：只请求、不渲染（预生成用） */
+  /* 场面标记（当前是不是特殊场面）：读档 / 新游戏 / 每句回复都从这里改 */
+  function setSceneFlag(isSpecial) {
+    try {
+      window.__hsceneStreak = 0;
+      document.body.dataset.hscene = isSpecial ? "1" : "0";
+    } catch (e) {}
+  }
+
   async function generateContinue() {
     try {
       const r = await fetch("/api/chat", {
@@ -277,6 +285,7 @@
   }
 
   WA2.chat = { send: send, resetPending: resetPending, generateContinue: generateContinue,
+              setSceneFlag: setSceneFlag,
               renderQueued: renderQueued,
               isBusy: function () { return !!typing; } };
   WA2.register("chat", WA2.chat);

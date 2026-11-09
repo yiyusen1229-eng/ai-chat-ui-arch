@@ -77,6 +77,7 @@
       try { turnCount = 0; } catch (e) {}
       try { if (WA2.mood && WA2.mood.reset) WA2.mood.reset(); } catch (e) {}
       try { if (WA2.chat && WA2.chat.resetPending) WA2.chat.resetPending(); } catch (e) {}
+      try { if (WA2.chat && WA2.chat.setSceneFlag) WA2.chat.setSceneFlag(0); } catch (e) {}   /* 新游戏：场面回到普通 */
       try { rebuildBacklog(); } catch (e) {}   /* 新游戏：回想清空 */
       try {
         fetch("/api/session/save", {

@@ -70,6 +70,15 @@
     return "「" + s.replace(/^[「『]+|[」』]+$/g, "") + "」";
   }
 
+  /* 读档 / 新游戏时按存档重置「当前是不是特殊场面」（标记归 WA2.chat 管） */
+  function setSceneFlag(isSpecial) {
+    try {
+      if (window.WA2 && WA2.chat && WA2.chat.setSceneFlag) WA2.chat.setSceneFlag(!!isSpecial);
+      else document.body.dataset.hscene = isSpecial ? "1" : "0";
+    } catch (e) {}
+  }
+
+
   function sessionRestore() {
     return fetch("/api/session/load?slot=auto", { cache: "no-store" })
       .then(function (r) { return r.json(); })
@@ -90,7 +99,9 @@
         if (meta.outfit) { WA2.state.outfit = meta.outfit; }
         /* 立绘表情 / BGM 按存档还原（以前这里只还原背景，表情停在默认） */
         try {
-          var _spriteEmo = (meta.hscene === 1 || meta.hscene === "1") ? "H" : (meta.emo || "calm");
+          var _hsNow = (meta.hscene === 1 || meta.hscene === "1");
+          setSceneFlag(_hsNow);
+          var _spriteEmo = _hsNow ? "H" : (meta.emo || "calm");
           setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
           if (meta.bgm) setBgm(meta.bgm, 600);
         } catch (e) {}
@@ -145,7 +156,9 @@
       if (meta.bg) { setBg(meta.bg); }
       else if (!currentBgName()) { setBg("classroom"); }
       if (meta.outfit) { WA2.state.outfit = meta.outfit; }
-      var _spriteEmo = (meta.hscene === 1 || meta.hscene === "1") ? "H" : (meta.emo || "calm");
+      var _hsNow2 = (meta.hscene === 1 || meta.hscene === "1");
+      setSceneFlag(_hsNow2);
+      var _spriteEmo = _hsNow2 ? "H" : (meta.emo || "calm");
       setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
       gdiRenderName(CHAR_NAME, $("namePlate"));
       setBgm(meta.bgm || meta.emo || "calm", 600);
