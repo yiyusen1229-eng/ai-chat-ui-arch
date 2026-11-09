@@ -14,7 +14,7 @@ import cast as cast_mod
 import llm
 
 # 一拍允许的最大输出（和 LENGTHS 里的 tokens 对齐，留一点余量）
-MAX_TOKENS = {"small": 500, "medium": 900, "large": 1800}
+MAX_TOKENS = {"small": 900, "medium": 1400, "large": 2200}
 
 
 def _cfg():
@@ -81,12 +81,12 @@ def _user_prompt(beat_index, total_beats):
 
 【现在的位置】
 第 %d 拍，共 %d 拍；这一拍大约 %d 字。
-请写 %d 拍（每拍一条），保持自然接续。
+只写 %d 条（不要多写），每条不超过 %d 字，保持自然接续。
 
 【输出格式】
 {"beats":[{"speaker":"角色名或空","type":"say 或 narr","text":"台词或旁白"}]}""" % (
         _cast_lines(), p.get("direction") or "（玩家没给，顺着当前气氛往下走）",
-        beat_index + 1, total_beats, chars_per, n_beats)
+        beat_index + 1, total_beats, chars_per, n_beats, chars_per)
 
 
 def _state():
@@ -121,7 +121,20 @@ def _parse(text):
                 return d["beats"]
         except Exception:
             pass
-    # 兜底：逐行切
+    # 兜底 1：JSON 被截断时，把所有完整的 {"speaker":...} 对象抠出来
+    objs = re.findall(r'\{[^{}]*"speaker"[^{}]*\}', t)
+    if objs:
+        got = []
+        for s in objs:
+            try:
+                d = json.loads(s)
+                if isinstance(d, dict):
+                    got.append(d)
+            except Exception:
+                continue
+        if got:
+            return got
+    # 兜底 2：逐行切
     beats = []
     for line in t.splitlines():
         line = line.strip()
