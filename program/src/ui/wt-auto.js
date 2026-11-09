@@ -24,6 +24,7 @@
     generating: false,
     showing: false,            // 当前这句还在播
     timer: null,
+    retry: null,
     errors: 0
   };
 
@@ -48,6 +49,17 @@
 
   function clearTimer() {
     if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+    if (state.retry) { clearTimeout(state.retry); state.retry = null; }
+  }
+
+  /* 这一轮没轮到（正在打字 / 没拿到台词）：过一会儿再看一次 */
+  function retry(ms) {
+    if (!state.on) return;
+    if (state.retry) clearTimeout(state.retry);
+    state.retry = setTimeout(function () {
+      state.retry = null;
+      if (state.on) pump();
+    }, ms || 1500);
   }
 
   function chat() { return WA2.chat || {}; }
@@ -112,7 +124,10 @@
       state.timer = null;
       if (!state.on) return;
       var why = blocked();
-      if (why) { stop(why); return; }
+      if (why) {
+        if (why === "正在打字") { retry(1200); return; }
+        stop(why); return;
+      }
       if (state.queue.length) showNext();
       else pump();
     }, ms === undefined ? GAP_MS : ms);
@@ -121,18 +136,20 @@
   /* 补队列，直到 CAP 条 */
   function pump() {
     if (!state.on) return false;
-    /* 多角色/导演在跑：演出由导演那条链路负责，这里不要再自己调模型 */
+    /* 多角色/导演真的在跑：演出由导演那条链路负责，这里不要再自己调模型。
+       __directorOn 只在「导演开着 + 阵容里有演员」时为真，所以阵容空时这里照常生成。 */
     try { if (window.__directorOn) return false; } catch (e) {}
     /* 缓冲语义：最多领先「正在播的那句」CAP 条；满了就等播完再补，**不是**总共只生成三条 */
     if (state.queue.length >= CAP) return false;
     if (state.generating) return false;
     var why = blocked();
     if (why) {
-      /* 「正在打字」只是这一轮还没轮到，不该把自动模式关掉 */
-      if (why === "正在打字") return false;
+      /* 「正在打字」只是这一轮还没轮到：不该关自动模式，但必须排一次重试，
+         否则这一句之后就再也没人叫 pump 了（表现就是「只生成一条」）。 */
+      if (why === "正在打字") { retry(1200); return false; }
       stop(why); return false;
     }
-    if (!chat().generateContinue) return false;
+    if (!chat().generateContinue) { retry(2000); return false; }
 
     state.generating = true;
     chat().generateContinue().then(function (d) {
@@ -140,6 +157,7 @@
       if (!d) {
         state.errors++;
         if (state.errors >= 3) stop("连续出错");
+        else retry(2000);
         return;
       }
       state.errors = 0;
@@ -153,6 +171,7 @@
       state.generating = false;
       state.errors++;
       if (state.errors >= 3) stop("连续出错");
+      else retry(2000);
     });
     return true;
   }

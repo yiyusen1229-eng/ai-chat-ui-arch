@@ -244,7 +244,16 @@
       });
       const d = await r.json();
       if (!d || d.error) return null;
-      if (!String(d.reply || '').trim()) return null;   /* 空回复别进队列，否则卡一条空白 */
+      if (!String(d.reply || '').trim()) {
+        /* 模型这一拍只写了旁白/动作（line_type=narr 且 reply 为空）：
+           这是合法的，当成一条旁白播下去，不要算成失败——
+           否则连续几次就把「自动续说」关掉了。 */
+        const act = String(d.action_zh || d.action || '').trim();
+        if (!act) return null;
+        d.line_type = 'narr';
+        d.reply = act;
+        d.reply_zh = act;
+      }
       return d;
     } catch (e) { return null; }
   }

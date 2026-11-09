@@ -110,7 +110,14 @@
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ n: 1 })
     }).then(function (r) { return r.json(); })
-      .then(function (d) { return !!(d && d.ok); })
+      .then(function (d) {
+        if (d && d.ok) return true;
+        if (d && d.error && window.__toast && !window.__genErrToasted) {
+          window.__genErrToasted = 1;
+          window.__toast("导演没能写出台词：" + d.error, 4000);
+        }
+        return false;
+      })
       .catch(function () { return false; });
   }
 
@@ -137,9 +144,15 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         var dir = (d && d.director) || {};
-        genOn = !!dir.enabled;
-        /* 告诉自动模式：导演在跑，别再用 /api/chat 并行写 */
-        window.__directorOn = !!dir.enabled;
+        var cast = dir.cast || {};
+        var others = (cast.members || []).filter(function (m) { return m.role !== "player"; });
+        /* 导演开着却没人可演：不算「导演在跑」，否则自动模式会一直空转 */
+        genOn = !!dir.enabled && others.length > 0;
+        if (dir.enabled && !others.length && window.__toast && !window.__noCastToasted) {
+          window.__noCastToasted = 1;
+          window.__toast("多角色开着但阵容是空的：先加角色，或关掉多角色用普通续说", 4000);
+        }
+        window.__directorOn = genOn;
       })
       .catch(function () {});
   }
