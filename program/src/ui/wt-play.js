@@ -25,7 +25,8 @@
 
   function readMs(text) {
     var n = (text || "").length;
-    return Math.min(9000, Math.max(2200, Math.round(n * 130)));
+    /* 用户定的：没语音时每个字 300ms */
+    return Math.min(20000, Math.max(1200, Math.round(n * 300)));
   }
 
   function sleep(ms) {
@@ -33,12 +34,36 @@
   }
 
   /* 当前角色的名字：只有她/他有音色 */
+  /* 当前角色名：CHAR_NAME 是 game.js 里的 let（不在 window 上），
+     只能靠词法环境读，读不到再从名字牌兜底 */
   function ownName() {
     try {
-      if (window.CHAR_NAME) return String(window.CHAR_NAME);
+      if (typeof CHAR_NAME !== "undefined" && CHAR_NAME) return String(CHAR_NAME);
     } catch (e) {}
     var el = document.querySelector("#namePlate");
-    return el ? (el.textContent || "").trim() : "";
+    if (!el) return "";
+    var im = el.querySelector("img");
+    if (im && im.getAttribute("data-uitxt")) return im.getAttribute("data-uitxt");
+    return (el.textContent || "").trim();
+  }
+
+  /* 名字牌：说话人是谁就写谁；旁白清空 */
+  function setName(name) {
+    var el = document.querySelector("#namePlate");
+    if (!el) return;
+    if (!name) {
+      el.textContent = "";
+      el.style.visibility = "hidden";
+      return;
+    }
+    el.style.visibility = "";
+    try {
+      if (typeof gdiRenderName === "function") {
+        gdiRenderName(name, el);
+        return;
+      }
+    } catch (e) {}
+    el.textContent = name;
   }
 
   function show(line) {
@@ -46,7 +71,8 @@
     var speaker = line.speaker || "";
     var text = line.text;
     var isNarr = (line.type === "narr") || !speaker;
-    var body = isNarr ? text : (speaker + "：「" + text + "」");
+    setName(isNarr ? "" : speaker);       /* 名字进名字牌，不进对话框 */
+    var body = text;
 
     var p = Promise.resolve();
     try {
