@@ -66,6 +66,7 @@ ITEMS = {
     "sp_item_world":    ("配置角色世界书", 12, False, None),
     "sp_item_memory":   ("配置角色记忆书", 12, False, None),
     "sp_item_voice":    ("配置语音模型参考音频", 12, False, None),
+    "sp_item_model":    ("配置角色模型", 12, False, None),
     "sp_saved":         ("已保存", 11, False, None),
     "sp_save_btn":      ("保存", 9, False, None),
     # 配置项下拉出来的两个按钮（宽 106、高 20，字 10px 刚好）
@@ -74,6 +75,12 @@ ITEMS = {
     # 「配置角色」标题右边的两个按钮（切换角色 / 新建角色，底板用发送按钮的三态图）
     "sp_btn_switch":    ("切换角色", 9, False, None),
     "sp_btn_new":       ("新建角色", 9, False, None),
+    # 配置角色模型：下拉面板两个按钮 + 对话框标题与三个连接按钮
+    "sp_btn_chat":      ("聊天模型", 10, False, None),
+    "sp_btn_voicem":    ("语音模型", 10, False, None),
+    "mgr_dialog":       ("角色模型", 12, True, None),
+    "mgr_conn_switch":  ("切换连接", 11, True, None),
+    "mgr_conn_off":     ("断开连接", 11, True, None),
     "sp_pct":           ("%", 12, False, None),
     "sp_eq":            ("=", 12, False, None),
     "sp_approx":        ("≈", 12, False, None),

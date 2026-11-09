@@ -176,6 +176,13 @@
           <span class="spItemLabel"><img src="assets/ui/text/sp_item_voice.png" alt=""></span>
         </div>
       </div>
+      <div class="spItem" data-item="model">
+        <div class="spHead" role="button" tabindex="0" aria-expanded="false">
+          <span class="spFrame"><span class="spFrameBase"></span><span class="spFrameHover"></span></span>
+          <img class="spArrow" src="assets/ui/special/item_arrow.png" alt="">
+          <span class="spItemLabel"><img src="assets/ui/text/sp_item_model.png" alt=""></span>
+        </div>
+      </div>
     </div>
 
     <!-- 角色切换：直接列出现有角色，一键切换（标题在框外，列表可滚动） -->
@@ -190,6 +197,32 @@
       </div>
     </div>
 
+
+    <!-- 角色模型：聊天模型 / 语音模型 的连接设置（底板 sys_00100，输入框 sys_00110） -->
+    <div id="spModelDlg" class="spModelDlg" data-no-uitext="1" role="dialog" aria-hidden="true">
+      <div class="spmdWrap">
+        <div class="spmdTitle"><img id="spmdTitleImg" src="assets/ui/text/mgr_dialog.png" alt=""><span id="spmdKindText"></span></div>
+        <div class="spmdRow">
+          <span class="spmdLabel"><img src="assets/ui/text/mgr_endpoint.png" alt="端点"></span>
+          <span class="spmdField"><span class="spmdFieldBg"></span><input id="spmdEndpoint" class="spmdInput" type="text" spellcheck="false" placeholder="https://api.example.com/v1"></span>
+        </div>
+        <div class="spmdRow">
+          <span class="spmdLabel"><img src="assets/ui/text/mgr_apikey.png" alt="API 密钥"></span>
+          <span class="spmdField"><span class="spmdFieldBg"></span><input id="spmdKey" class="spmdInput" type="password" spellcheck="false" placeholder="sk-..."></span>
+        </div>
+        <div class="spmdRow">
+          <span class="spmdLabel"><img src="assets/ui/text/mgr_model.png" alt="模型名称"></span>
+          <span class="spmdField spmdFieldPlain"><span id="spmdModel">—</span></span>
+        </div>
+        <div class="spmdStatus" id="spmdStatus"></div>
+        <div class="spmdBtns">
+          <button class="spmdBtn" type="button" data-act="switch"><img src="assets/ui/text/mgr_conn_switch.png" alt="切换连接"></button>
+          <button class="spmdBtn" type="button" data-act="disconnect"><img src="assets/ui/text/mgr_conn_off.png" alt="断开连接"></button>
+          <button class="spmdBtn" type="button" data-act="connect"><img src="assets/ui/text/mgr_connect.png" alt="连接"></button>
+        </div>
+        <button id="spmdClose" class="spmdClose" type="button" title="关闭">×</button>
+      </div>
+    </div>
     <div class="uiFoot"><img src="assets/ui/sys_09000.png" alt=""></div>
     <div class="uiExit" role="button" title="返回"><img class="s1" src="assets/ui/save/exit_0.png" alt=""><img class="s2" src="assets/ui/save/exit_1.png" alt=""><img class="s3" src="assets/ui/save/exit_2.png" alt=""></div>
   </div>
@@ -335,6 +368,7 @@
   <script src="sp-sliders.js?v=202611051348"></script>
 <script src="sp-char.js?v=202611051348"></script>
 <script src="sp-panels.js?v=202611051348"></script>
+  <script src="sp-model.js?v=202611091100"></script>
 <script src="sp-pack.js?v=202611051348"></script>
 <script src="special.js?v=202611051348"></script>
 <script src="game.js?v=202611051550"></script>

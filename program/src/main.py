@@ -1030,6 +1030,32 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
             return self._json(dict(ok=True, **powerwatch.state()))
         if self.path.startswith("/api/assets/wizard"):
             return self._wizard_get()
+        if self.path.split("?")[0] == "/api/char/model":
+            try:
+                import char_model
+                if self.command == "POST":
+                    body = self._body() or {}
+                    r = char_model.save_fields(body.get("kind") or "chat",
+                                               body.get("endpoint"), body.get("key"))
+                    return self._json(r, 200 if r.get("ok") else 400)
+                return self._json(char_model.get_state())
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] in ("/api/char/model/connect",
+                                       "/api/char/model/disconnect",
+                                       "/api/char/model/switch"):
+            try:
+                import char_model
+                body = self._body() or {}
+                kind = body.get("kind") or "chat"
+                act = self.path.rsplit("/", 1)[-1]
+                fn = {"connect": char_model.connect,
+                      "disconnect": char_model.disconnect,
+                      "switch": char_model.switch}[act]
+                r = fn(kind)
+                return self._json(r, 200 if r.get("ok") else 400)
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
         if self.path.split("?")[0] == "/api/cleanup":
             # #17 数据清理入口：概览（各项体积 + 角色列表），只读不删
             return self._cleanup_get()
@@ -1205,6 +1231,25 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
         if self.path.startswith("/api/update/apply"):
             # 一键更新：整份代码取最新，不走补丁链（漏几版都没关系）
             return self._update_apply()
+        if self.path.split("?")[0].startswith("/api/char/model"):
+            # 角色级模型配置：保存 / 连接 / 断开 / 切换
+            try:
+                import char_model
+                body = self._body() or {}
+                kind = body.get("kind") or "chat"
+                act = self.path.split("?")[0].rsplit("/", 1)[-1]
+                if act == "model":
+                    r = char_model.save_fields(kind, body.get("endpoint"), body.get("key"))
+                else:
+                    fn = {"connect": char_model.connect,
+                          "disconnect": char_model.disconnect,
+                          "switch": char_model.switch}.get(act)
+                    if fn is None:
+                        return self._json({"ok": False, "error": "bad action"}, 404)
+                    r = fn(kind)
+                return self._json(r, 200 if r.get("ok") else 400)
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
         if self.path.startswith("/api/choice"):
             # 选择分支：让模型基于最近对话给 2~5 个玩家可选项
             return self._choice()
