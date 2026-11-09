@@ -60,6 +60,16 @@
     return { zh: "", ja: "" };
   }
 
+  /* 读档回显那一句：和平时一样，角色台词包「」，旁白不包 */
+  function quoteLine(text) {
+    var s = (text || "").trim();
+    if (!s) return "";
+    if (/^[（(【]/.test(s)) {                          /* 旁白：去括号、不加「」 */
+      return s.replace(/^[（(【\[]+/, "").replace(/[）)】\]]+$/, "").trim();
+    }
+    return "「" + s.replace(/^[「『]+|[」』]+$/g, "") + "」";
+  }
+
   function sessionRestore() {
     return fetch("/api/session/load?slot=auto", { cache: "no-store" })
       .then(function (r) { return r.json(); })
@@ -86,8 +96,8 @@
         } catch (e) {}
         var line = lastAssistant();
         if (line.zh) {
-          try { showReply(line.zh); } catch (e) { $("msgText").textContent = line.zh; }
-          if (line.ja) speakLineJa(line.ja, line.emo || "");
+          try { showReply(quoteLine(line.zh)); } catch (e) { $("msgText").textContent = quoteLine(line.zh); }
+          if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) speakLineJa(line.ja, line.emo || "");
         }
         if (meta.outfit) {
           try { setSpriteByScene(meta.bg || "classroom", "calm", true, meta.outfit); } catch (e) {}
@@ -141,8 +151,8 @@
       setBgm(meta.bgm || meta.emo || "calm", 600);
       var line = lastAssistant();
       if (line.zh) {
-        try { showReply(line.zh); } catch (e) { $("msgText").textContent = line.zh; }
-        if (line.ja) speakLineJa(line.ja, line.emo || "");
+        try { showReply(quoteLine(line.zh)); } catch (e) { $("msgText").textContent = quoteLine(line.zh); }
+        if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) speakLineJa(line.ja, line.emo || "");
       }
       try { rebuildBacklog(); } catch (e) {}
       /* 存档里存着「还没选的分支」：摆回来，并且不要抢输入框焦点 */
