@@ -10,6 +10,10 @@ let backlogOpen = false;
 /* 角色名：存在 char/name.txt，特别模式里改的就是它 */
 let CHAR_NAME = "角色";
 
+/* 当前场景名：setBg 的早退判断、存档、热重载都要用。
+   拆分 game.js 时这个声明丢了，导致 setBg 抛 ReferenceError、背景一直黑。 */
+var currentBg = null;
+
 /* ---------- 素材表 ---------- */
 /* 旧的四张通用背景：新场景图还没导入、或读档时遇到旧存档的场景名，就退回这里 */
 const BGS = {

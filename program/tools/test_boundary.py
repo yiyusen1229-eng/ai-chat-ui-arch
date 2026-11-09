@@ -22,6 +22,8 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROGRAM = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(PROGRAM, "src"))
+# 不读真实角色目录：立绘/语音都按"没有素材"来测
+os.environ["WA2_USER_DIR"] = tempfile.mkdtemp(prefix="wa2_boundary_user_")
 
 _TMP = tempfile.mkdtemp(prefix="wa2_boundary_test_")
 os.environ["WA2_CACHE_DIR"] = _TMP
