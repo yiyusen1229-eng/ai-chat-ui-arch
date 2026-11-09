@@ -67,9 +67,3 @@ def snapshot():
             "playing": _state["playing"],
             "generating": _state["generating"]
         }
-
-
-def set_flag(name, value):
-    if name in _state:
-        _state[name] = bool(value)
-    return {"ok": True, "state": dict(_state)}

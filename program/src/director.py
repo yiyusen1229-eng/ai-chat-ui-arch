@@ -5,7 +5,6 @@
 这一版只把**形状**定下来：
 
     plan(kind)      按长度给出一个"空壳计划"（幕数、每幕拍数、预算字数）
-    beat_prompt()   拼出将来要发给导演模型的提示词（现在不发，只返回文本，便于检查）
     stub_beats()    没有模型时用来跑通链路的假数据
 
 模型接进来之后，只需要在 plan() / 下一拍 里换成真实调用，其它层（队列、前端）不用动。
@@ -62,29 +61,6 @@ def plan(length=None):
     _state["beat"] = 0
     _state["started_at"] = time.time()
     return dict(_state["planned"])
-
-
-def beat_prompt():
-    """将来发给导演模型的提示词。现在只拼出来给界面/测试看，不发请求。"""
-    c = cast.get_cast()
-    lines = ["【本场阵容】"]
-    for m in c.get("members", []):
-        if m.get("role") == "extra":
-            lines.append("- 龙套：%s（导演临时写的，不需要角色卡）" % m.get("name"))
-            continue
-        cid = m.get("id")
-        ci = char_cards.info(cid)
-        card = char_cards.read_card("director", cid)
-        lines.append("- %s（%s，%s）" % (ci["name"], m.get("role"), "有导演卡" if ci["has_director"] else "缺导演卡"))
-        if card.strip():
-            lines.append("  导演卡摘要：" + card.strip().splitlines()[0][:80])
-    if _state["direction"]:
-        lines.append("【玩家给的走向】" + _state["direction"])
-    p = _state["planned"] or plan()
-    lines.append("【这一幕】第 %d 幕 / 共 %d 拍 / 每拍约 %d 字"
-                 % (_state["act"], p["beats"], p["chars_per_beat"]))
-    lines.append("【要求】给出这一拍：谁开口、说什么、这一拍想让玩家感受到什么；一句一拍，不要旁白式总结。")
-    return "\n".join(lines)
 
 
 def stub_beats(n=2):

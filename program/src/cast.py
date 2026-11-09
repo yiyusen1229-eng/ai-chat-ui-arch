@@ -89,19 +89,6 @@ def set_cast(members):
     return {"ok": True, "cast": get_cast()}
 
 
-def add_member(cid, role="actor"):
-    for m in _state["members"]:
-        if m.get("id") == cid:
-            m["role"] = role
-            return {"ok": True}
-    return set_cast(_state["members"] + [{"id": cid, "role": role}])
-
-
-def remove_member(cid):
-    _state["members"] = [m for m in _state["members"] if m.get("id") != cid]
-    return {"ok": True}
-
-
 def clear():
     _state["members"] = []
     _state["turns"] = 0

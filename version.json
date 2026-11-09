@@ -1,5 +1,5 @@
 {
-  "version": "2026-11-08.1",
+  "version": "2026-11-09.1",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
-  "notes": "自动续说 / 存档还原画面 / 场景与立绘切换 / 语音与界面修复"
+  "notes": "多角色与导演（框架+接入模型）/ 角色卡与阵容 / 角色级模型与语音 / 设置页精简"
 }
