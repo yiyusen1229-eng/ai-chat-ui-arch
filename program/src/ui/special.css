@@ -510,29 +510,29 @@
 /* ---------- 角色模型对话框（配置角色模型 → 聊天模型 / 语音模型） ----------
    底板 sys_00100；输入框 sys_00110 用九宫格（只拉中间，边框不变形）；
    三个按钮在每行右侧，底部一个退出。 */
-#specialScreen .spModelDlg {
+#spModelDlg {
   position: fixed; inset: 0; z-index: 90;
   display: none; align-items: center; justify-content: center;
   background: rgba(2, 8, 16, .55);
 }
-#specialScreen .spModelDlg.show { display: flex; }
-#specialScreen .spmdWrap {
+#spModelDlg.show { display: flex; }
+#spModelDlg .spmdWrap {
   position: relative;
   width: 560px;
   padding: 30px 34px 20px;
   box-sizing: border-box;
   background: url("assets/ui/sys_00100.png") center / 100% 100% no-repeat;
 }
-#specialScreen .spmdTitle {
+#spModelDlg .spmdTitle {
   text-align: center; margin-bottom: 16px;
   height: 17px; display: flex; align-items: center; justify-content: center;
 }
-#specialScreen .spmdTitle img { height: 15px; width: auto; }
-#specialScreen .spmdRow { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-#specialScreen .spmdLabel { width: 66px; flex: 0 0 auto; display: flex; align-items: center; }
-#specialScreen .spmdLabel img { height: 11px; width: auto; }
+#spModelDlg .spmdTitle img { height: 15px; width: auto; }
+#spModelDlg .spmdRow { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+#spModelDlg .spmdLabel { width: 66px; flex: 0 0 auto; display: flex; align-items: center; }
+#spModelDlg .spmdLabel img { height: 11px; width: auto; }
 /* 输入框：九宫格（30/40 是源图 sys_00110 的边框厚度，11/14 是显示厚度） */
-#specialScreen .spmdField {
+#spModelDlg .spmdField {
   flex: 1 1 auto; height: 34px;
   display: flex; align-items: center;
   box-sizing: border-box;
@@ -540,37 +540,37 @@
   border-image: url("assets/ui/sys_00110.png") 30 40 30 40 fill / 11px 14px / 0 stretch;
   background: none;
 }
-#specialScreen .spmdInput {
+#spModelDlg .spmdInput {
   width: 100%; height: 100%;
   padding: 0 4px; box-sizing: border-box;
   background: none; border: 0; outline: none;
   color: #eaf9ff; font-family: inherit; font-size: 11px; letter-spacing: .4px;
 }
-#specialScreen .spmdFieldPlain {
+#spModelDlg .spmdFieldPlain {
   border-image: none; border-width: 0; padding-left: 6px;
   color: #bfefff; font-size: 11px;
 }
-#specialScreen .spmdStatus { height: 15px; font-size: 10px; margin: 2px 0 4px 76px; }
-#specialScreen .spmdFoot { display: flex; justify-content: center; margin-top: 2px; }
-#specialScreen .spmdBtn {
+#spModelDlg .spmdStatus { height: 15px; font-size: 10px; margin: 2px 0 4px 76px; }
+#spModelDlg .spmdFoot { display: flex; justify-content: center; margin-top: 2px; }
+#spModelDlg .spmdBtn {
   position: relative; isolation: isolate;
   flex: 0 0 auto; width: 86px; height: 24px; padding: 0;
   border: 0; background: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
-#specialScreen .spmdBtn::before {
+#spModelDlg .spmdBtn::before {
   content: ""; position: absolute; inset: 0; z-index: 0;
   background: url("assets/ui/btn_3state.png") 0 0 / 100% 300% no-repeat;
   pointer-events: none;
 }
-#specialScreen .spmdBtn:hover::before { background-position: 0 50%; }
-#specialScreen .spmdBtn:active::before { background-position: 0 100%; }
-#specialScreen .spmdBtn img { position: relative; z-index: 1; height: 11px; width: auto; pointer-events: none; }
-#specialScreen .spmdExit { width: 96px; }
+#spModelDlg .spmdBtn:hover::before { background-position: 0 50%; }
+#spModelDlg .spmdBtn:active::before { background-position: 0 100%; }
+#spModelDlg .spmdBtn img { position: relative; z-index: 1; height: 11px; width: auto; pointer-events: none; }
+#spModelDlg .spmdExit { width: 96px; }
 
 /* 输入框的字模占位：覆盖在 input 上，空且有焦点时隐藏 */
-#specialScreen .spmdField { position: relative; }
-#specialScreen .spmdPh {
+#spModelDlg .spmdField { position: relative; }
+#spModelDlg .spmdPh {
   position: absolute; left: 20px; top: 50%; transform: translateY(-50%);
   pointer-events: none; opacity: .72;
   height: 10px; width: auto; max-width: none;

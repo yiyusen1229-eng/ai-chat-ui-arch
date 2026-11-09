@@ -39,7 +39,6 @@
       r.addEventListener("click", function (e) {
         e.stopPropagation();
         onclick(e);
-        closeAllMenus();
       });
     }
     return r;
@@ -51,7 +50,6 @@
       r.addEventListener("click", function (e) {
         e.stopPropagation();
         onclick(e);
-        closeAllMenus();
       });
     }
     return r;
@@ -121,6 +119,13 @@
     }
     menu.appendChild(sub("阵容", castRows));
 
+    /* 导演模型 */
+    menu.appendChild(row("导演模型…", function () {
+      /* 开对话框时把菜单收起来，别挡住弹窗 */
+      closeAllMenus();
+      if (window.WA2 && WA2.spModel && WA2.spModel.open) WA2.spModel.open("director");
+    }));
+
     /* 队列 */
     var q = (d && d.queue) || {};
     menu.appendChild(sub("队列", [
@@ -181,6 +186,7 @@
 
     item.addEventListener("mouseenter", function () { place(); refresh(); });
     /* 和 menubar.makeMenu 一样的开合：点一下开/关，点空白关 */
+    menu.addEventListener("click", function (e) { e.stopPropagation(); });
     item.addEventListener("click", function (ev) {
       ev.stopPropagation();
       toggleMenu();

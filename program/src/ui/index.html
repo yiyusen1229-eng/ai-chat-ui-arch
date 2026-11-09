@@ -199,29 +199,7 @@
 
 
     <!-- 角色模型：聊天模型 / 语音模型 的连接设置（底板 sys_00100，输入框 sys_00110） -->
-    <div id="spModelDlg" class="spModelDlg" role="dialog" aria-hidden="true">
-      <div class="spmdWrap">
-        <div class="spmdTitle"><img id="spmdTitleImg" src="assets/ui/text/mgr_chat.png" alt="聊天模型"></div>
-        <div class="spmdRow">
-          <span class="spmdLabel"><img src="assets/ui/text/mgr_endpoint.png" alt="端点"></span>
-          <span class="spmdField"><img class="spmdPh" id="spmdPhUrl" src="assets/ui/text/spmd_ph_url.png" alt=""><input id="spmdEndpoint" class="spmdInput" type="text" spellcheck="false"></span>
-          <button class="spmdBtn" type="button" data-act="switch"><img src="assets/ui/text/mgr_conn_switch.png" alt="切换连接"></button>
-        </div>
-        <div class="spmdRow">
-          <span class="spmdLabel"><img src="assets/ui/text/mgr_apikey.png" alt="API 密钥"></span>
-          <span class="spmdField"><img class="spmdPh" id="spmdPhKey" src="assets/ui/text/spmd_ph_key.png" alt=""><input id="spmdKey" class="spmdInput" type="password" spellcheck="false"></span>
-          <button class="spmdBtn" type="button" data-act="disconnect"><img src="assets/ui/text/mgr_conn_off.png" alt="断开连接"></button>
-        </div>
-        <div class="spmdRow">
-          <span class="spmdLabel"><img src="assets/ui/text/mgr_model.png" alt="模型名称"></span>
-          <span class="spmdField spmdFieldPlain"><span id="spmdModel">—</span></span>
-          <button class="spmdBtn" type="button" data-act="connect"><img src="assets/ui/text/mgr_connect.png" alt="连接"></button>
-        </div>
-        <div class="spmdFoot">
-          <button class="spmdBtn spmdExit" type="button" data-act="exit"><img src="assets/ui/text/mgr_exit.png" alt="退出"></button>
-        </div>
-      </div>
-    </div>
+    
     <div class="uiFoot"><img src="assets/ui/sys_09000.png" alt=""></div>
     <div class="uiExit" role="button" title="返回"><img class="s1" src="assets/ui/save/exit_0.png" alt=""><img class="s2" src="assets/ui/save/exit_1.png" alt=""><img class="s3" src="assets/ui/save/exit_2.png" alt=""></div>
   </div>
@@ -398,6 +376,30 @@ window.addEventListener("load", function () {
 </script>
 <div id="__BUILDSTAMP" style="display:none;position:fixed;left:6px;bottom:4px;z-index:99999;font:12px/1.2 'Microsoft YaHei';color:#ffd24a;background:rgba(0,0,0,.6);padding:2px 6px;border-radius:3px;pointer-events:none">buildup 1028-2132</div>
 <div id="scaleReadout" style="display:none"></div>
+
+<div id="spModelDlg" class="spModelDlg" role="dialog" aria-hidden="true">
+      <div class="spmdWrap">
+        <div class="spmdTitle"><img id="spmdTitleImg" src="assets/ui/text/mgr_chat.png" alt="聊天模型"></div>
+        <div class="spmdRow">
+          <span class="spmdLabel"><img src="assets/ui/text/mgr_endpoint.png" alt="端点"></span>
+          <span class="spmdField"><img class="spmdPh" id="spmdPhUrl" src="assets/ui/text/spmd_ph_url.png" alt=""><input id="spmdEndpoint" class="spmdInput" type="text" spellcheck="false"></span>
+          <button class="spmdBtn" type="button" data-act="switch"><img src="assets/ui/text/mgr_conn_switch.png" alt="切换连接"></button>
+        </div>
+        <div class="spmdRow">
+          <span class="spmdLabel"><img src="assets/ui/text/mgr_apikey.png" alt="API 密钥"></span>
+          <span class="spmdField"><img class="spmdPh" id="spmdPhKey" src="assets/ui/text/spmd_ph_key.png" alt=""><input id="spmdKey" class="spmdInput" type="password" spellcheck="false"></span>
+          <button class="spmdBtn" type="button" data-act="disconnect"><img src="assets/ui/text/mgr_conn_off.png" alt="断开连接"></button>
+        </div>
+        <div class="spmdRow">
+          <span class="spmdLabel"><img src="assets/ui/text/mgr_model.png" alt="模型名称"></span>
+          <span class="spmdField spmdFieldPlain"><span id="spmdModel">—</span></span>
+          <button class="spmdBtn" type="button" data-act="connect"><img src="assets/ui/text/mgr_connect.png" alt="连接"></button>
+        </div>
+        <div class="spmdFoot">
+          <button class="spmdBtn spmdExit" type="button" data-act="exit"><img src="assets/ui/text/mgr_exit.png" alt="退出"></button>
+        </div>
+      </div>
+    </div>
 </body>
 </html>
 

@@ -21,7 +21,7 @@ import os
 import re
 import urllib.request
 
-KINDS = ("chat", "voice")
+KINDS = ("chat", "voice", "director")
 
 
 def _char_dir():

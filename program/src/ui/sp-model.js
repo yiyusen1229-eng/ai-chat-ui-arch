@@ -46,10 +46,14 @@
     var k = (state.data && state.data.kinds && state.data.kinds[kind]) || {};
     var _timg = el("spmdTitleImg");
     if (_timg) {
-      _timg.src = (kind === "chat")
-        ? "assets/ui/text/mgr_chat.png"
-        : "assets/ui/text/mgr_voice.png";
-      _timg.alt = (kind === "chat") ? "聊天模型" : "语音模型";
+      var titles = {
+        chat: ["assets/ui/text/mgr_chat.png", "聊天模型"],
+        voice: ["assets/ui/text/mgr_voice.png", "语音模型"],
+        director: ["assets/ui/text/mgr_director.png", "导演模型"]
+      };
+      var tt = titles[kind] || titles.chat;
+      _timg.src = tt[0];
+      _timg.alt = tt[1];
     }
     el("spmdEndpoint").value = k.endpoint || "";
     el("spmdKey").value = "";   /* 原生 placeholder 会和字模层叠字，不用 */
