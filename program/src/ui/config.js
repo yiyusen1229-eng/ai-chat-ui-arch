@@ -5,6 +5,7 @@
   let prefs = {
     seHover: 55, seClick: 56, seCancel: 56, sePage: 57, seExit: 58,   // 55=悬停音 56=点击音（录屏比对得出）
     bgmMenu: 0, bgmCalm: 2, bgmWarm: 3, bgmSad: 4, bgmTense: 6,
+    bgmKazusa: 1, bgmToukanai: 5, bgmAnswer: 7,   /* 一直在曲库里、之前没接进来的三首 */
     bgmVol: 30, seVol: 35,
     choiceCount: 2,          /* 选择分支：一次给几个选项（2~5） */
   };

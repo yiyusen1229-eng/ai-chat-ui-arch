@@ -16,6 +16,27 @@
   }
 
   const MOOD_BGM = { angry: "tense", sad: "sad", warm: "warm", smile: "warm", calm: "calm" };
+
+  /* 每个氛围允许多首：切到该氛围时轮流挑一首，避免同一首听一整局。
+     顺序就是「更常用 → 更有画面感」。 */
+  var SLOT_TRACKS = {
+    calm: ["calm", "kazusa"],
+    warm: ["warm", "kazusa"],
+    sad: ["sad", "toukanai"],
+    tense: ["tense", "answer"]
+  };
+  /* 反查：某首曲子属于哪个氛围（判断「当前氛围」用） */
+  var TRACK_SLOT = {
+    menu: "menu", calm: "calm", kazusa: "calm", warm: "warm",
+    sad: "sad", toukanai: "sad", tense: "tense", answer: "tense"
+  };
+  var slotRound = { calm: 0, warm: 0, sad: 0, tense: 0 };
+
+  function nextTrack(slot) {
+    var list = SLOT_TRACKS[slot] || [slot];
+    var i = (slotRound[slot] = (slotRound[slot] || 0) + 1) - 1;
+    return list[i % list.length];
+  }
   /* 情绪→表情不在这里：立绘那边已改成中文名别名表（wt-sprite.js 的 EMO_ALIAS），
      这里的 MOOD_SPRITE 早就没人用了，删掉省得以后两边映射打架。 */
 
@@ -88,15 +109,17 @@
     }
     const enough = bestV - curV >= 1.5 && moodStable.turns >= 2;
     if (best !== currentBgmMood() && enough) {
-      setBgm(best);
+      setBgm(nextTrack(best));
     }
   }
 
   function currentBgmMood() {
+    var cur = WA2.audio.current || "";
+    if (TRACK_SLOT[cur]) return TRACK_SLOT[cur];
     for (const k in MOOD_BGM) {
-      if (MOOD_BGM[k] === WA2.audio.current) return k === "smile" ? "warm" : MOOD_BGM[k];
+      if (MOOD_BGM[k] === cur) return k === "smile" ? "warm" : MOOD_BGM[k];
     }
-    return WA2.audio.current || "calm";
+    return cur || "calm";
   }
 
   /* 开新游戏：氛围分归零（不然上一局的「难过/紧张」会带进新局，BGM 一开就偏） */

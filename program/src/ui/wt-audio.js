@@ -13,7 +13,8 @@
 (function () {
   var WA2 = window.WA2 = window.WA2 || {};
 
-  var BGM_KEY = { menu: "bgmMenu", calm: "bgmCalm", warm: "bgmWarm", sad: "bgmSad", tense: "bgmTense" };
+  var BGM_KEY = { menu: "bgmMenu", calm: "bgmCalm", warm: "bgmWarm", sad: "bgmSad", tense: "bgmTense",
+                 kazusa: "bgmKazusa", toukanai: "bgmToukanai", answer: "bgmAnswer" };
   var SE_BASE = "assets/snd/";
   var seCache = {};
 
