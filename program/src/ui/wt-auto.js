@@ -125,7 +125,11 @@
     if (state.queue.length >= CAP) return false;
     if (state.generating) return false;
     var why = blocked();
-    if (why) { stop(why); return false; }
+    if (why) {
+      /* 「正在打字」只是这一轮还没轮到，不该把自动模式关掉 */
+      if (why === "正在打字") return false;
+      stop(why); return false;
+    }
     if (!chat().generateContinue) return false;
 
     state.generating = true;
@@ -165,7 +169,7 @@
     state.on = true;
     paint();
     savePref();
-    toast("自动续说已开启（最多预生成 3 句）", 2400);
+    /* 不再弹提示：右下角的绿 ▶ 已经说明状态 */
     pump();
     return true;
   }

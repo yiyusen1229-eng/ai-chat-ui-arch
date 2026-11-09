@@ -27,15 +27,19 @@
     window.__lastEmo = (d.emotion || "").trim();   // 服务端给的情绪标签
     window.__nextScene = (d.bg || "").trim();      // 服务端已按文件名标签匹配好；没匹配上就是空
     window.__nextOutfit = (d.outfit || "").trim(); // 只有明确换衣服才有值
+    var _isNarr = (d.line_type === "narr");
     window.__lastThinking = (d.thinking || "").trim();
     window.__lastAction = (d.action_zh || d.action || "").trim();
+    /* 旁白（不是角色说的话）：不进左上角动作区 */
+    if (_isNarr) { window.__lastThinking = ""; window.__lastAction = ""; }
     /* 当前是不是成人场面（后端判定）：写在 body 上，回想重放旧句时要读它（不新增全局） */
     try { document.body.dataset.hscene = d.hscene ? "1" : "0"; } catch (e) {}
     renderThinking();
       history.push({ role: "assistant", content: reply });
       window.__history = history;
       // 对话框显示中文（有译文用译文），历史记录也显示中文
-      const shown = replyZh ? ("「" + replyZh.replace(/^「|」$/g, "") + "」") : reply;
+      const shown = _isNarr ? (replyZh || reply)
+                             : (replyZh ? ("「" + replyZh.replace(/^「|」$/g, "") + "」") : reply);
       window.__speakJa = replyZh ? reply.replace(/^「|」$/g, "") : "";
       /* 中日对照：content 保留语言模型原句（含 action/emotion 未过滤），zh 存翻译模型原样输出 */
       history[history.length - 1].zh = replyZh;
