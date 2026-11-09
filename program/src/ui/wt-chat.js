@@ -28,6 +28,12 @@
     window.__nextScene = (d.bg || "").trim();      // 服务端已按文件名标签匹配好；没匹配上就是空
     window.__nextOutfit = (d.outfit || "").trim(); // 只有明确换衣服才有值
     var _isNarr = (d.line_type === "narr");
+    var _speaker = (d.speaker || "").trim();
+    /* 模型常把旁白整句写成「（…）」：这种也按旁白处理 */
+    if (!_isNarr && /^[（(【]/.test((d.reply_zh || d.reply || "").trim())) {
+      _isNarr = true;
+    }
+    if (_isNarr) _speaker = "";
     window.__lastThinking = (d.thinking || "").trim();
     window.__lastAction = (d.action_zh || d.action || "").trim();
     /* 旁白（不是角色说的话）：不进左上角动作区 */
@@ -38,8 +44,14 @@
       history.push({ role: "assistant", content: reply });
       window.__history = history;
       // 对话框显示中文（有译文用译文），历史记录也显示中文
-      const shown = _isNarr ? (replyZh || reply)
-                             : (replyZh ? ("「" + replyZh.replace(/^「|」$/g, "") + "」") : reply);
+      let shown = replyZh ? ("「" + replyZh.replace(/^「|」$/g, "") + "」") : reply;
+      if (_isNarr) {
+        /* 旁白：去掉外面的括号，直接给正文 */
+        shown = (replyZh || reply)
+          .replace(/^[（(【\[「]+/, "")
+          .replace(/[）)】\]」]+$/, "")
+          .trim();
+      }
       window.__speakJa = replyZh ? reply.replace(/^「|」$/g, "") : "";
       /* 中日对照：content 保留语言模型原句（含 action/emotion 未过滤），zh 存翻译模型原样输出 */
       history[history.length - 1].zh = replyZh;
@@ -79,6 +91,18 @@
           window.__nextScene = "";
           window.__nextOutfit = "";
           setSpriteByScene((WA2.session && WA2.session.currentBg ? WA2.session.currentBg() : "") || "classroom", mood, true, _want);
+          try {
+            var _plate = document.getElementById("namePlate");
+            if (_plate) {
+              if (_speaker && typeof gdiRenderName === "function") {
+                _plate.style.visibility = "";
+                gdiRenderName(_speaker, _plate);
+              } else if (_isNarr) {
+                _plate.textContent = "";
+                _plate.style.visibility = "hidden";
+              }
+            }
+          } catch (e) {}
           showReply(shown);
         } catch (e) {}
       };
@@ -86,7 +110,10 @@
          立刻显示，然后按字数留阅读时间，时间到了才算这一条结束（自动模式据此推进）。 */
       const _lineType = (d.line_type || "her");
       const _readMs = Math.min(9000, Math.max(2200, (shown || "").length * 130));
-      const voiceDone = (_lineType === "her")
+      var _ownName = "";
+      try { if (typeof CHAR_NAME !== "undefined" && CHAR_NAME) _ownName = String(CHAR_NAME); } catch (e) {}
+      var _canVoice = (_lineType === "her") && (!_speaker || _speaker === _ownName);
+      const voiceDone = _canVoice
         ? speakReply(reply, renderNow).then(function () {
             renderNow();      /* 没有语音 / 播失败时兜底：文字照样要出 */
           })

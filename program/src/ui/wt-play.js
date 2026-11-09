@@ -71,8 +71,11 @@
     var speaker = line.speaker || "";
     var text = line.text;
     var isNarr = (line.type === "narr") || !speaker;
-    setName(isNarr ? "" : speaker);       /* 名字进名字牌，不进对话框 */
-    var body = text;
+    /* 名字交给 applyServerReply 在出字那一刻画，两边同时出现 */
+    /* 旁白去掉外面的括号 */
+    var body = isNarr
+      ? text.replace(/^[（(【\[「]+/, "").replace(/[）)】\]」]+$/, "").trim()
+      : text;
 
     var p = Promise.resolve();
     try {
