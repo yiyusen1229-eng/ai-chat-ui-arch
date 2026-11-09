@@ -27,10 +27,19 @@
 
   function el(id) { return $(id); }
 
+  /* 动态文本也走字模（和界面其它字同一条链路）；没有接口时退回普通文字 */
+  function setText(el, text) {
+    if (!el) return;
+    if (window.__uiTextRender) {
+      try { window.__uiTextRender(el, text || "", {}); return; } catch (e) {}
+    }
+    el.textContent = text || "";
+  }
+
   function paintStatus(text, ok) {
     var s = el("spmdStatus");
     if (!s) return;
-    s.textContent = text || "";
+    setText(s, text || "");
     s.style.color = ok ? "#9ff2c6" : "#ffb9b9";
   }
 
@@ -38,11 +47,17 @@
     state.kind = kind;
     var k = (state.data && state.data.kinds && state.data.kinds[kind]) || {};
     var _title = el("spmdTitle");
-    if (_title) _title.textContent = (kind === "chat" ? "聊天模型" : "语音模型");
+    if (_title) {
+      _title.style.fontSize = "14px";
+      setText(_title, kind === "chat" ? "聊天模型" : "语音模型");
+    }
     el("spmdEndpoint").value = k.endpoint || "";
     el("spmdKey").value = "";
-    el("spmdKey").placeholder = k.hasKey ? ("已保存：" + (k.keyMask || "")) : "sk-...";
-    el("spmdModel").textContent = k.model || (k.globalModel ? (k.globalModel + "（全局）") : "—");
+    el("spmdKey").value = "";   /* 原生 placeholder 会和字模层叠字，不用 */
+    setText(el("spmdModel"), k.model || (k.globalModel ? (k.globalModel + "（全局）") : "—"));
+    /* 打开时才画占位字模：bind() 那时 uitext 可能还没加载好 */
+    addPlaceholder("spmdEndpoint", "api.deepseek.com");
+    addPlaceholder("spmdKey", "sk-...");
     if (k.connected) paintStatus("已连接", true);
     else if (k.usingGlobal) paintStatus("当前用全局默认配置", true);
     else paintStatus("未连接", false);
@@ -111,11 +126,37 @@
       if (d && d.ok) {
         el("spmdEndpoint").value = "";
         el("spmdKey").value = "";
-        el("spmdModel").textContent = "—";
+        setText(el("spmdModel"), "—");
         paintStatus("已清空，请重新输入端点与 API", true);
         el("spmdEndpoint").focus();
       } else toast((d && d.error) || "切换失败");
     });
+  }
+
+  /* 给输入框加字模占位（原生 placeholder 是浏览器字体，和界面不是一套） */
+  function addPlaceholder(inputId, text) {
+    var inp = el(inputId);
+    if (!inp) return;
+    var box = inp.parentNode;
+    if (!box) return;
+    var ph = box.querySelector(".spmdPh");
+    if (ph && ph.dataset.ok === "1" && ph.dataset.phRendered === (text || "")) return;
+    if (!ph) {
+      ph = document.createElement("span");
+      ph.className = "spmdPh";
+      box.appendChild(ph);
+    }
+    ph.dataset.phRendered = text || "";
+    if (window.__uiTextRender) {
+      try {
+        window.__uiTextRender(ph, text, { size: 11 });
+        ph.dataset.ok = "1";
+      } catch (e) {}
+    }
+    var sync = function () { ph.style.display = inp.value ? "none" : ""; };
+    inp.addEventListener("input", sync);
+    inp.setAttribute("data-ph-ok", "1");
+    sync();
   }
 
   function bind() {
@@ -131,6 +172,8 @@
         if (a === "exit") close();
       });
     });
+    addPlaceholder("spmdEndpoint", "api.deepseek.com");
+    addPlaceholder("spmdKey", "sk-...");
     dlg.addEventListener("click", function (e) { if (e.target === dlg) close(); });
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape" && dlg.classList.contains("show")) close();

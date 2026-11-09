@@ -567,3 +567,12 @@
 #specialScreen .spmdBtn:active::before { background-position: 0 100%; }
 #specialScreen .spmdBtn img { position: relative; z-index: 1; height: 11px; width: auto; pointer-events: none; }
 #specialScreen .spmdExit { width: 96px; }
+
+/* 输入框的字模占位：覆盖在 input 上，空且有焦点时隐藏 */
+#specialScreen .spmdField { position: relative; }
+#specialScreen .spmdPh {
+  position: absolute; left: 20px; top: 50%; transform: translateY(-50%);
+  pointer-events: none; opacity: .72;
+  white-space: nowrap; max-width: none;
+}
+#specialScreen .spmdPh img { height: 11px; width: auto; max-width: none; }
