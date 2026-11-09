@@ -44,7 +44,19 @@
     /* 旁白（不是角色说的话）：不进左上角动作区 */
     if (_isNarr) { window.__lastThinking = ""; window.__lastAction = ""; }
     /* 当前是不是成人场面（后端判定）：写在 body 上，回想重放旧句时要读它（不新增全局） */
-    try { document.body.dataset.hscene = d.hscene ? "1" : "0"; } catch (e) {}
+    /* 场面标记要有粘性：单句没带标记不该立刻退回普通参考
+       （否则同一场戏里时好时坏，回想重播反而对）。连续 3 句都没有才回落。 */
+    try {
+      if (d.hscene === undefined || d.hscene === null) {
+        /* 队列/导演的条目不带这个字段：保持当前场面不变，也不要加连击 */
+      } else if (d.hscene) {
+        window.__hsceneStreak = 0;
+        document.body.dataset.hscene = "1";
+      } else {
+        window.__hsceneStreak = (window.__hsceneStreak || 0) + 1;
+        if (window.__hsceneStreak >= 3) document.body.dataset.hscene = "0";
+      }
+    } catch (e) {}
     renderThinking();
       history.push({ role: "assistant", content: reply });
       window.__history = history;
