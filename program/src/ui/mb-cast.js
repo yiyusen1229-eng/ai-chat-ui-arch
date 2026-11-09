@@ -39,6 +39,7 @@
       r.addEventListener("click", function (e) {
         e.stopPropagation();
         onclick(e);
+        closeAllMenus();
       });
     }
     return r;
@@ -50,6 +51,7 @@
       r.addEventListener("click", function (e) {
         e.stopPropagation();
         onclick(e);
+        closeAllMenus();
       });
     }
     return r;
@@ -60,11 +62,29 @@
     var box = el("div", "mbSub");
     rows.forEach(function (r) { box.appendChild(r); });
     wrap.appendChild(box);
+    /* 子菜单靠 .open 才展开（和 menubar 的 has-sub 一致） */
+    wrap.addEventListener("mouseenter", function () { wrap.classList.add("open"); });
+    wrap.addEventListener("mouseleave", function () { wrap.classList.remove("open"); });
     return wrap;
   }
 
   function yn(v) {
     return v ? "已连接" : "未连接";
+  }
+
+  function closeAllMenus() {
+    var all = document.querySelectorAll("#menuBar .mbItem");
+    for (var i = 0; i < all.length; i++) all[i].classList.remove("open");
+    document.body.classList.remove("mbOpen");
+  }
+
+  function toggleMenu() {
+    var wasOpen = item.classList.contains("open");
+    closeAllMenus();
+    if (!wasOpen) {
+      item.classList.add("open");
+      document.body.classList.add("mbOpen");
+    }
   }
 
   function render() {
@@ -160,6 +180,12 @@
     place();
 
     item.addEventListener("mouseenter", function () { place(); refresh(); });
+    /* 和 menubar.makeMenu 一样的开合：点一下开/关，点空白关 */
+    item.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      toggleMenu();
+    });
+    document.addEventListener("click", closeAllMenus);
     [400, 1200, 3000].forEach(function (ms) { setTimeout(place, ms); });
     render();
     refresh();
