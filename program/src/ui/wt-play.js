@@ -79,7 +79,13 @@
 
     var p = Promise.resolve();
     try {
-      if (WA2.chat && WA2.chat.renderQueued) p = WA2.chat.renderQueued({ reply: body });
+      if (WA2.chat && WA2.chat.renderQueued) {
+        p = WA2.chat.renderQueued({
+          reply: body,
+          speaker: isNarr ? "" : speaker,
+          line_type: isNarr ? "narr" : "her"
+        });
+      }
     } catch (e) {}
     if (!p || !p.then) {
       var el = document.getElementById("msgText");
@@ -87,17 +93,11 @@
       p = Promise.resolve();
     }
 
+    /* 语音由 applyServerReply 按说话人决定，这里不再重复念；
+       阅读时长按 300ms/字 兜底（有语音时那边的 promise 会等语音播完） */
     return p.then(function () {
-      /* 有语音的角色：出声音（旁白、龙套、其他角色都不出声） */
-      var voiced = !isNarr && line.voice && speaker && speaker === ownName();
-      if (voiced && WA2.voice && WA2.voice.speakReply) {
-        try {
-          return WA2.voice.speakReply(text).then(function () { return readMs(text); });
-        } catch (e) {}
-      }
-      return readMs(text);
-    }).then(function (ms) {
-      return sleep(ms || 0).then(function () { return ms; });
+      var ms = readMs(text);
+      return sleep(ms).then(function () { return ms; });
     });
   }
 

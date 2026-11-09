@@ -33,7 +33,12 @@
     if (!_isNarr && /^[（(【]/.test((d.reply_zh || d.reply || "").trim())) {
       _isNarr = true;
     }
-    if (_isNarr) _speaker = "";
+    if (_isNarr) {
+      _speaker = "";
+    } else if (!_speaker) {
+      /* 聊天路径没有 speaker 字段：默认就是当前角色，名字牌要照常画回来 */
+      try { if (typeof CHAR_NAME !== "undefined" && CHAR_NAME) _speaker = String(CHAR_NAME); } catch (e) {}
+    }
     window.__lastThinking = (d.thinking || "").trim();
     window.__lastAction = (d.action_zh || d.action || "").trim();
     /* 旁白（不是角色说的话）：不进左上角动作区 */
