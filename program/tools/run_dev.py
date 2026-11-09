@@ -4,6 +4,7 @@
 program/  = 实时程序（源码 + 这个入口）
 release/  = 打包好的分发版本
 """
+import io
 import os
 import shutil
 import subprocess
@@ -49,6 +50,19 @@ os.makedirs(ui2, exist_ok=True)
 for f in os.listdir(os.path.join(SRC, "ui")):
     shutil.copy2(os.path.join(SRC, "ui", f), os.path.join(ui2, f))
 print("  组装 ui2 完成（素材不再复制，运行时直接读 res/assets）")
+
+# 2.5 换缓存版本号：不换的话 WebView2 会继续用旧脚本，改了代码看不到效果
+try:
+    import re
+    import time
+    _idx = os.path.join(ui2, "index.html")
+    _stamp = time.strftime("%Y%m%d%H%M%S")
+    _html = io.open(_idx, encoding="utf-8").read()
+    _html, _n = re.subn(r"\?v=[0-9A-Za-z]+", "?v=" + _stamp, _html)
+    io.open(_idx, "w", encoding="utf-8").write(_html)
+    print("  缓存版本号 → ?v=%s（%d 处）" % (_stamp, _n))
+except Exception as _e:
+    print("  换版本号失败（不影响运行）:", _e)
 
 # 只同步不启动（自测 / 打包前刷新用）
 if "--sync-only" in sys.argv:
