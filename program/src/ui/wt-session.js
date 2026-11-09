@@ -101,6 +101,7 @@
         try {
           var _hsNow = (meta.hscene === 1 || meta.hscene === "1");
           setSceneFlag(_hsNow);
+          window.__lastEmo = meta.emo || (_hsNow ? "H" : "calm");
           var _spriteEmo = _hsNow ? "H" : (meta.emo || "calm");
           setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
           if (meta.bgm) setBgm(meta.bgm, 600);
@@ -108,7 +109,9 @@
         var line = lastAssistant();
         if (line.zh) {
           try { showReply(quoteLine(line.zh)); } catch (e) { $("msgText").textContent = quoteLine(line.zh); }
-          if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) speakLineJa(line.ja, line.emo || "");
+          if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) {
+            speakLineJa(line.ja, line.emo || window.__lastEmo || "");
+          }
         }
         if (meta.outfit) {
           try { setSpriteByScene(meta.bg || "classroom", "calm", true, meta.outfit); } catch (e) {}
@@ -158,6 +161,7 @@
       if (meta.outfit) { WA2.state.outfit = meta.outfit; }
       var _hsNow2 = (meta.hscene === 1 || meta.hscene === "1");
       setSceneFlag(_hsNow2);
+      window.__lastEmo = meta.emo || (_hsNow2 ? "H" : "calm");
       var _spriteEmo = _hsNow2 ? "H" : (meta.emo || "calm");
       setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
       gdiRenderName(CHAR_NAME, $("namePlate"));
@@ -165,7 +169,9 @@
       var line = lastAssistant();
       if (line.zh) {
         try { showReply(quoteLine(line.zh)); } catch (e) { $("msgText").textContent = quoteLine(line.zh); }
-        if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) speakLineJa(line.ja, line.emo || "");
+        if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) {
+          speakLineJa(line.ja, line.emo || window.__lastEmo || "");
+        }
       }
       try { rebuildBacklog(); } catch (e) {}
       /* 存档里存着「还没选的分支」：摆回来，并且不要抢输入框焦点 */
