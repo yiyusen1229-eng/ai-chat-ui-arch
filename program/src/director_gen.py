@@ -41,6 +41,10 @@ def _cast_lines():
     """阵容描述：每个角色一段压缩卡"""
     out = []
     for m in cast_mod.get_cast().get("members", []):
+        if m.get("role") == "player":
+            out.append("- 玩家「%s」：由玩家扮演；你**可以**给他写台词，用 speaker=\"%s\""
+                       % (m.get("name"), m.get("name")))
+            continue
         if m.get("role") == "extra":
             out.append("- 龙套「%s」：临时角色，只接话，不给内心" % m.get("name"))
             continue
@@ -60,7 +64,8 @@ SYSTEM = """你是这出戏的导演。你不扮演任何角色，只决定「�
 3. 台词要短；旁白只写必要的一两句。
 4. speaker 必须是阵容里的名字；旁白用空字符串。
 5. 龙套（临时角色）只接话，不推动剧情。
-6. 不要写玩家的台词——玩家自己会说。"""
+6. 玩家也要有戏：每两三拍至少给玩家写一句（speaker 用玩家的名字），
+   写短一点，像玩家会说的话；不要把玩家的台词写成旁白。"""
 
 
 def _user_prompt(beat_index, total_beats):
@@ -133,7 +138,7 @@ def _parse(text):
 def _allowed():
     names = set()
     for m in cast_mod.get_cast().get("members", []):
-        if m.get("role") == "extra":
+        if m.get("role") in ("extra", "player"):
             names.add(m.get("name") or "")
         else:
             names.add(char_cards.info(m.get("id"))["name"])

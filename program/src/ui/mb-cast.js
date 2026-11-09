@@ -128,6 +128,12 @@
         }));
       });
     }
+    castRows.unshift(subRow("加入玩家（你）", function () {
+      var members = ((c.members || []).filter(function (m) { return m.role !== "player"; })
+        .map(function (m) { return { id: m.id, role: m.role, name: m.name }; }));
+      members.push({ role: "player", name: "你" });
+      api("/api/cast/set", { members: members }).then(refresh);
+    }));
     menu.appendChild(sub("阵容", castRows));
 
     /* 导演模型 */

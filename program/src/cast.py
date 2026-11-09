@@ -22,7 +22,7 @@ import characters as chars
 
 _state = {"members": [], "turns": 0}
 
-ROLE_NAMES = {"protagonist": "主角", "actor": "角色", "extra": "龙套"}
+ROLE_NAMES = {"player": "玩家", "protagonist": "主角", "actor": "角色", "extra": "龙套"}
 
 
 def _char_dir(cid):
@@ -72,6 +72,10 @@ def set_cast(members):
         role = m.get("role") or "actor"
         if role not in ROLE_NAMES:
             continue
+        if role == "player":
+            name = (m.get("name") or "你").strip() or "你"
+            clean.append({"name": name, "role": "player"})
+            continue
         if role == "extra":
             name = (m.get("name") or "").strip()
             if name:
@@ -119,7 +123,11 @@ def status():
     """给标题栏菜单用：每个成员的卡片/模型/语音状态"""
     out = []
     for m in _state["members"]:
-        if m.get("role") == "extra":
+        if m.get("role") in ("extra", "player"):
+            if m.get("role") == "player":
+                out.append({"name": m.get("name"), "role": "player", "label": "玩家",
+                            "chat": True, "voice": False, "model": "", "has_card": False})
+                continue
             out.append({"name": m.get("name"), "role": "extra", "label": ROLE_NAMES["extra"],
                         "chat": False, "voice": False, "model": "", "has_card": False})
             continue
