@@ -40,20 +40,6 @@ DIRECTOR_CARD = """# 测试角色 · 导演卡
 - 不要重复别人刚说过的话。
 """
 
-ACTOR_CARD = """# 测试角色 · 角色卡
-
-你是「测试角色」，一个用来试功能的人。
-
-## 说话方式
-- 短句，口语，带一点点好奇。
-- 不知道的事就直接问，不装懂。
-- 一次只说一两句。
-
-## 不要做的事
-- 不要旁白式总结。
-- 不要长篇大论。
-"""
-
 BASE_PROMPT = """你在扮演「测试角色」。
 
 一个用来测试多角色功能的人：话不多，说话直白，遇到不懂的就问。
@@ -75,7 +61,6 @@ def main():
     io.open(os.path.join(path, "name.txt"), "w", encoding="utf-8").write(NAME)
     io.open(os.path.join(path, "prompt", "base.txt"), "w", encoding="utf-8").write(BASE_PROMPT)
     io.open(os.path.join(path, "card", "director.md"), "w", encoding="utf-8").write(DIRECTOR_CARD)
-    io.open(os.path.join(path, "card", "actor.md"), "w", encoding="utf-8").write(ACTOR_CARD)
 
     mp = os.path.join(path, "model.json")
     if not os.path.isfile(mp):
@@ -84,7 +69,7 @@ def main():
              "voice": {"endpoint": "", "key": "", "model": "", "connected": False}},
             ensure_ascii=False, indent=2))
 
-    for f in ("name.txt", "prompt/base.txt", "card/director.md", "card/actor.md", "model.json"):
+    for f in ("name.txt", "prompt/base.txt", "card/director.md", "model.json"):
         print("  %-22s %s" % (f, os.path.isfile(os.path.join(path, f))))
 
 

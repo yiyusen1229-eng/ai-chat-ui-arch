@@ -3,14 +3,12 @@
 
 多角色系统里，模型不是读"角色包"，而是读这三张卡：
 
-    characters/<id>/card/director.md    导演看：这个角色能做什么、说话什么调子、禁忌
-    characters/<id>/card/actor.md       角色自己看：我是谁、我怎么说话
-    characters/<id>/card/protagonist.md 主角卡：玩家扮演谁（只有主角才有）
+    characters/<id>/card/director.md    角色卡（给导演看的 150~300 字压缩卡）
+    characters/<id>/card/protagonist.md 主角卡：玩家扮演谁（临时放这里，将来进 player/）
 
 约定：
   · director.md 缺失 → 这个角色不能进多角色场次（导演不知道该怎么调度它）；
-  · actor.md 缺失 → 退回原来的角色 prompt（单角色模式照旧）；
-  · 主角卡跟着"当前角色"走，特殊模式里配。
+  · 文件名叫 director.md 只是因为它给导演用；对用户/文档一律叫「角色卡」。
 
 这里只负责读写与校验，不碰模型。
 """
@@ -19,8 +17,8 @@ import os
 
 import characters as chars
 
-KINDS = ("director", "actor", "protagonist")
-TITLES = {"director": "导演卡", "actor": "角色卡", "protagonist": "主角卡"}
+KINDS = ("director", "protagonist")
+TITLES = {"director": "角色卡", "protagonist": "主角卡"}
 
 
 def card_dir(cid=None):
@@ -68,7 +66,6 @@ def info(cid=None):
         "id": cid or chars.active_id(),
         "name": chars.display_name(cid),
         "has_director": has_card("director", cid),
-        "has_actor": has_card("actor", cid),
         "has_protagonist": has_card("protagonist", cid),
         "dir": card_dir(cid)
     }
