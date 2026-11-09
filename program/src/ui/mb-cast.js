@@ -102,6 +102,13 @@
     }
     menu.appendChild(sub("连接状态", connRows));
 
+    /* 导演模型 */
+    var dm = (d && d.model) || {};
+    menu.appendChild(subRow("导演模型：" + (dm.model || "未配置") + (dm.connected ? "（已连接）" : "（未连接）"), function () {
+      closeAllMenus();
+      if (window.WA2 && WA2.spModel && WA2.spModel.open) WA2.spModel.open("director");
+    }));
+
     /* 阵容 */
     var castRows = [subRow("清空阵容", function () {
       api("/api/cast/set", { members: [] }).then(refresh);

@@ -103,6 +103,22 @@ def stub_beats(n=2):
     return out
 
 
+def _director_model():
+    """从当前角色的 model.json 里读导演模型（没配就空串）"""
+    try:
+        import char_model
+        st = char_model.get_state()
+        d = (st.get("kinds") or {}).get("director") or {}
+        return {
+            "model": d.get("model") or "",
+            "connected": bool(d.get("connected")),
+            "usingGlobal": bool(d.get("usingGlobal")),
+            "endpoint": d.get("endpoint") or ""
+        }
+    except Exception:
+        return {"model": "", "connected": False, "usingGlobal": True, "endpoint": ""}
+
+
 def status():
     c = cast.get_cast()
     return {
@@ -114,5 +130,5 @@ def status():
         "beat": _state["beat"],
         "planned": _state["planned"],
         "cast": c,
-        "model": ""          # 接模型后填导演模型名
+        "model": _director_model()
     }
