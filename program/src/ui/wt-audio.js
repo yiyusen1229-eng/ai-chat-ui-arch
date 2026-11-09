@@ -23,9 +23,22 @@
 
   function bgmSrc(name) {
     var P = prefs(), C = catalog();
-    var id = P[BGM_KEY[name] || "bgmCalm"];
-    var item = C.bgm && C.bgm[id === undefined ? 0 : id];
-    return item ? "assets/snd/" + item.file : "";
+    var list = C.bgm || [];
+    /* 1) 老名字走偏好里的 id（用户可以在设置里换“静かな冬の夜”用哪首） */
+    var key = BGM_KEY[name];
+    if (key) {
+      var item = list[P[key] === undefined ? 0 : P[key]];
+      if (item) return "assets/snd/" + item.file;
+    }
+    /* 2) 新曲（33 首）直接按曲名或文件名找 */
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && (list[i].name === name || list[i].file === name)) {
+        return "assets/snd/" + list[i].file;
+      }
+    }
+    /* 3) 兜底：还是回到 calm */
+    var fallback = list[P.bgmCalm === undefined ? 0 : P.bgmCalm];
+    return fallback ? "assets/snd/" + fallback.file : "";
   }
 
   /* OPTION 2 的 BGM 滑块优先（volBgm），没有就退回旧的 bgmVol；两者都要乘全体音量 */

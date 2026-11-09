@@ -25,12 +25,29 @@
     sad: ["sad", "toukanai"],
     tense: ["tense", "answer"]
   };
+  /* 曲库 41 首按 slot 字段分组；有 catalog 就用它，没有就退回上面那 4 组 */
+  (function buildSlotTracks() {
+    try {
+      var C = (window.App && window.App.catalogGet) ? window.App.catalogGet() : null;
+      var list = (C && C.bgm) || [];
+      if (!list.length) return;
+      var by = {};
+      for (var i = 0; i < list.length; i++) {
+        var it = list[i];
+        if (!it || !it.slot || it.slot === "menu") continue;
+        (by[it.slot] || (by[it.slot] = [])).push(it.name);
+      }
+      var keys = Object.keys(by);
+      if (!keys.length) return;
+      for (var k = 0; k < keys.length; k++) SLOT_TRACKS[keys[k]] = by[keys[k]];
+    } catch (e) {}
+  })();
   /* 反查：某首曲子属于哪个氛围（判断「当前氛围」用） */
   var TRACK_SLOT = {
     menu: "menu", calm: "calm", kazusa: "calm", warm: "warm",
     sad: "sad", toukanai: "sad", tense: "tense", answer: "tense"
   };
-  var slotRound = { calm: 0, warm: 0, sad: 0, tense: 0 };
+  var slotRound = {};
 
   function nextTrack(slot) {
     var list = SLOT_TRACKS[slot] || [slot];
@@ -49,7 +66,7 @@
      哭腔算难过（sad），「沉重」留给真的争执（词表里已补，见 performance_hints）。 */
   var EMO_BGM = {
     calm: "calm", "毒舌": "calm", "问句": "calm",
-    soft: "warm", "撒娇": "warm", "调侃吐槽": "warm",
+    soft: "warm", "撒娇": "warm", "调侃吐槽": "comic",
     "哭腔": "sad",
     "沉重": "tense",
     /* 新标签：按"这段该配什么氛围"归到四个槽位 */
@@ -82,7 +99,7 @@
   }
 
   /* ---------- 氛围累积（BGM 不随单句变化） ---------- */
-  const moodScore = { calm: 0, warm: 0, sad: 0, tense: 0 };
+  const moodScore = { calm: 0, warm: 0, sad: 0, tense: 0, comic: 0, kazusa: 0, answer: 0 };
   let moodStable = { name: "calm", turns: 0 };
 
   function accumulateMood(reply, emo) {
@@ -125,6 +142,7 @@
   /* 开新游戏：氛围分归零（不然上一局的「难过/紧张」会带进新局，BGM 一开就偏） */
   function reset() {
     for (const k in moodScore) moodScore[k] = 0;
+    for (const k in slotRound) slotRound[k] = 0;
     moodStable = { name: "calm", turns: 0 };
     return true;
   }

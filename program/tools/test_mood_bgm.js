@@ -44,7 +44,7 @@ console.log("[1] 模型 <emotion> → BGM 槽位");
   const { mood } = boot();
   const cases = [
     ["沉重", "tense"], ["毒舌", "calm"], ["问句", "calm"], ["calm", "calm"],
-    ["soft", "warm"], ["撒娇", "warm"], ["调侃吐槽", "warm"], ["哭腔", "sad"]
+    ["soft", "warm"], ["撒娇", "warm"], ["调侃吐槽", "comic"], ["哭腔", "sad"]
   ];
   for (const [emo, want] of cases) {
     check(emo + " → " + want, mood.bgmSlot("随便一句", emo) === want, mood.bgmSlot("随便一句", emo));
