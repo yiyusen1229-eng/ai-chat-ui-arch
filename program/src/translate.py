@@ -239,6 +239,32 @@ def _clean(text, p="zh"):
     return t.split("\n")[0].strip()
 
 
+# 模型有时会把提示词里的词当成内容吐出来（实测出现过「术语表：」）
+_PROMPT_ECHO = ("术语表", "人名按", "只输出", "把下面", "要求：", "翻译成")
+_CJK = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _looks_like_junk(out, src, p="zh"):
+    """译文体检：空、纯标点、提示词回声、跟原文一模一样 都算失败"""
+    s = (out or "").strip()
+    if not s:
+        return True
+    core = re.sub(r"[\s，。！？、；：…—·「」『』“”‘’（）()]", "", s)
+    if not core:
+        return True
+    if any(s.startswith(k) or (k in s and len(s) <= len(k) + 3) for k in _PROMPT_ECHO):
+        return True
+    if p == "zh":
+        if not _CJK.search(s):          # 一个汉字都没有：多半是英文/原文
+            return True
+        if s == (src or "").strip():    # 原样返回＝没翻
+            return True
+    else:
+        if not _JA_KANA.search(s):
+            return True
+    return False
+
+
 def translate(text, p="zh"):
     """翻一句；返回译文（失败回空串）。引擎顺序按 provider()，另一个当兜底。"""
     t = (text or "").strip()
@@ -252,6 +278,8 @@ def translate(text, p="zh"):
     out = ""
     for engine in order:
         out = _clean(_cloud_raw(t, p)[0] if engine == "cloud" else _local_raw(t, p), p)
+        if out and _looks_like_junk(out, t, p):
+            out = ""            # 体检不过：当这台引擎失败，换下一台
         if out:
             break
     out = apply_glossary(out, p)
