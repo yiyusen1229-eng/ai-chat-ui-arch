@@ -28,6 +28,32 @@
 
   var SPRITE_INDEX = {};       // 衣服名 -> {code, label, default, emotions, variants}
   var currentSprite = null;
+  var SPRITE_CHAR = "";        // 当前立绘用哪个角色（空 = 当前激活角色）
+  var INDEX_CACHE = {};        // 角色 -> 他的服装表
+
+  /* 按角色拉服装表；同一角色只拉一次 */
+  function useCharacter(cid, cb) {
+    var want = cid || "";
+    if (want === SPRITE_CHAR) { if (cb) cb(); return; }
+    var apply = function (map) {
+      Object.keys(SPRITE_INDEX).forEach(function (k) { delete SPRITE_INDEX[k]; });
+      Object.assign(SPRITE_INDEX, map || {});
+      SPRITE_CHAR = want;
+      currentSprite = null;      // 强制重画
+      if (cb) cb();
+    };
+    if (INDEX_CACHE[want]) { apply(INDEX_CACHE[want]); return; }
+    var url = "/api/character/sprite/index.json" + (want ? "?char=" + encodeURIComponent(want) : "");
+    fetch(url, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var m = (d && d.outfits) || {};
+        if (!Object.keys(m).length && want) { apply({}); return; }   // 没立绘：空表即可
+        INDEX_CACHE[want] = m;
+        apply(m);
+      })
+      .catch(function () {});
+  }
 
   function loadIndex(cb) {
     fetch("/api/character/sprite/index.json", { cache: "no-store" })
@@ -138,11 +164,26 @@
 
   function spritePath(outfit, emotion) {
     var o = SPRITE_INDEX[outfit];
+    if (!o) {
+      /* 这个角色没有当前这套衣服：用她自己表里带 default 的那套 */
+      var keys = Object.keys(SPRITE_INDEX);
+      for (var i = 0; i < keys.length; i++) {
+        if (SPRITE_INDEX[keys[i]] && SPRITE_INDEX[keys[i]].default) {
+          outfit = keys[i];
+          o = SPRITE_INDEX[outfit];
+          break;
+        }
+      }
+      if (!o && keys.length) { outfit = keys[0]; o = SPRITE_INDEX[outfit]; }
+    }
     if (!o) return "assets/kaz_cold.png";
     var u = function (name) {
       var url = "/api/character/sprite/" + encodeURIComponent(outfit) + "/" + encodeURIComponent(name);
+      var q = [];
+      if (SPRITE_CHAR) q.push("char=" + encodeURIComponent(SPRITE_CHAR));
       /* #20 热重载：换了图之后靠 ?v= 让 WebView2 重新取，不然还吃旧缓存 */
-      if (WA2.assetsVer) url += "?v=" + WA2.assetsVer;
+      if (WA2.assetsVer) q.push("v=" + WA2.assetsVer);
+      if (q.length) url += "?" + q.join("&");
       return url;
     };
     var file = pickEmotion(o, emotion);
@@ -237,7 +278,7 @@
   // 兼容老调用点（game.js / menubar.js 直接用了这些全局名）
   window.__reloadSprites = function () { reload(window.__curBg || "classroom", window.__lastEmo || ""); };
   var _exp = {};
-  var _names = ["loadIndex", "outfitOf", "reload", "refreshCurrent", "resolveOutfit", "setSpriteByScene", "spritePath", "summary"];
+  var _names = ["useCharacter", "loadIndex", "outfitOf", "reload", "refreshCurrent", "resolveOutfit", "setSpriteByScene", "spritePath", "summary"];
   for (var _i = 0; _i < _names.length; _i++) {
     try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
   }

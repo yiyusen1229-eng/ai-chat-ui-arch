@@ -890,7 +890,15 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
             # 立绘图：当前角色的 portrait/ 优先，没有再用自带 assets/sprites/
             import urllib.parse as _up
             rel = _up.unquote(p[len("/api/character/sprite/"):])
-            return (characters.sprite_file(os.path.join(ASSETS_DIR, "sprites"), rel)
+            _cid2 = ""
+            try:
+                from urllib.parse import urlparse as _up2, parse_qs as _pq2
+                _cid2 = (_pq2(_up2(self.path).query).get("char") or [""])[0].strip()
+            except Exception:
+                _cid2 = ""
+            if "?" in rel:
+                rel = rel.split("?", 1)[0]
+            return (characters.sprite_file(os.path.join(ASSETS_DIR, "sprites"), rel, _cid2 or None)
                     or os.path.join(UI_DIR, "__api__"))
         elif p.startswith("/api/"):
             return os.path.join(UI_DIR, "__api__")

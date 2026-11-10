@@ -461,6 +461,24 @@ def pick_folder():
 
 
 # ------------------------------------------------------------------ 立绘
+def dir_for(cid=None):
+    """指定角色的目录；不给就用当前激活角色。"""
+    if not cid:
+        return active_dir()
+    try:
+        root = globals()["root"]()
+        p = os.path.join(root, cid)
+        if os.path.isdir(p):
+            return p
+        for name in os.listdir(root):
+            d = os.path.join(root, name)
+            if os.path.isdir(d) and display_name(name) == cid:
+                return d
+    except Exception:
+        pass
+    return active_dir()
+
+
 def sprite_dir():
     d = active_dir()
     return os.path.join(d, "portrait") if d else ""
@@ -514,7 +532,7 @@ def _scan_portrait_outfits():
     return out
 
 
-def sprite_index(assets_sprites):
+def sprite_index(assets_sprites, cid=None):
     """合并：自带 assets/sprites/index.json + 当前角色的 portrait/index.json（角色优先）
 
     key 现在都是**衣服名（中文）**；老安装的自带索引还是数字编号，按 `code` 对齐，
@@ -523,7 +541,8 @@ def sprite_index(assets_sprites):
     两边都没索引（老角色包只有图）时，退回扫 `portrait/` 目录（`_scan_portrait_outfits`）。
     """
     base = _read_index(os.path.join(assets_sprites, "index.json"))
-    own = _read_index(os.path.join(sprite_dir(), "index.json")) if sprite_dir() else {}
+    _sd = os.path.join(dir_for(cid), "portrait") if cid else sprite_dir()
+    own = _read_index(os.path.join(_sd, "index.json")) if _sd else {}
     outfits = dict(base.get("outfits") or {})
     code_key = {}
     for k, o in outfits.items():
@@ -572,7 +591,7 @@ def _under(base, path):
         return False
 
 
-def sprite_file(assets_sprites, rel):
+def sprite_file(assets_sprites, rel, cid=None):
     """按相对路径找立绘图：角色 portrait/ 优先，没有再用自带 assets/sprites/
 
     安全：`rel` 只当**相对路径**用。`..`、以 `/` 开头、带盘符（`C:`）的一律拒绝——
@@ -587,7 +606,7 @@ def sprite_file(assets_sprites, rel):
     parts = [p for p in rel.split("/") if p not in ("", ".")]
     if not parts:
         return ""
-    own_dir = sprite_dir()
+    own_dir = (os.path.join(dir_for(cid), "portrait") if cid else sprite_dir())
     if own_dir:
         own = os.path.join(own_dir, *parts)
         if os.path.isfile(own) and _under(own_dir, own):

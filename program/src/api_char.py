@@ -18,7 +18,16 @@ class CharApi:
         这样 Range / 缓存 / Content-Type 都复用现成的那套。
         """
         if self.path.startswith("/api/character/sprite/index.json"):
-            return self._json(characters.sprite_index(os.path.join(ASSETS_DIR, "sprites")))
+            # 多角色：?char=雪菜 时返回她自己的立绘索引
+            _cid = ""
+            try:
+                from main import qs
+                from urllib.parse import urlparse, parse_qs
+                _q = parse_qs(urlparse(self.path).query)
+                _cid = qs(_q, ("char", "c")).strip()
+            except Exception:
+                _cid = ""
+            return self._json(characters.sprite_index(os.path.join(ASSETS_DIR, "sprites"), _cid or None))
         if self.path == "/api/character/opening":
             try:
                 p = os.path.join(characters.active_dir(), "opening.json")
