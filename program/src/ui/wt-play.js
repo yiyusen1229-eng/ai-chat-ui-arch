@@ -103,6 +103,11 @@
 
   function maybeGenerate() {
     if (!genOn) return Promise.resolve(false);
+    /* 自动模式没开：导演只在玩家主动要的时候写（发消息 / 菜单「写一拍」），
+       不要在这里自己往下滚。 */
+    try {
+      if (!(window.WA2 && WA2.auto && WA2.auto.isOn && WA2.auto.isOn())) return Promise.resolve(false);
+    } catch (e) { return Promise.resolve(false); }
     var now = Date.now();
     if (now - lastGen < 5000) return Promise.resolve(false);
     lastGen = now;
