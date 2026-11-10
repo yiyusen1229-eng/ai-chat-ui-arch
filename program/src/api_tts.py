@@ -10,6 +10,15 @@ import tts_client
 class TtsApi:
     """见 main.Handler；从 main 注入运行时全局。"""
 
+    def _voice_state(self):
+        """GET /api/voice/state：当前实际加载的权重与角色（排查串音用）"""
+        try:
+            import tts_client
+            st = tts_client.state()
+            return self._json({"ok": True, **st})
+        except Exception as e:
+            return self._json({"ok": False, "error": str(e)}, 500)
+
     def _tts(self):
         from main import (NO_MODELS, log, qs, translate_ja)
         """合成语音，返回 wav

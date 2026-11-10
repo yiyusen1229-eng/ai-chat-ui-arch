@@ -1028,6 +1028,8 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
             return self._json({"ok": True, "log": applog.path()})
         if self.path.startswith("/api/log/bundle"):
             return self._log_bundle()
+        if self.path.startswith("/api/voice/state"):
+            return self._voice_state()
         if self.path.startswith("/api/tts"):
             return self._tts()
         if self.path.startswith("/api/performance"):

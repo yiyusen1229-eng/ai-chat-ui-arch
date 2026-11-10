@@ -93,6 +93,7 @@ _model_key = ""      # 合并版：当前已加载的角色语音配置签名
 
 # 合成时临时指定的角色（多角色配音用）：空 = 用当前激活角色
 _voice_char = ""
+_last_ref = ""
 
 
 def _active_dir():
@@ -248,6 +249,14 @@ def refs_dir():
     """
     if _REFS_OVERRIDE:
         return _REFS_OVERRIDE
+    # 多角色合成：这次指定了角色，参考音频也要用他的
+    if _voice_char:
+        try:
+            d = os.path.join(_active_dir() or "", "voice")
+            if d and os.path.isdir(d):
+                return d
+        except Exception:
+            pass
     try:
         d = char_res.voice_dir()
     except Exception:
@@ -363,8 +372,31 @@ def _emo_from_filename(path):
 
 
 def _load_imported():
-    """扫 char/voice/*.wav → {global:[...], by_emo:{情绪:[...]}}"""
+    """扫 char/voice/*.wav → {global:[...], by_emo:{情绪:[...]}}
+
+    多角色合成时必须扫**这次的角色**，否则「导入的参考音频」会一直是激活角色的，
+    于是出现「雪菜的权重念和纱的参考」。
+    """
     out = {"global": [], "by_emo": {}}
+    if _voice_char:
+        try:
+            d = os.path.join(_active_dir() or "", "voice")
+            if os.path.isdir(d):
+                for f in os.listdir(d):
+                    if not f.lower().endswith(".wav"):
+                        continue
+                    wav = os.path.join(d, f)
+                    tp = os.path.join(d, os.path.splitext(f)[0] + ".txt")
+                    txt = ""
+                    try:
+                        if os.path.isfile(tp):
+                            txt = io.open(tp, encoding="utf-8").read().strip()
+                    except Exception:
+                        txt = ""
+                    out["global"].append((wav, txt))
+                return out
+        except Exception:
+            pass
     try:
         for wav, txt in char_res.voice_refs():
             emo = _emo_from_filename(wav)
@@ -494,7 +526,9 @@ def pick_ref(emo="neutral", target=""):
     """按情绪挑参考音频：特别模式导入的优先，其次 refs_touma 的分组，最后兜底"""
     import random
     emo = EMOTION_ALIAS.get(emo, emo)
-    if _char_voice_sig() != _refs_sig:      # 导入 / 删除过参考音频 → 重新扫
+    # 指定了角色时每次都重扫（角色来回切换时，靠签名比较不可靠）：
+    # 目录很小，重扫成本可以忽略，换来的是「谁的参考音频绝不会串」。
+    if _voice_char or _char_voice_sig() != _refs_sig:
         load_refs()
     if _IMPORTED["by_emo"].get(emo):        # 文件名带情绪的，只在对应情绪里用
         return random.choice(_IMPORTED["by_emo"][emo])
@@ -654,6 +688,28 @@ def available():
 def _post(path, timeout=30):
     with urllib.request.urlopen(URL + path, timeout=timeout) as r:
         return r.read()
+
+
+def state():
+    """当前语音状态：给 /api/voice/state 和排查串音用。
+
+    gpt/sovits 是**本进程最后一次真正加载**的权重（_model_key 里记着），
+    active_* 才是当前激活角色应该用的 —— 两者不一致就说明串了。
+    """
+    m = _character_tts() or {}
+    loaded = (_model_key or "").split("|")
+    return {
+        "gpt": os.path.basename(loaded[0]) if len(loaded) == 2 else "",
+        "sovits": os.path.basename(loaded[1]) if len(loaded) == 2 else "",
+        "active_char": os.path.basename(_active_dir() or ""),
+        "active_gpt": os.path.basename(m.get("gpt") or GPT_W),
+        "active_sovits": os.path.basename(m.get("sovits") or SOVITS_W),
+        "refs_owner": os.path.basename(os.path.dirname(refs_dir() or "")),
+        "last_ref": os.path.basename(_last_ref or ""),
+        "last_ref_dir": os.path.basename(os.path.dirname(_last_ref or "")),
+        "ready": bool(_ready),
+        "error": _last_err,
+    }
 
 
 def _ensure_char_model():
@@ -1105,8 +1161,10 @@ def _synthesize_inner(text, lang, timeout, emo):
         diag.count("tts.miss")
         try:
             import applog
-            applog.log("TTS 合成请求：%d 字，切分=%s，参考=%s"
-                       % (len(text), "cut0" if len(text) <= 40 else "cut5",
+            _mdl = _character_tts() or {}
+            applog.log("TTS 合成请求：%d 字，角色=%s 权重=%s 参考=%s"
+                       % (len(text), os.path.basename(_active_dir() or "?"),
+                          os.path.basename(_mdl.get("gpt") or "(底模)"),
                           os.path.basename(ref_path or "")), "TTS")
             applog.log("TTS 缓存未命中：len=%d emo=%s key=%s"
                        % (len(text), emo, os.path.basename(_cp or "")[:8]), "TTS")
@@ -1116,6 +1174,11 @@ def _synthesize_inner(text, lang, timeout, emo):
         ref_path, ref_text = pick_ref(emo, target=text)
         if not ref_path:
             return None
+        try:
+            global _last_ref
+            _last_ref = ref_path
+        except Exception:
+            pass
         prm = EMOTION_PARAMS.get(EMOTION_ALIAS.get(emo, emo)) or EMOTION_PARAMS["neutral"]
         q = urllib.parse.urlencode({
             "text": text,
