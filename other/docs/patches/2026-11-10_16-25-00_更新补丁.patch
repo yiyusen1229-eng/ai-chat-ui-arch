@@ -1,0 +1,2771 @@
+diff --git a/README.md b/README.md
+index 295bafa..1542b53 100644
+--- a/README.md
++++ b/README.md
+@@ -30,6 +30,16 @@
+ > **非官方、非商业、个人技术验证项目。**
+ > 本仓库**只包含源代码与文档**：不含任何游戏素材，不含任何模型权重，不含游戏本体。
+ 
++## 2026-11-10-16:20:00更新（台词由角色自己写 / 语音一对一进程 / 立绘按说话人）
++
++- 导演只调度：谁开口、什么意图；台词由角色自己的模型用他的口吻写（日语原文 + 中文字幕）。
++- 语音改成「一个角色一个常驻进程」，各自加载自己的权重，不再来回切；
++  /api/tts 支持 &char=，新增 /api/voice/state 查看实际加载的模型。
++- 立绘、名字牌、回想都按说话人切换；回想重播用该行的说话人配音。
++- 存档记录当前角色，读档自动切回；阵容去重、可移出。
++- 导演模型改为场景级配置，换角色不丢。
++- 无语音文本停留改为 500ms/字；曲库扩到 41 首并新增 comic 氛围。
++
+ ## 2026-11-09-18:35:00更新（多角色与导演 / 角色卡与阵容 / 角色级模型与语音）
+ 
+ - 多角色与导演：一场戏多角色同场，导演按角色卡和玩家给的走向调度、生成、入队播放。
+diff --git a/other/docs/新对话交接说明.md b/other/docs/新对话交接说明.md
+index c890d79..37e78e2 100644
+--- a/other/docs/新对话交接说明.md
++++ b/other/docs/新对话交接说明.md
+@@ -15,6 +15,15 @@
+ > `cache_io.py` 缓存读取守卫、`assets_report.py` 启动素材自检、`ui/wt-perf.js` 演出状态机。
+ > 自测共 9 份（含 `node tools/test_perf.js`）。
+ 
++> **2026-11-10.1 发布（16:20）**：本版要点见
++> [更新日志_2026-11-10_16-20-00.md](更新日志_2026-11-10_16-20-00.md)：
++> 台词由角色自己的模型写（新增 ctor.py，导演只调度）、语音改成角色一对一常驻进程
++> （/api/tts?char=、/api/voice/state）、立绘/名字牌/回想按说话人、
++> 存档绑定角色、阵容去重与移出、导演模型改为场景级（characters/director.json）、
++> 曲库扩到 41 首。
++> 自测：
++un_smoke.py **56 项全绿**，拆分检查 91 处基线未破。
++
+ > **2026-11-09.1 发布（18:35）**：版本 2026-11-09.1，本版要点见
+ > [更新日志_2026-11-09_18-35-00.md](更新日志_2026-11-09_18-35-00.md)：
+ > 多角色与导演（框架 + 接入模型）、标题栏「多角色」控制台、角色卡与阵容、
+diff --git a/other/docs/更新日志_2026-11-10_16-20-00.md b/other/docs/更新日志_2026-11-10_16-20-00.md
+new file mode 100644
+index 0000000..bb7760e
+--- /dev/null
++++ b/other/docs/更新日志_2026-11-10_16-20-00.md
+@@ -0,0 +1,55 @@
++# 更新日志 · 2026-11-10
++
++（自 `2026-11-09.1` 之后）
++
++## 多角色：台词由角色自己写
++
++- 导演只负责调度：输出「这一拍谁开口、意图是什么」，不再直接写台词。
++- 新增 `actor.py`：读该角色的角色卡当 system，让**角色自己的模型**用他的口吻写一句日语台词；
++  多个角色并发调用，写不出来的退化为「把意图翻成日语」，保证配音有日文原文可用。
++- 旁白仍由导演直接写；角色台词显示中文、配音用日语原文。
++
++## 多角色：语音一个角色一个常驻进程
++
++- 语音服务改为进程池：每个角色一个常驻进程（9881 起），启动时加载各自的权重，
++  不再来回切权重；某个角色的进程不可用时自动退回共享进程。
++- `/api/tts` 支持 `&char=<角色>`：用该角色的权重与参考音频合成。
++- 修掉了「参考音频永远取当前激活角色」的问题（这是串音的根因）。
++- 新增 `/api/voice/state`：查看当前加载的权重、参考音频与进程池状态。
++
++## 多角色：立绘、名字、回想都按说话人
++
++- 立绘：按说话人切换到各自的 `portrait/`；切换前先取服装表，避免画到上一位的角色。
++- 名字牌 / 回想：显示真实说话人（不再一律写当前角色）。
++- 回想重播：按该行的说话人配音。
++- 旁白在回心里不再被加「」、不再标成角色名。
++
++## 存档与阵容
++
++- 存档记录当前角色，读档自动切回该角色。
++- 阵容去重：同一角色不会重复加入；已在场的角色在菜单里显示「移出」。
++- 导演模型改为**场景级**配置（`characters/director.json`），换角色不会丢；
++  角色级仍保留 chat / voice 的独立配置。
++
++## 节奏与音乐
++
++- 无语音文本的停留时间改为每字 500ms（原 300ms）。
++- 曲库扩到 41 首，按氛围轮播；唱歌 / 演出场面走 `kazusa` 主题曲，不再落到紧张曲。
++- 新增 `comic` 氛围槽（调侃吐槽走这里）。
++
++## 其它修复
++
++- 自动模式打开后只生成一条：修复「正在打字」被当成阻塞、以及只写旁白的回复被当成失败。
++- 单角色打开自动模式却像在跑导演：清掉上一场遗留的播放队列。
++- 翻译层把提示词片段（如「术语表：」）当成译文的容错。
++- 特殊场面判定过松导致普通剧情被误判：收紧关键词与阈值。
++- 前端脚本缓存版本号改为每次同步自动更新，避免改了代码界面不变。
++
++## 工程
++
++- 冒烟 56 项全绿；拆分检查 91 处基线未破；架构映射表与参数表重新生成。
++- 新增自测：`tools/test_hscene_gate.py`、`tools/import_bgm.py`。
++
++## 升级方式
++
++用本版补丁一键更新；旧补丁保留在 `other/docs/patches/`。
+diff --git a/other/docs/架构/映射表.md b/other/docs/架构/映射表.md
+index e4d251e..de06122 100644
+--- a/other/docs/架构/映射表.md
++++ b/other/docs/架构/映射表.md
+@@ -13,7 +13,7 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/mb-cast.js` | 261 | 多角色控制台：连接状态/阵容/队列/开关/长度 | api, el, row, toast | <script 全局> | — |
++| `src/ui/mb-cast.js` | 281 | 多角色控制台：连接状态/阵容/队列/开关/长度 | api, el, row, toast | <script 全局> | — |
+ 
+ ## 一级 · 前端/特别模式
+ 
+@@ -37,13 +37,13 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/main.py` | 1709 | 主入口（HTTP 服务 + 窗口 + 启动） | res_dir, prefs_load, prefs_save, cloud_cfg, probe_endpoint, ensure_cloud_cfg | api_char, api_charpack, api_chat, api_choice, api_cleanup, api_export | — |
++| `src/main.py` | 1759 | 主入口（HTTP 服务 + 窗口 + 启动） | res_dir, prefs_load, prefs_save, cloud_cfg, probe_endpoint, ensure_cloud_cfg | api_char, api_charpack, api_chat, api_choice, api_cleanup, api_export | — |
+ 
+ ## 二级 · 前端/回想
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/wt-backlog.js` | 210 | 对话历史与回想（WA2.backlog） | __rebuildBacklog, addHistory, replayBacklogVoice, setRowHighlight, setVoiceOnLast | <script 全局> | — |
++| `src/ui/wt-backlog.js` | 217 | 对话历史与回想（WA2.backlog） | __rebuildBacklog, addHistory, replayBacklogVoice, setRowHighlight, setVoiceOnLast | <script 全局> | — |
+ 
+ ## 二级 · 前端/壳
+ 
+@@ -63,25 +63,25 @@
+ |---|---|---|---|---|---|
+ | `src/ui/savepages.js` | 373 | 存档网格/缩略图/页签 | __renderSaveSlots, __renderSaveSlotsNow, __savePage, dateHTML, fillContent, numHTML | <script 全局> | — |
+ | `src/ui/savetabs4.js` | 69 | 存档页签资源 | __savePage, __saveTabsPaint, __setSavePage, activeImg, boxEl, hoverImg | <script 全局> | — |
+-| `src/ui/wt-session.js` | 258 | 存读档与缩略图（WA2.session） | __bgThumb, __history, __loadSession, __saveMeta, applyHistory, lastAssistant | <script 全局> | — |
++| `src/ui/wt-session.js` | 298 | 存读档与缩略图（WA2.session） | __activeCharId, __history, __loadSession, applyHistory, lastAssistant, restoreChoices | <script 全局> | — |
+ 
+ ## 二级 · 前端/对话
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/wt-chat.js` | 268 | 发送与分析回复（WA2.chat） | __lastEmo, __lastThinking, __nextOutfit, __nextScene, renderQueued, resetPending | <script 全局> | — |
++| `src/ui/wt-chat.js` | 357 | 发送与分析回复（WA2.chat） | __lastEmo, __lastThinking, __nextOutfit, __nextScene, renderQueued, resetPending | <script 全局> | — |
+ 
+ ## 二级 · 前端/导航
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/wt-nav.js` | 274 | 标题/退出/思考条（WA2.nav） | __history, __quitGame, __wantRestore, backToTitle, playTitleBgm, quitGame | <script 全局> | — |
++| `src/ui/wt-nav.js` | 275 | 标题/退出/思考条（WA2.nav） | __history, __quitGame, __wantRestore, backToTitle, playTitleBgm, quitGame | <script 全局> | — |
+ 
+ ## 二级 · 前端/情绪
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/wt-mood.js` | 124 | 情绪判断与 BGM 情绪（WA2.mood） | accumulateMood, bgmSlot, currentBgmMood, detectMood | <script 全局> | — |
++| `src/ui/wt-mood.js` | 170 | 情绪判断与 BGM 情绪（WA2.mood） | accumulateMood, bgmSlot, detectMood, nextTrack | <script 全局> | — |
+ 
+ ## 二级 · 前端/文字
+ 
+@@ -145,7 +145,7 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/wt-sprite.js` | 259 | 立绘/服装/表情（WA2.sprite） | __reloadSprites, __spriteSummary, __spriteWarned, cfgOverride, loadIndex, mergeMap | <script 全局> | — |
++| `src/ui/wt-sprite.js` | 300 | 立绘/服装/表情（WA2.sprite） | __reloadSprites, __spriteSummary, __spriteWarned, cfgOverride, loadIndex, mergeMap | <script 全局> | — |
+ 
+ ## 二级 · 前端/记忆书
+ 
+@@ -169,7 +169,7 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/wt-voice.js` | 201 | TTS 播放与参考音频（WA2.voice） | __lastEmo, __lastVoiceReq, __speakJa, __voiceWarned, _tts, currentVoiceLang | <script 全局> | — |
++| `src/ui/wt-voice.js` | 239 | TTS 播放与参考音频（WA2.voice） | __lastEmo, __lastVoiceReq, __speakJa, __voiceWarned, _tts, currentVoiceLang | <script 全局> | — |
+ 
+ ## 二级 · 前端/调试
+ 
+@@ -193,19 +193,20 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/config.js` | 228 | 前端配置常量 | clampPref, getPrefs, pushPrefs, setPref | <script 全局> | — |
++| `src/ui/config.js` | 229 | 前端配置常量 | clampPref, getPrefs, pushPrefs, setPref | <script 全局> | — |
+ 
+ ## 二级 · 前端/音频
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+ | `src/ui/sound.js` | 54 | SE/BGM 播放 | hit, se | <script 全局> | — |
+-| `src/ui/wt-audio.js` | 233 | BGM / SE / 语音音量（WA2.audio） | bgmSrc, bgmVolume, catalog, prefs | <script 全局> | — |
++| `src/ui/wt-audio.js` | 247 | BGM / SE / 语音音量（WA2.audio） | bgmSrc, bgmVolume, catalog, prefs | <script 全局> | — |
+ 
+ ## 二级 · 剧情
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
++| `src/actor.py` | 143 | 角色开口：导演给意图，角色自己的模型写一句日语台词 | speak | — | — |
+ | `src/director.py` | 111 | 导演骨架：幕/拍计划、导演提示词、占位拍（暂不接模型） | set_options, plan, stub_beats, status | cast, char_cards | — |
+ | `src/playqueue.py` | 70 | 播放队列（后端内存）：入队/取一条/清空/快照 | push, peek, pop, clear, snapshot | — | — |
+ 
+@@ -275,7 +276,7 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/api_char.py` | 60 | 角色查询与切换后处理 | CharApi | characters, persona_stage, special_cfg | main |
++| `src/api_char.py` | 69 | 角色查询与切换后处理 | CharApi | characters, persona_stage, special_cfg | main |
+ | `src/api_charpack.py` | 35 | 角色包导出/导入 /api/charpack/* | CharPackApi | char_pack | main |
+ 
+ ## 二级 · 接口/记忆
+@@ -288,7 +289,7 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/api_tts.py` | 93 | /api/tts 语音合成 | TtsApi | applog, audio_gain, tts_client | main |
++| `src/api_tts.py` | 104 | /api/tts 语音合成 | TtsApi | applog, audio_gain, tts_client | main |
+ 
+ ## 二级 · 接口/配置
+ 
+@@ -317,14 +318,14 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/cast.py` | 138 | 本场阵容：谁在场、谁是主角、龙套；连接状态汇总 | get_cast, set_cast, clear, protagonist, actors, status | char_cards, characters | director, director_gen |
++| `src/cast.py` | 146 | 本场阵容：谁在场、谁是主角、龙套；连接状态汇总 | get_cast, set_cast, clear, protagonist, actors, status | char_cards, characters | director, director_gen |
+ | `src/char_cards.py` | 77 | 角色卡 / 主角卡读写与校验（导演卡缺失不许进多角色） | card_dir, card_path, read_card, write_card, has_card, info | characters | cast, director, director_gen |
+ | `src/char_pack.py` | 526 | 角色包导出/导入（zip） | pick_export_dir, pick_pack_file, export_pack, export_with_dialog, import_pack, import_with_dialog | characters | api_charpack |
+ | `src/char_res.py` | 245 | 角色资源定位与状态 | char_file, prompt_path, prompt_text, worldbook, worldbook_text, memory_path | special_files | api_chat, api_memory, api_wizard, main, persona_ctx, tts_client |
+-| `src/characters.py` | 599 | 角色文件夹/切换/立绘索引 | user_dir, root, set_seed_sources, seed_character, ensure, active_id | — | api_char, api_chat, api_cleanup, api_export, api_wizard, cast |
++| `src/characters.py` | 618 | 角色文件夹/切换/立绘索引 | user_dir, root, set_seed_sources, seed_character, ensure, active_id | — | api_char, api_chat, api_cleanup, api_export, api_wizard, cast |
+ | `src/special_cfg.py` | 132 | 角色名读写 | name_file, defaults, current, ensure, save, get_name | characters, memory | api_char, main |
+ | `src/special_files.py` | 404 | 特别模式导入/打开/立绘落盘 | char_dir, set_assets_dir, save_upload, set_default_paths, kind_dir, portrait_dir | characters | char_res, main |
+-| `src/tts_client.py` | 1120 | 语音合成与参考音频 | endpoint, is_remote, bind_host, refs_dir, load_refs, pick_ref | audio_gain, cache_io, char_res, diag | api_chat, api_modelcfg, api_tts, main |
++| `src/tts_client.py` | 1359 | 语音合成与参考音频 | endpoint, is_remote, bind_host, refs_dir, load_refs, pick_ref | audio_gain, cache_io, char_res, diag | api_chat, api_modelcfg, api_tts, main |
+ 
+ ## 二级 · 记忆
+ 
+@@ -346,7 +347,7 @@
+ 
+ | 文件 | 行数 | 职责 | 导出 | 依赖 | 被谁调用 |
+ |---|---|---|---|---|---|
+-| `src/ui/wt-auto.js` | 227 | 自动续说 | btn, paint, savePref, toast | <script 全局> | — |
++| `src/ui/wt-auto.js` | 253 | 自动续说 | btn, paint, savePref, toast | <script 全局> | — |
+ 
+ ## 未登记
+ 
+@@ -357,21 +358,22 @@
+ | `src/api_export.py` | 165 | — | clean, render, export, handle_get | characters, secret, sessions | main |
+ | `src/assets_report.py` | 115 | — | build, write, summary | cache_io | api_wizard |
+ | `src/cache_io.py` | 103 | — | stats, reset_stats, read_bytes, read_json, read_gz_json, read_image | applog | api_text, assets_report, memory, pricing, story_rag, tts_client |
+-| `src/char_model.py` | 186 | — | get_state, save_fields, connect, disconnect, switch | — | — |
+-| `src/director_gen.py` | 229 | — | generate | cast, char_cards, llm | — |
++| `src/char_model.py` | 190 | — | get_state, save_fields, connect, disconnect, switch | — | — |
++| `src/director_gen.py` | 338 | — | generate | cast, char_cards, llm | — |
+ | `src/firstrun.py` | 149 | — | checklist, state | characters, secret, sessions | main |
+-| `src/hscene.py` | 135 | — | score, is_intimate, hint, set_last, force_exit, last_scene | — | api_chat |
++| `src/hscene.py` | 139 | — | score, is_intimate, hint, set_last, force_exit, last_scene | — | api_chat |
+ | `src/llm.py` | 356 | — | LLMError, Result, provider_of, endpoint, headers, classify_status | — | api_chat, director_gen |
+ | `src/powerwatch.py` | 109 | — | tick, gen, state, reset, start, stop | — | main |
+ | `src/runstate.py` | 144 | — | begin, end, has_autosave, state, crash_log, install_hooks | applog, sessions | main |
+-| `src/translate.py` | 271 | — | provider, status, glossary_path, glossary, apply_glossary, translate | — | — |
++| `src/scene_model.py` | 142 | — | state, save, connect, disconnect, switch, cfg | — | — |
++| `src/translate.py` | 299 | — | provider, status, glossary_path, glossary, apply_glossary, translate | — | — |
+ | `src/updater.py` | 293 | — | detect, progress, apply, reset_progress | version | api_update |
+ | `src/ui/cleanup.js` | 218 | — | __openCleanup, el, mb, post, toast | <script 全局> | — |
+-| `src/ui/sp-model.js` | 236 | — | api, el, setText, toast | <script 全局> | — |
++| `src/ui/sp-model.js` | 241 | — | api, el, setText, toast | <script 全局> | — |
+ | `src/ui/wt-export.js` | 124 | — | __openExport, close, download, el, statsLine | <script 全局> | — |
+ | `src/ui/wt-firstrun.js` | 140 | — | __openFirstRun, close, el, prefs, setPref | <script 全局> | — |
+ | `src/ui/wt-perf.js` | 102 | — | __perf, begin, end, interrupt, recompute | <script 全局> | — |
+-| `src/ui/wt-play.js` | 172 | — | __directorOn, __playRunning, __playStart, idle, ownName, readMs | <script 全局> | — |
++| `src/ui/wt-play.js` | 203 | — | __genErrToasted, __noCastToasted, __playRunning, __voiceMap, idle, ownName | <script 全局> | — |
+ | `src/ui/wt-update.js` | 142 | — | __autoUpdate, __checkUpdate, ensureChip, setText, show, startUpdate | <script 全局> | — |
+ | `src/ui/wt-window.js` | 142 | — | __winClampBack, __winSetAlpha, __winSetTopmost, __winSummary, api, prefs | <script 全局> | — |
+ 
+@@ -379,10 +381,10 @@
+ 
+ | 文件 | 行数 | 建议 |
+ |---|---|---|
+-| `src/main.py` | 1709 | 超过 800 行，必须拆 |
+-| `src/tts_client.py` | 1120 | 超过 800 行，必须拆 |
++| `src/main.py` | 1759 | 超过 800 行，必须拆 |
++| `src/tts_client.py` | 1359 | 超过 800 行，必须拆 |
+ | `src/ui/menubar.js` | 644 | 超过 400 行，建议拆 |
+-| `src/characters.py` | 599 | 超过 400 行，建议拆 |
++| `src/characters.py` | 618 | 超过 400 行，建议拆 |
+ | `src/api_cleanup.py` | 582 | 超过 400 行，建议拆 |
+ | `src/ui/game.js` | 560 | 超过 400 行，建议拆 |
+ | `src/char_pack.py` | 526 | 超过 400 行，建议拆 |
+diff --git a/program/src/actor.py b/program/src/actor.py
+new file mode 100644
+index 0000000..19e270a
+--- /dev/null
++++ b/program/src/actor.py
+@@ -0,0 +1,142 @@
++# -*- coding: utf-8 -*-
++"""角色开口：导演只决定「谁、什么意图」，台词由角色自己的模型写。
++
++设计（四态矩阵里的「角色生成」）：
++  导演产出 beats：{speaker, type, text}，其中 say 的 text 当成「意图」；
++  这里拿那个角色的角色卡当 system，让**他自己的模型**用他的口吻说一句日语；
++  再翻成中文给字幕用，日语原文给配音用。
++
++返回 {ja, zh, emo}；任何一步失败就退回 None，让调用方用导演给的文本兜底。
++"""
++import json
++import os
++import re
++import urllib.request
++
++TIMEOUT = 40
++
++SYSTEM = """你在扮演「%s」。下面是这个角色的角色卡：
++
++%s
++
++现在按卡里的性格与口吻，把导演给你的意图说成一句话。
++规则：
++1. 只输出这个角色说出口的那一句；不要旁白、不要动作描写、不要括号、不要引号。
++2. **必须用日语写**（假名 + 日文汉字），不能出现简体中文的字词；
++   口语，短（30 字以内），不要です・ます敬语。
++   例：……別に。あんたが決めたことだろ。
++3. 不要解释，不要输出多个方案，不要翻译。
++4. 如果意图里有「（旁白）」之类的字样，忽略它，只说角色的话。"""
++
++_EMO = re.compile(r"<emotion>([^<]*)</emotion>")
++
++
++def _char_dir(cid):
++    try:
++        import characters
++        root = characters.root()
++        if not cid:
++            return ""
++        d = os.path.join(root, cid)
++        if os.path.isdir(d):
++            return d
++        for name in os.listdir(root):
++            try:
++                if characters.display_name(name) == cid:
++                    return os.path.join(root, name)
++            except Exception:
++                continue
++    except Exception:
++        pass
++    return ""
++
++
++def _card(cid):
++    d = _char_dir(cid)
++    p = os.path.join(d, "card", "director.md") if d else ""
++    try:
++        if p and os.path.isfile(p):
++            return open(p, encoding="utf-8").read().strip()[:1200]
++    except Exception:
++        pass
++    return ""
++
++
++def _cfg(cid):
++    """这个角色的聊天模型；没配就用全局。"""
++    d = _char_dir(cid)
++    try:
++        p = os.path.join(d, "model.json") if d else ""
++        if p and os.path.isfile(p):
++            raw = json.loads(open(p, encoding="utf-8").read())
++            sec = raw.get("chat") or {}
++            if sec.get("key") or sec.get("endpoint"):
++                return {"base_url": sec.get("endpoint") or "", "api_key": sec.get("key") or "",
++                        "model": sec.get("model") or ""}
++    except Exception:
++        pass
++    try:
++        import main
++        g = (main.model_cfg_all() or {}).get("chat") or {}
++        return {"base_url": g.get("endpoint") or "", "api_key": g.get("key") or "",
++                "model": g.get("model") or ""}
++    except Exception:
++        return {}
++
++
++def _clean(text):
++    t = (text or "").strip()
++    t = _EMO.sub("", t).strip()
++    t = t.strip("「」『』\"'` \n　")
++    t = t.split("\n")[0].strip()
++    t = re.sub(r"^[（(【].*?[）)】]$", "", t).strip()
++    return t
++
++
++def speak(cid, intent, scene="", prev="", timeout=TIMEOUT):
++    """让角色自己说一句。返回 {ja, zh, emo}；失败返回 None。"""
++    card = _card(cid)
++    cfg = _cfg(cid)
++    if not card or not cfg.get("base_url") or not cfg.get("model"):
++        return None
++    sys_msg = SYSTEM % (cid, card)
++    user = "【场景】%s\n【导演给的意图】%s" % (scene or "（没说，顺着当前气氛）", intent or "")
++    if prev:
++        user += "\n【对方上一句】%s" % prev[:80]
++    payload = {
++        "model": cfg["model"],
++        "messages": [{"role": "system", "content": sys_msg},
++                     {"role": "user", "content": user}],
++        "stream": False,
++        "max_tokens": 160,
++        "temperature": 0.9,
++    }
++    base = cfg["base_url"].rstrip("/")
++    url = base + ("/v1/chat/completions" if not base.endswith("/v1") else "/chat/completions")
++    try:
++        rq = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
++                                    headers={"Content-Type": "application/json",
++                                             "Authorization": "Bearer " + cfg["api_key"]})
++        with urllib.request.urlopen(rq, timeout=timeout) as r:
++            d = json.loads(r.read().decode("utf-8"))
++        out = ((d["choices"][0].get("message") or {}).get("content") or "")
++        ja = _clean(out)
++        if not ja:
++            return None
++        # 必须是日语：一个假名都没有，说明模型用中文答了，判失败
++        import re as _re
++        if not _re.search(r"[\u3040-\u30ff]", ja):
++            return None
++        emo = ""
++        m = _EMO.search(out)
++        if m:
++            emo = (m.group(1) or "").strip()
++        zh = ""
++        try:
++            import translate
++            zh = translate.to_zh(ja) or ""
++        except Exception:
++            zh = ""
++        return {"ja": ja, "zh": zh or ja, "emo": emo}
++    except Exception:
++        return None
+diff --git a/program/src/api_char.py b/program/src/api_char.py
+index b6e33fa..b2d3dbf 100644
+--- a/program/src/api_char.py
++++ b/program/src/api_char.py
+@@ -18,7 +18,16 @@ class CharApi:
+         这样 Range / 缓存 / Content-Type 都复用现成的那套。
+         """
+         if self.path.startswith("/api/character/sprite/index.json"):
+-            return self._json(characters.sprite_index(os.path.join(ASSETS_DIR, "sprites")))
++            # 多角色：?char=雪菜 时返回她自己的立绘索引
++            _cid = ""
++            try:
++                from main import qs
++                from urllib.parse import urlparse, parse_qs
++                _q = parse_qs(urlparse(self.path).query)
++                _cid = qs(_q, ("char", "c")).strip()
++            except Exception:
++                _cid = ""
++            return self._json(characters.sprite_index(os.path.join(ASSETS_DIR, "sprites"), _cid or None))
+         if self.path == "/api/character/opening":
+             try:
+                 p = os.path.join(characters.active_dir(), "opening.json")
+diff --git a/program/src/api_tts.py b/program/src/api_tts.py
+index 0180ce5..e217522 100644
+--- a/program/src/api_tts.py
++++ b/program/src/api_tts.py
+@@ -10,6 +10,15 @@ import tts_client
+ class TtsApi:
+     """见 main.Handler；从 main 注入运行时全局。"""
+ 
++    def _voice_state(self):
++        """GET /api/voice/state：当前实际加载的权重与角色（排查串音用）"""
++        try:
++            import tts_client
++            st = tts_client.state()
++            return self._json({"ok": True, **st})
++        except Exception as e:
++            return self._json({"ok": False, "error": str(e)}, 500)
++
+     def _tts(self):
+         from main import (NO_MODELS, log, qs, translate_ja)
+         """合成语音，返回 wav
+@@ -42,6 +51,8 @@ class TtsApi:
+                     applog.log("重放：按当前场面用 H 参考（原标签 %r）" % (emotion,), "TTS")
+                     emotion = "H"
+             speak_ja = qs(q, ("speak_ja", "sp")).strip()
++            # 多角色：这句是谁说的就用谁的权重/参考音频（不传 = 当前激活角色）
++            speak_char = qs(q, ("char", "speaker", "who")).strip()
+             if not text:
+                 return self._json({"error": "empty"}, 400)
+             if NO_MODELS:
+@@ -64,10 +75,10 @@ class TtsApi:
+                     lang = "zh"          # 翻译失败就退回中文
+             if lang == "ja":
+                 speak_text = tts_client.normalize_ja_names(speak_text)
+-            applog.log("TTS 准备: lang=%s emo=%s 文本=%s (翻译耗时 %.1fs)"
+-                       % (lang, emotion, speak_text[:24], time.time() - t_t0), "TTS")
++            applog.log("TTS 准备: lang=%s emo=%s 角色=%s 文本=%s (翻译耗时 %.1fs)"
++                       % (lang, emotion, speak_char or "(当前)", speak_text[:24], time.time() - t_t0), "TTS")
+             t_s0 = time.time()
+-            data = tts_client.synthesize(speak_text, lang, emo=emotion)
++            data = tts_client.synthesize(speak_text, lang, emo=emotion, char=speak_char)
+             applog.log("TTS 合成: %s 字节, 耗时 %.1fs"
+                        % (len(data or b""), time.time() - t_s0), "TTS")
+             if not data:
+diff --git a/program/src/cast.py b/program/src/cast.py
+index 039f5cf..4c76a04 100644
+--- a/program/src/cast.py
++++ b/program/src/cast.py
+@@ -85,8 +85,16 @@ def set_cast(members):
+         if not cid or not os.path.isdir(_char_dir(cid)):
+             continue
+         clean.append({"id": cid, "role": role})
+-    _state["members"] = clean
+-    return {"ok": True, "cast": get_cast()}
++    # 去重：同一个角色（id 或名字）只保留第一份，避免「同一个角色能加两次」
++    seen, uniq = set(), []
++    for m in clean:
++        key = (m.get("id") or m.get("name") or "").strip()
++        if not key or key in seen:
++            continue
++        seen.add(key)
++        uniq.append(m)
++    _state["members"] = uniq
++    return {"ok": True, "cast": get_cast(), "deduped": len(clean) - len(uniq)}
+ 
+ 
+ def clear():
+diff --git a/program/src/char_model.py b/program/src/char_model.py
+index be89ba1..e40428a 100644
+--- a/program/src/char_model.py
++++ b/program/src/char_model.py
+@@ -24,9 +24,13 @@ import urllib.request
+ KINDS = ("chat", "voice", "director")
+ 
+ 
+-def _char_dir():
++def _char_dir(cid=None):
+     try:
+         import characters
++        if cid:
++            fn = getattr(characters, "dir_for", None)
++            if callable(fn):
++                return fn(cid) or ""
+         fn = getattr(characters, "active_dir", None)
+         if callable(fn):
+             return fn() or ""
+@@ -35,13 +39,13 @@ def _char_dir():
+     return ""
+ 
+ 
+-def _path():
+-    d = _char_dir()
++def _path(cid=None):
++    d = _char_dir(cid)
+     return os.path.join(d, "model.json") if d else ""
+ 
+ 
+-def _load_raw():
+-    p = _path()
++def _load_raw(cid=None):
++    p = _path(cid)
+     if not p or not os.path.isfile(p):
+         return {}
+     try:
+@@ -51,8 +55,8 @@ def _load_raw():
+         return {}
+ 
+ 
+-def _save_raw(d):
+-    p = _path()
++def _save_raw(d, cid=None):
++    p = _path(cid)
+     if not p:
+         return False
+     try:
+diff --git a/program/src/characters.py b/program/src/characters.py
+index bfe5abe..851e48d 100644
+--- a/program/src/characters.py
++++ b/program/src/characters.py
+@@ -461,6 +461,24 @@ def pick_folder():
+ 
+ 
+ # ------------------------------------------------------------------ 立绘
++def dir_for(cid=None):
++    """指定角色的目录；不给就用当前激活角色。"""
++    if not cid:
++        return active_dir()
++    try:
++        root = globals()["root"]()
++        p = os.path.join(root, cid)
++        if os.path.isdir(p):
++            return p
++        for name in os.listdir(root):
++            d = os.path.join(root, name)
++            if os.path.isdir(d) and display_name(name) == cid:
++                return d
++    except Exception:
++        pass
++    return active_dir()
++
++
+ def sprite_dir():
+     d = active_dir()
+     return os.path.join(d, "portrait") if d else ""
+@@ -514,7 +532,7 @@ def _scan_portrait_outfits():
+     return out
+ 
+ 
+-def sprite_index(assets_sprites):
++def sprite_index(assets_sprites, cid=None):
+     """合并：自带 assets/sprites/index.json + 当前角色的 portrait/index.json（角色优先）
+ 
+     key 现在都是**衣服名（中文）**；老安装的自带索引还是数字编号，按 `code` 对齐，
+@@ -523,7 +541,8 @@ def sprite_index(assets_sprites):
+     两边都没索引（老角色包只有图）时，退回扫 `portrait/` 目录（`_scan_portrait_outfits`）。
+     """
+     base = _read_index(os.path.join(assets_sprites, "index.json"))
+-    own = _read_index(os.path.join(sprite_dir(), "index.json")) if sprite_dir() else {}
++    _sd = os.path.join(dir_for(cid), "portrait") if cid else sprite_dir()
++    own = _read_index(os.path.join(_sd, "index.json")) if _sd else {}
+     outfits = dict(base.get("outfits") or {})
+     code_key = {}
+     for k, o in outfits.items():
+@@ -572,7 +591,7 @@ def _under(base, path):
+         return False
+ 
+ 
+-def sprite_file(assets_sprites, rel):
++def sprite_file(assets_sprites, rel, cid=None):
+     """按相对路径找立绘图：角色 portrait/ 优先，没有再用自带 assets/sprites/
+ 
+     安全：`rel` 只当**相对路径**用。`..`、以 `/` 开头、带盘符（`C:`）的一律拒绝——
+@@ -587,7 +606,7 @@ def sprite_file(assets_sprites, rel):
+     parts = [p for p in rel.split("/") if p not in ("", ".")]
+     if not parts:
+         return ""
+-    own_dir = sprite_dir()
++    own_dir = (os.path.join(dir_for(cid), "portrait") if cid else sprite_dir())
+     if own_dir:
+         own = os.path.join(own_dir, *parts)
+         if os.path.isfile(own) and _under(own_dir, own):
+diff --git a/program/src/director_gen.py b/program/src/director_gen.py
+index 1c4246d..e09ffab 100644
+--- a/program/src/director_gen.py
++++ b/program/src/director_gen.py
+@@ -19,6 +19,14 @@ MAX_TOKENS = {"small": 900, "medium": 1400, "large": 2200}
+ 
+ def _cfg():
+     """导演模型配置：优先角色自己的 director 段，没有就用全局 chat"""
++    # 场景级导演配置优先（和角色解耦）：characters/director.json
++    try:
++        import scene_model
++        c = scene_model.cfg()
++        if c.get("base_url") or c.get("api_key"):
++            return c
++    except Exception:
++        pass
+     try:
+         import char_model
+         raw = char_model._load_raw() or {}
+@@ -62,17 +70,20 @@ SYSTEM = """你是这出戏的导演。你不扮演任何角色，只决定「
+ 1. 只输出 JSON，不要解释、不要 Markdown 代码块。
+ 2. 每个角色都要按他自己的角色卡说话，不要替他说超出人设的话。
+ 3. 台词要短；旁白只写必要的一两句。
+-4. speaker 必须是阵容里的名字；旁白用空字符串。
++4. speaker 必须是阵容里的名字；**叙述、环境、动作、心理描写一律用空字符串当旁白**，
++   不要塞进某个角色的台词里（角色台词只写他说出口的话）。
+ 5. 龙套（临时角色）只接话，不推动剧情。
+ 6. 玩家也要有戏：每两三拍至少给玩家写一句（speaker 用玩家的名字），
+-   写短一点，像玩家会说的话；不要把玩家的台词写成旁白。"""
++   写短一点，像玩家会说的话；不要把玩家的台词写成旁白。
++7. 在场有两个以上角色时，**这一拍至少让两个不同角色各说一句**，
++   不要整拍只有一个人回话。"""
+ 
+ 
+-def _user_prompt(beat_index, total_beats):
++def _user_prompt(beat_index, total_beats, n=2):
+     p = _state()
+     spec = p.get("beats") or 7
+     chars_per = p.get("chars_per_beat") or 350
+-    n_beats = 2 if beat_index + 2 <= total_beats else max(1, total_beats - beat_index)
++    n_beats = max(1, int(n or 2))
+     return """【本场阵容】
+ %s
+ 
+@@ -185,6 +196,99 @@ def _clean(beats, limit):
+     return out, dropped
+ 
+ 
++def _render_beats(beats, scene=""):
++    """把 say 类台词换成角色自己写的那一句（并发调用各角色模型）。"""
++    if not beats:
++        return beats
++    import cast as cast_mod
++    by_name = {}
++    for m in cast_mod.get_cast().get("members", []):
++        if m.get("role") in ("player", "extra"):
++            continue
++        cid = m.get("id") or ""
++        name = m.get("name") or ""
++        try:
++            name = cast_mod.chars.display_name(cid) or name
++        except Exception:
++            pass
++        if name and cid:
++            by_name[name] = cid
++    if not by_name:
++        return beats
++
++    import actor
++    from concurrent.futures import ThreadPoolExecutor
++    jobs = []
++    for i, b in enumerate(beats):
++        sp = (b.get("speaker") or "").strip()
++        if b.get("type") == "say" and sp in by_name:
++            jobs.append((i, by_name[sp], b.get("text") or ""))
++    if not jobs:
++        return beats
++
++    def run(job):
++        _i, cid, intent = job
++        return _i, actor.speak(cid, intent, scene=scene)
++
++    done = {}
++    try:
++        with ThreadPoolExecutor(max_workers=min(4, len(jobs))) as ex:
++            for i, r in ex.map(run, jobs):
++                if r:
++                    done[i] = r
++    except Exception:
++        done = {}
++
++    # 只有一个人说话时，补一句另一个角色的反应
++    try:
++        say_spk = [ (b.get("speaker") or "").strip() for b in beats if b.get("type") == "say" ]
++        distinct = [x for x in say_spk if x in by_name]
++        if len(set(distinct)) < 2 and len(by_name) >= 2:
++            said = set(distinct)
++            missing = [n for n in by_name.keys() if n not in said]
++            if missing:
++                last = ""
++                for b in reversed(beats):
++                    if (b.get("text") or "").strip():
++                        last = b.get("text")
++                        break
++                r = actor.speak(by_name[missing[0]], "对刚才那句话的反应，简短一句",
++                                scene=scene, prev=last)
++                if r and r.get("ja"):
++                    beats = list(beats) + [{
++                        "speaker": missing[0], "type": "say",
++                        "text": r.get("zh") or r.get("ja"), "ja": r.get("ja"),
++                        "voice": True, "emotion": r.get("emo") or ""
++                    }]
++    except Exception:
++        pass
++
++    out = []
++    for i, b in enumerate(beats):
++        r = done.get(i)
++        if r:
++            b = dict(b)
++            b["ja"] = r.get("ja") or ""
++            b["text"] = r.get("zh") or r.get("ja") or b.get("text")
++            b["voice"] = True
++            if r.get("emo"):
++                b["emotion"] = r["emo"]
++        else:
++            # 角色模型没给出日语（偶尔会中文作答）：把导演给的意图翻成日语，
++            # 至少保证配音有日语原文可用。
++            try:
++                import translate
++                ja = translate.to_ja(b.get("text") or "") or ""
++                if ja:
++                    b = dict(b)
++                    b["ja"] = ja
++                    b["voice"] = True
++            except Exception:
++                pass
++        out.append(b)
++    return out
++
++
+ def generate(n=2, timeout=45):
+     """生成一拍。返回 dict：{ok, beats, dropped, raw, error}"""
+     cfg = _cfg()
+@@ -203,7 +307,7 @@ def generate(n=2, timeout=45):
+         "model": cfg.get("model") or "",
+         "messages": [
+             {"role": "system", "content": SYSTEM},
+-            {"role": "user", "content": _user_prompt(beat_index, total)}
++            {"role": "user", "content": _user_prompt(beat_index, total, n)}
+         ],
+         "temperature": 0.85,
+         "max_tokens": MAX_TOKENS.get(planned.get("length") or "small", 500)
+@@ -218,6 +322,11 @@ def generate(n=2, timeout=45):
+     raw_beats = _parse(text)
+     limit = int((planned.get("chars_per_beat") or 350) * 2)
+     beats, dropped = _clean(raw_beats, limit)
++    # 角色生成：say 类台词交给角色自己的模型写（日语原作，中文译文给字幕）
++    try:
++        beats = _render_beats(beats, p.get("direction") or "")
++    except Exception:
++        pass
+     if not beats:
+         return {"ok": False, "error": "模型没给出可用的台词", "raw": text[:400], "beats": []}
+     try:
+diff --git a/program/src/hscene.py b/program/src/hscene.py
+index 721767d..ca79582 100644
+--- a/program/src/hscene.py
++++ b/program/src/hscene.py
+@@ -23,13 +23,15 @@ STRONG = (
+     "挿", "はいっ", "入って", "はいって", "抜", "ぬい", "体勢", "たいせい",
+     "腰", "こし", "胸", "むね", "舐", "なめ", "くわ", "感じ", "かんじ",
+     "敏感", "びんかん", "濡", "ぬれ", "喘", "あえ", "イク", "イか",
+-    "もっと", "まだ", "はぁ", "んっ", "あぁっ", "やめて", "やだ",
++    "はぁ", "んっ", "あぁっ", "やめて", "やだ",
+     # 气声写法：以前「んぁっ」「はぁっ」「ふぅっ」匹配不上（词表里写的是 んっ/あぁっ）
+     "ぁっ", "んぁ", "はぁっ", "ふぅっ", "んんっ", "そこ", "いやだ", "いやっ",
+ )
+ # 弱特征：单独出现不算，但和强特征一起加分
++# 日常对话里也常出现的词：只加分，不足以单独判定
+ WEAK = ("キス", "きす", "抱", "だき", "触", "さわ", "熱", "あつ", "痛", "いた",
+-        "恥", "はじ", "声", "こえ", "息", "いき")
++        "恥", "はじ", "声", "こえ", "息", "いき",
++        "もっと", "まだ", "そこ", "だめ")
+ 
+ # 中文（译文）里的对应说法
+ ZH = ("里面", "里面", "好深", "太深", "进来", "不要", "停下", "去了", "要去了",
+@@ -51,9 +53,9 @@ def score(text):
+     strong = len(set(_STRONG_RE.findall(s)))
+     weak = len(set(_WEAK_RE.findall(s)))
+     zh = len(set(_ZH_RE.findall(s)))
+-    # 中文强特征也算强信号（只看译文也能判出来）
+-    if _ZH_STRONG_RE.search(s):
+-        strong += 1
++    # 中文强特征也按个数算强信号（只看译文也能判出来）；
++    # 以前只 +1，导致「里面太深了…要去了」这种只出现在译文里的句子过不了门槛
++    strong += len(set(_ZH_STRONG_RE.findall(s)))
+     return strong * 2 + weak + zh, strong
+ 
+ 
+@@ -79,7 +81,9 @@ def is_intimate(messages, lookback=6):
+     # 强特征至少 1 个、且总分够、且至少一条消息有信号 → 认为是成人场面。
+     # 门槛 2 而不是 3：单个强特征词就是 2 分，门槛 3 会让「…むり…」这种短句永远判否
+     # （日志实证：H 场景里反复出现「关键词判定=否」→ 语音退回平静）。
+-    return strong_total >= 1 and total >= 2 and hits >= 1
++    # 门槛：至少 2 个不同的强特征词、总分 ≥4。
++    # 单凭一个「だめ」「まだ」就判定的时代结束了——那会把日常吐槽全变成特殊场面。
++    return strong_total >= 2 and total >= 4 and hits >= 1
+ 
+ 
+ def hint():
+diff --git a/program/src/main.py b/program/src/main.py
+index 4b887b8..135f443 100644
+--- a/program/src/main.py
++++ b/program/src/main.py
+@@ -890,7 +890,15 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
+             # 立绘图：当前角色的 portrait/ 优先，没有再用自带 assets/sprites/
+             import urllib.parse as _up
+             rel = _up.unquote(p[len("/api/character/sprite/"):])
+-            return (characters.sprite_file(os.path.join(ASSETS_DIR, "sprites"), rel)
++            _cid2 = ""
++            try:
++                from urllib.parse import urlparse as _up2, parse_qs as _pq2
++                _cid2 = (_pq2(_up2(self.path).query).get("char") or [""])[0].strip()
++            except Exception:
++                _cid2 = ""
++            if "?" in rel:
++                rel = rel.split("?", 1)[0]
++            return (characters.sprite_file(os.path.join(ASSETS_DIR, "sprites"), rel, _cid2 or None)
+                     or os.path.join(UI_DIR, "__api__"))
+         elif p.startswith("/api/"):
+             return os.path.join(UI_DIR, "__api__")
+@@ -1020,6 +1028,8 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
+             return self._json({"ok": True, "log": applog.path()})
+         if self.path.startswith("/api/log/bundle"):
+             return self._log_bundle()
++        if self.path.startswith("/api/voice/state"):
++            return self._voice_state()
+         if self.path.startswith("/api/tts"):
+             return self._tts()
+         if self.path.startswith("/api/performance"):
+@@ -1061,6 +1071,28 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
+                                    "info": char_cards.info()})
+             except Exception as e:
+                 return self._json({"ok": False, "error": str(e)}, 500)
++        if self.path.split("?")[0] == "/api/director/model":
++            try:
++                import scene_model
++                if self.command == "POST":
++                    body = self._body() or {}
++                    r = scene_model.save(body.get("endpoint"), body.get("key"))
++                    return self._json(r, 200 if r.get("ok") else 400)
++                return self._json(scene_model.state())
++            except Exception as e:
++                return self._json({"ok": False, "error": str(e)}, 500)
++        if self.path.split("?")[0] in ("/api/director/model/connect",
++                                       "/api/director/model/disconnect",
++                                       "/api/director/model/switch"):
++            try:
++                import scene_model
++                tail = self.path.split("?")[0].rsplit("/", 1)[-1]
++                r = {"connect": scene_model.connect,
++                     "disconnect": scene_model.disconnect,
++                     "switch": scene_model.switch}[tail]()
++                return self._json(r, 200 if r.get("ok") else 400)
++            except Exception as e:
++                return self._json({"ok": False, "error": str(e)}, 500)
+         if self.path.split("?")[0] == "/api/char/model":
+             try:
+                 import char_model
+@@ -1315,6 +1347,24 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
+                 return self._json(r, 200 if r.get("ok") else 400)
+             except Exception as e:
+                 return self._json({"ok": False, "error": str(e)}, 500)
++        if self.path.split("?")[0].startswith("/api/director/model"):
++            # 场景级导演模型：和角色无关
++            try:
++                import scene_model
++                body = self._body() or {}
++                act = self.path.split("?")[0].rsplit("/", 1)[-1]
++                if act == "model":
++                    r = scene_model.save(body.get("endpoint"), body.get("key"))
++                else:
++                    fn = {"connect": scene_model.connect,
++                          "disconnect": scene_model.disconnect,
++                          "switch": scene_model.switch}.get(act)
++                    if fn is None:
++                        return self._json({"ok": False, "error": "bad action"}, 404)
++                    r = fn()
++                return self._json(r, 200 if r.get("ok") else 400)
++            except Exception as e:
++                return self._json({"ok": False, "error": str(e)}, 500)
+         if self.path.split("?")[0].startswith("/api/char/model"):
+             # 角色级模型配置：保存 / 连接 / 断开 / 切换
+             try:
+diff --git a/program/src/scene_model.py b/program/src/scene_model.py
+new file mode 100644
+index 0000000..5271fd4
+--- /dev/null
++++ b/program/src/scene_model.py
+@@ -0,0 +1,141 @@
++# -*- coding: utf-8 -*-
++"""场景级配置（导演模型）：不属于任何角色，换角色不会丢。
++
++存 <characters>/director.json：
++    {"director": {"endpoint": "...", "key": "...", "model": "...", "connected": true}}
++"""
++import io
++import json
++import os
++import urllib.request
++
++KIND = "director"
++
++
++def _path():
++    try:
++        import characters
++        return os.path.join(characters.root(), "director.json")
++    except Exception:
++        return ""
++
++
++def _load():
++    p = _path()
++    if not p or not os.path.isfile(p):
++        return {}
++    try:
++        d = json.loads(io.open(p, encoding="utf-8").read())
++        return d if isinstance(d, dict) else {}
++    except Exception:
++        return {}
++
++
++def _save(d):
++    p = _path()
++    if not p:
++        return False
++    try:
++        io.open(p, "w", encoding="utf-8").write(json.dumps(d, ensure_ascii=False, indent=2))
++        return True
++    except Exception:
++        return False
++
++
++def _mask(k):
++    k = (k or "").strip()
++    if not k:
++        return ""
++    return "****" if len(k) <= 8 else k[:3] + "****" + k[-4:]
++
++
++def _global_default():
++    try:
++        import main
++        g = (main.model_cfg_all() or {}).get("chat") or {}
++        return {"endpoint": g.get("endpoint") or "", "key": g.get("key") or "",
++                "model": g.get("model") or ""}
++    except Exception:
++        return {}
++
++
++def _probe(endpoint, key):
++    base = (endpoint or "").rstrip("/")
++    if not base:
++        return False, "", "端点为空"
++    try:
++        rq = urllib.request.Request(base + "/v1/models",
++                                    headers={"Authorization": "Bearer " + (key or "")})
++        with urllib.request.urlopen(rq, timeout=8) as r:
++            d = json.loads(r.read().decode("utf-8"))
++        items = d.get("data") or []
++        if items:
++            return True, items[0].get("id") or "", ""
++        return True, "", ""
++    except Exception as e:
++        return False, "", str(e)[:60]
++
++
++def state():
++    sec = _load().get(KIND) or {}
++    g = _global_default()
++    return {"kind": KIND,
++            "endpoint": sec.get("endpoint") or g.get("endpoint") or "",
++            "key": _mask(sec.get("key") or g.get("key") or ""),
++            "hasKey": bool(sec.get("key") or g.get("key")),
++            "model": sec.get("model") or g.get("model") or "",
++            "connected": bool(sec.get("connected"))}
++
++
++def save(endpoint=None, key=None):
++    d = _load()
++    sec = d.get(KIND) or {}
++    if endpoint is not None:
++        sec["endpoint"] = str(endpoint).strip()
++    if key is not None:
++        sec["key"] = str(key).strip()
++    d[KIND] = sec
++    return {"ok": _save(d), "state": state()}
++
++
++def connect():
++    sec = _load().get(KIND) or {}
++    g = _global_default()
++    endpoint = sec.get("endpoint") or g.get("endpoint") or ""
++    key = sec.get("key") or g.get("key") or ""
++    ok, model, err = _probe(endpoint, key)
++    if not ok:
++        return {"ok": False, "error": err or "连接失败"}
++    d = _load()
++    s = d.get(KIND) or {}
++    s["connected"] = True
++    if model:
++        s["model"] = model
++    d[KIND] = s
++    _save(d)
++    return {"ok": True, "model": model, "endpoint": endpoint}
++
++
++def disconnect():
++    d = _load()
++    s = d.get(KIND) or {}
++    s["connected"] = False
++    d[KIND] = s
++    _save(d)
++    return {"ok": True, "state": state()}
++
++
++def switch():
++    d = _load()
++    d[KIND] = {"endpoint": "", "key": "", "model": "", "connected": False}
++    ok = _save(d)
++    return {"ok": ok, "cleared": True, "state": state()}
++
++
++def cfg():
++    """给 director_gen 用：返回 {base_url, api_key, model}"""
++    sec = _load().get(KIND) or {}
++    g = _global_default()
++    return {"base_url": sec.get("endpoint") or g.get("endpoint") or "",
++            "api_key": sec.get("key") or g.get("key") or "",
++            "model": sec.get("model") or g.get("model") or ""}
+diff --git a/program/src/translate.py b/program/src/translate.py
+index 67f10c9..6566a1d 100644
+--- a/program/src/translate.py
++++ b/program/src/translate.py
+@@ -239,6 +239,32 @@ def _clean(text, p="zh"):
+     return t.split("\n")[0].strip()
+ 
+ 
++# 模型有时会把提示词里的词当成内容吐出来（实测出现过「术语表：」）
++_PROMPT_ECHO = ("术语表", "人名按", "只输出", "把下面", "要求：", "翻译成")
++_CJK = re.compile(r"[\u4e00-\u9fff]")
++
++
++def _looks_like_junk(out, src, p="zh"):
++    """译文体检：空、纯标点、提示词回声、跟原文一模一样 都算失败"""
++    s = (out or "").strip()
++    if not s:
++        return True
++    core = re.sub(r"[\s，。！？、；：…—·「」『』“”‘’（）()]", "", s)
++    if not core:
++        return True
++    if any(s.startswith(k) or (k in s and len(s) <= len(k) + 3) for k in _PROMPT_ECHO):
++        return True
++    if p == "zh":
++        if not _CJK.search(s):          # 一个汉字都没有：多半是英文/原文
++            return True
++        if s == (src or "").strip():    # 原样返回＝没翻
++            return True
++    else:
++        if not _JA_KANA.search(s):
++            return True
++    return False
++
++
+ def translate(text, p="zh"):
+     """翻一句；返回译文（失败回空串）。引擎顺序按 provider()，另一个当兜底。"""
+     t = (text or "").strip()
+@@ -252,6 +278,8 @@ def translate(text, p="zh"):
+     out = ""
+     for engine in order:
+         out = _clean(_cloud_raw(t, p)[0] if engine == "cloud" else _local_raw(t, p), p)
++        if out and _looks_like_junk(out, t, p):
++            out = ""            # 体检不过：当这台引擎失败，换下一台
+         if out:
+             break
+     out = apply_glossary(out, p)
+diff --git a/program/src/tts_client.py b/program/src/tts_client.py
+index d8c85c7..40d91bf 100644
+--- a/program/src/tts_client.py
++++ b/program/src/tts_client.py
+@@ -91,11 +91,39 @@ SOVITS_W = os.path.join(GSV, "GPT_SoVITS", "pretrained_models", "gsv-v4-pretrain
+ _model_key = ""      # 合并版：当前已加载的角色语音配置签名
+ 
+ 
++# 合成时临时指定的角色（多角色配音用）：空 = 用当前激活角色
++_voice_char = ""
++_last_ref = ""
++
++
++def _active_dir():
++    """当前该用哪个角色的目录（可能被 synthesize 的 char 参数临时覆盖）。"""
++    if _voice_char:
++        try:
++            import characters
++            root = characters.root()
++            for cid in os.listdir(root):
++                d = os.path.join(root, cid)
++                if not os.path.isdir(d):
++                    continue
++                if cid == _voice_char:
++                    return d
++                try:
++                    if characters.display_name(cid) == _voice_char:
++                        return d
++                except Exception:
++                    pass
++        except Exception:
++            pass
++    import characters
++    return characters.active_dir()
++
++
+ def _char_json(name):
+     """读当前角色文件夹里的可选配置文件；没有/坏了都返回 {}。"""
+     try:
+         import characters
+-        p = os.path.join(characters.active_dir(), name)
++        p = os.path.join(_active_dir() or "", name)
+         if os.path.isfile(p):
+             import json
+             with open(p, encoding="utf-8") as f:
+@@ -115,7 +143,7 @@ def _character_tts():
+     """
+     try:
+         import characters
+-        vm = os.path.join(characters.active_dir() or "", "voice_model")
++        vm = os.path.join(_active_dir() or "", "voice_model")
+         if os.path.isdir(vm):
+             ckpt = [f for f in os.listdir(vm) if f.lower().endswith(".ckpt")]
+             pth = [f for f in os.listdir(vm) if f.lower().endswith(".pth")]
+@@ -221,6 +249,14 @@ def refs_dir():
+     """
+     if _REFS_OVERRIDE:
+         return _REFS_OVERRIDE
++    # 多角色合成：这次指定了角色，参考音频也要用他的
++    if _voice_char:
++        try:
++            d = os.path.join(_active_dir() or "", "voice")
++            if d and os.path.isdir(d):
++                return d
++        except Exception:
++            pass
+     try:
+         d = char_res.voice_dir()
+     except Exception:
+@@ -336,8 +372,31 @@ def _emo_from_filename(path):
+ 
+ 
+ def _load_imported():
+-    """扫 char/voice/*.wav → {global:[...], by_emo:{情绪:[...]}}"""
++    """扫 char/voice/*.wav → {global:[...], by_emo:{情绪:[...]}}
++
++    多角色合成时必须扫**这次的角色**，否则「导入的参考音频」会一直是激活角色的，
++    于是出现「雪菜的权重念和纱的参考」。
++    """
+     out = {"global": [], "by_emo": {}}
++    if _voice_char:
++        try:
++            d = os.path.join(_active_dir() or "", "voice")
++            if os.path.isdir(d):
++                for f in os.listdir(d):
++                    if not f.lower().endswith(".wav"):
++                        continue
++                    wav = os.path.join(d, f)
++                    tp = os.path.join(d, os.path.splitext(f)[0] + ".txt")
++                    txt = ""
++                    try:
++                        if os.path.isfile(tp):
++                            txt = io.open(tp, encoding="utf-8").read().strip()
++                    except Exception:
++                        txt = ""
++                    out["global"].append((wav, txt))
++                return out
++        except Exception:
++            pass
+     try:
+         for wav, txt in char_res.voice_refs():
+             emo = _emo_from_filename(wav)
+@@ -467,7 +526,9 @@ def pick_ref(emo="neutral", target=""):
+     """按情绪挑参考音频：特别模式导入的优先，其次 refs_touma 的分组，最后兜底"""
+     import random
+     emo = EMOTION_ALIAS.get(emo, emo)
+-    if _char_voice_sig() != _refs_sig:      # 导入 / 删除过参考音频 → 重新扫
++    # 指定了角色时每次都重扫（角色来回切换时，靠签名比较不可靠）：
++    # 目录很小，重扫成本可以忽略，换来的是「谁的参考音频绝不会串」。
++    if _voice_char or _char_voice_sig() != _refs_sig:
+         load_refs()
+     if _IMPORTED["by_emo"].get(emo):        # 文件名带情绪的，只在对应情绪里用
+         return random.choice(_IMPORTED["by_emo"][emo])
+@@ -624,11 +685,38 @@ def available():
+         return False
+ 
+ 
+-def _post(path, timeout=30):
+-    with urllib.request.urlopen(URL + path, timeout=timeout) as r:
++def _post(path, timeout=30, port=0):
++    """POST 到语音服务；port 非 0 时走进程池里的指定端口"""
++    base = URL
++    if port:
++        base = "http://%s:%d" % (bind_host(), port)
++    with urllib.request.urlopen(base + path, timeout=timeout) as r:
+         return r.read()
+ 
+ 
++def state():
++    """当前语音状态：给 /api/voice/state 和排查串音用。
++
++    gpt/sovits 是**本进程最后一次真正加载**的权重（_model_key 里记着），
++    active_* 才是当前激活角色应该用的 —— 两者不一致就说明串了。
++    """
++    m = _character_tts() or {}
++    loaded = (_model_key or "").split("|")
++    return {
++        "gpt": os.path.basename(loaded[0]) if len(loaded) == 2 else "",
++        "sovits": os.path.basename(loaded[1]) if len(loaded) == 2 else "",
++        "active_char": os.path.basename(_active_dir() or ""),
++        "active_gpt": os.path.basename(m.get("gpt") or GPT_W),
++        "active_sovits": os.path.basename(m.get("sovits") or SOVITS_W),
++        "refs_owner": os.path.basename(os.path.dirname(refs_dir() or "")),
++        "pool": {k: {"port": v.get("port"), "ready": bool(v.get("ready"))} for k, v in _SERVERS.items()},
++        "last_ref": os.path.basename(_last_ref or ""),
++        "last_ref_dir": os.path.basename(os.path.dirname(_last_ref or "")),
++        "ready": bool(_ready),
++        "error": _last_err,
++    }
++
++
+ def _ensure_char_model():
+     """合并版：切到当前角色 tts.json 里的 GPT/SoVITS 权重（同一进程，不重启）"""
+     global _model_key, _last_err
+@@ -680,6 +768,101 @@ def _child_env():
+     return env
+ 
+ 
++# ---------------------------------------------------------------- 进程池
++# 每个角色一个常驻进程：端口 9881 起，各自加载自己的权重，互不干扰。
++_SERVERS = {}            # dirname -> {"port": int, "proc": Popen|None, "ready": bool, "key": str}
++_POOL_BASE_PORT = 9881
++
++
++def _pool_enabled():
++    return (os.environ.get("WA2_TTS_POOL", "1") or "1") != "0"
++
++
++def _char_key(cid):
++    """角色目录名当池的 key（空 = 当前激活角色）"""
++    if not cid:
++        return os.path.basename(characters.active_dir() or "")
++    return os.path.basename(_active_dir() or "")
++
++
++def _server_for(cid):
++    """拿到（必要时拉起）这个角色的进程，返回端口；失败返回 0"""
++    if not _pool_enabled():
++        return 0
++    key = _char_key(cid)
++    if not key:
++        return 0
++    ent = _SERVERS.get(key)
++    if ent and ent.get("bad"):
++        return 0            # 之前失败过：不再尝试，交给共享进程
++    if ent and ent.get("ready"):
++        return ent["port"]
++    # 分配端口
++    used = {e["port"] for e in _SERVERS.values()}
++    port = _POOL_BASE_PORT
++    while port in used:
++        port += 1
++    try:
++        cfg = _write_pool_cfg(port, key)
++        proc = subprocess.Popen(
++            [PY, API_PY, "-a", bind_host(), "-p", str(port), "-c", cfg],
++            cwd=GSV, env=_child_env(),
++            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
++            creationflags=0x08000000 if os.name == "nt" else 0,
++        )
++        _SERVERS[key] = {"port": port, "proc": proc, "ready": False, "key": key}
++        import socket, time
++        t0 = time.time()
++        while time.time() - t0 < READY_TIMEOUT_S:
++            try:
++                with socket.create_connection((bind_host(), port), timeout=2):
++                    _SERVERS[key]["ready"] = True
++                    return port
++            except Exception:
++                time.sleep(1.0)
++        return 0
++    except Exception:
++        _SERVERS.pop(key, None)
++        return 0
++
++
++def _write_pool_cfg(port, key):
++    """给这个进程写一份配置：custom 段指向该角色的权重。"""
++    base = os.path.join(GSV, "GPT_SoVITS", "configs", "tts_infer.yaml")
++    src = io.open(base, encoding="utf-8").read()
++    m = _character_tts_for(key) or {}
++    gpt = m.get("gpt") or GPT_W
++    sovits = m.get("sovits") or SOVITS_W
++    import re as _re
++    out = _re.sub(r'(?ms)^custom:\n(?:[ \t].*\n)+',
++                  "custom:\n"
++                  "  bert_base_path: GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large\n"
++                  "  cnhuhbert_base_path: GPT_SoVITS/pretrained_models/chinese-hubert-base\n"
++                  "  device: cuda\n"
++                  "  is_half: true\n"
++                  "  t2s_weights_path: \"%s\"\n"
++                  "  version: v4\n"
++                  "  vits_weights_path: \"%s\"\n" % (gpt.replace("\\", "/"), sovits.replace("\\", "/")),
++                  src, count=1)
++    dst = os.path.join(GSV, "GPT_SoVITS", "configs", "tts_infer_%d.yaml" % port)
++    io.open(dst, "w", encoding="utf-8").write(out)
++    return dst
++
++
++def _character_tts_for(key):
++    """按角色目录名取权重（不依赖 _voice_char）"""
++    try:
++        d = os.path.join(characters.root(), key, "voice_model")
++        if os.path.isdir(d):
++            ckpt = [f for f in os.listdir(d) if f.lower().endswith(".ckpt")]
++            pth = [f for f in os.listdir(d) if f.lower().endswith(".pth")]
++            if ckpt and pth:
++                return {"gpt": os.path.join(d, ckpt[0]), "sovits": os.path.join(d, pth[0])}
++    except Exception:
++        pass
++    return {}
++
++
+ def start():
+     """拉起 API 服务并切到我们的权重（幂等）。
+ 
+@@ -803,7 +986,15 @@ _TTS_CACHE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(_
+ # v3（2026-11-07）：H 不再借 calm 音色。旧音频是用 calm 参考合成的，
+ # key 里不含"选了哪条参考"，所以必须靠版本号让它们全部失效，
+ # 否则同一句话重放时仍然是那种平静嗓音（表现就是"偶尔还是平静"）。
+-_CACHE_VERSION = 3
++_CACHE_VERSION = 4        # 4：把语音权重算进 key（换权重后不会再放旧音频）
++
++
++def _model_sig():
++    """当前角色用的权重签名（没有权重就是底模）。换权重后缓存必须失效。"""
++    m = _character_tts()
++    if not m:
++        return os.path.basename(GPT_W) + "|" + os.path.basename(SOVITS_W)
++    return os.path.basename(m["gpt"]) + "|" + os.path.basename(m["sovits"])
+ 
+ 
+ def _tts_cache_path(text, lang, emo):
+@@ -817,8 +1008,8 @@ def _tts_cache_path(text, lang, emo):
+     # 不会先命中导入前的旧缓存
+     # 参数也要进 key：否则改了温度/top_k/切分，还是放上一次的旧音频
+     _prm = EMOTION_PARAMS.get(EMOTION_ALIAS.get(emo, emo)) or EMOTION_PARAMS["neutral"]
+-    _sig = "%s|%s|%s|%s|%s|%s|%s|%s" % (
+-        text, lang, emo, _char_voice_sig(), _CACHE_VERSION,
++    _sig = "%s|%s|%s|%s|%s|%s|%s|%s|%s" % (
++        text, lang, emo, _char_voice_sig(), _model_sig(), _CACHE_VERSION,
+         _prm.get("temperature"), _prm.get("top_k"), _prm.get("top_p"))
+     key = _sig
+     h = hashlib.md5(key.encode("utf-8")).hexdigest()[:20]
+@@ -969,7 +1160,7 @@ _NAME_CACHE = {"path": "", "mtime": 0, "pairs": []}
+ def _name_pairs():
+     try:
+         import characters
+-        p = os.path.join(characters.active_dir(), "pronunciation.json")
++        p = os.path.join(_active_dir() or "", "pronunciation.json")
+         if not os.path.isfile(p):
+             return []
+         mt = os.path.getmtime(p)
+@@ -1004,12 +1195,49 @@ def normalize_ja_names(text):
+     return text
+ 
+ 
+-def synthesize(text, lang="zh", timeout=SYNTH_TIMEOUT_S, emo="neutral"):
++def synthesize(text, lang="zh", timeout=SYNTH_TIMEOUT_S, emo="neutral", char=""):
+     """返回 wav 字节；失败返回 None
+ 
+     合成串行：GPT-SoVITS 的 api 同时来两个请求会抢模型，这里排队；
+     排队时先看缓存，同一句重复播不会重复合成。
+     """
++    global _ready, _voice_char, _refs_sig
++    if not _ready:
++        return None
++    # 整段（覆盖角色 → 切权重 → 选参考 → 合成）都放在同一把锁里，
++    # 否则两个角色并发合成时会串成「和纱的权重 + 雪菜的参考」。
++    with _synth_lock:
++        _prev_char = _voice_char
++        if char and char != _prev_char:
++            _voice_char = char
++            _refs_sig = ""          # 强制重扫该角色的参考音频
++        # 进程池：这个角色有常驻服务就直接用，不用切权重
++        _port = 0
++        if char:
++            try:
++                _port = _server_for(char) or 0
++            except Exception:
++                _port = 0
++        try:
++            data = _synthesize_inner(text, lang, timeout, emo, port=_port)
++            if not data and _port:
++                # 这个角色的常驻进程不可用（显存不够 / 加载失败）：
++                # 标记它，之后这个角色一律走共享进程（切权重）。
++                try:
++                    _SERVERS[_char_key(char)]["bad"] = True
++                    import applog
++                    applog.log("语音进程池：%s 的进程不可用，改用共享进程" % char, "WARN")
++                except Exception:
++                    pass
++                data = _synthesize_inner(text, lang, timeout, emo, port=0)
++            return data
++        finally:
++            if char:
++                _voice_char = _prev_char
++                _refs_sig = ""
++
++
++def _synthesize_inner(text, lang, timeout, emo, port=0):
+     global _last_err, _ready
+     if not _ready:
+         return None
+@@ -1028,8 +1256,8 @@ def synthesize(text, lang="zh", timeout=SYNTH_TIMEOUT_S, emo="neutral"):
+         _cp = _tts_cache_path(text, lang, emo)
+     except Exception:
+         _cp = None
+-    with _synth_lock:
+-        if not _ensure_char_model():
++    if True:      # 锁已经在 synthesize() 外层拿过（Lock 不可重入）
++        if not port and not _ensure_char_model():
+             return None
+         if _cp:
+             try:
+@@ -1051,8 +1279,10 @@ def synthesize(text, lang="zh", timeout=SYNTH_TIMEOUT_S, emo="neutral"):
+         diag.count("tts.miss")
+         try:
+             import applog
+-            applog.log("TTS 合成请求：%d 字，切分=%s，参考=%s"
+-                       % (len(text), "cut0" if len(text) <= 40 else "cut5",
++            _mdl = _character_tts() or {}
++            applog.log("TTS 合成请求：%d 字，角色=%s 权重=%s 参考=%s"
++                       % (len(text), os.path.basename(_active_dir() or "?"),
++                          os.path.basename(_mdl.get("gpt") or "(底模)"),
+                           os.path.basename(ref_path or "")), "TTS")
+             applog.log("TTS 缓存未命中：len=%d emo=%s key=%s"
+                        % (len(text), emo, os.path.basename(_cp or "")[:8]), "TTS")
+@@ -1062,6 +1292,11 @@ def synthesize(text, lang="zh", timeout=SYNTH_TIMEOUT_S, emo="neutral"):
+         ref_path, ref_text = pick_ref(emo, target=text)
+         if not ref_path:
+             return None
++        try:
++            global _last_ref
++            _last_ref = ref_path
++        except Exception:
++            pass
+         prm = EMOTION_PARAMS.get(EMOTION_ALIAS.get(emo, emo)) or EMOTION_PARAMS["neutral"]
+         q = urllib.parse.urlencode({
+             "text": text,
+@@ -1079,7 +1314,11 @@ def synthesize(text, lang="zh", timeout=SYNTH_TIMEOUT_S, emo="neutral"):
+         })
+         try:
+             # 第一次合成要加载模型，给足时间
+-            _data = _post("/tts?" + q, timeout=timeout)
++            # port=0 时保持老调用形状（自测里 _post 是被替换的桩函数，不接受新参数）
++            if port:
++                _data = _post("/tts?" + q, timeout=timeout, port=port)
++            else:
++                _data = _post("/tts?" + q, timeout=timeout)
+             try:
+                 if _data and _cp:
+                     diag.count("tts.render")
+diff --git a/program/src/ui/config.js b/program/src/ui/config.js
+index c3cf6e9..1877f39 100644
+--- a/program/src/ui/config.js
++++ b/program/src/ui/config.js
+@@ -5,6 +5,7 @@
+   let prefs = {
+     seHover: 55, seClick: 56, seCancel: 56, sePage: 57, seExit: 58,   // 55=悬停音 56=点击音（录屏比对得出）
+     bgmMenu: 0, bgmCalm: 2, bgmWarm: 3, bgmSad: 4, bgmTense: 6,
++    bgmKazusa: 1, bgmToukanai: 5, bgmAnswer: 7,   /* 一直在曲库里、之前没接进来的三首 */
+     bgmVol: 30, seVol: 35,
+     choiceCount: 2,          /* 选择分支：一次给几个选项（2~5） */
+   };
+diff --git a/program/src/ui/mb-cast.js b/program/src/ui/mb-cast.js
+index 956023c..332aac6 100644
+--- a/program/src/ui/mb-cast.js
++++ b/program/src/ui/mb-cast.js
+@@ -118,11 +118,24 @@
+       api("/api/cast/set", { members: [] }).then(refresh);
+     })];
+     if (c && c.can_join) {
++      var _inCast = {};
++      (c.members || []).forEach(function (m) { if (m.id) _inCast[m.id] = true; });
+       c.can_join.forEach(function (x) {
++        if (_inCast[x.id]) {
++          /* 已经在场：给一个「移出」 */
++          castRows.push(subRow("移出：" + x.name, function () {
++            var members = ((c.members || []).filter(function (m) { return m.role !== "extra"; })
++              .filter(function (m) { return m.id !== x.id; })
++              .map(function (m) { return { id: m.id, role: m.role }; }));
++            api("/api/cast/set", { members: members }).then(refresh);
++          }));
++          return;
++        }
+         castRows.push(subRow((x.ok ? "加入：" : "缺导演卡：") + x.name, function () {
+           if (!x.ok) return;
+           var members = ((c.members || []).filter(function (m) { return m.role !== "extra"; })
+             .map(function (m) { return { id: m.id, role: m.role }; }));
++          if (members.some(function (m) { return m.id === x.id; })) return;   /* 已加入就不重复 */
+           members.push({ id: x.id, role: "actor" });
+           api("/api/cast/set", { members: members }).then(refresh);
+         }));
+@@ -153,7 +166,14 @@
+     /* 开关 */
+     menu.appendChild(sub("开关", [
+       subRow("多角色：" + (d && d.enabled ? "开" : "关"), function () {
+-        api("/api/direct/options", { enabled: !(d && d.enabled) }).then(refresh);
++        var _next = !(d && d.enabled);
++        api("/api/direct/options", { enabled: _next }).then(function () {
++        /* 切回单角色：把还没播的「拍」清掉，否则它们会在自动模式里冒出来 */
++        if (!_next) { try { fetch("/api/play/clear", { method: "POST" }).catch(function () {}); } catch (e) {} }
++        /* 切换后立刻让播放器重新读一次开关，别等 5 秒轮询 */
++        try { if (WA2.play && WA2.play.refresh) WA2.play.refresh(); } catch (e) {}
++        refresh();
++      });
+       }),
+     ]));
+ 
+diff --git a/program/src/ui/sp-model.js b/program/src/ui/sp-model.js
+index dc902c7..313ff0d 100644
+--- a/program/src/ui/sp-model.js
++++ b/program/src/ui/sp-model.js
+@@ -62,8 +62,13 @@
+     setConnectLabel(!!k.connected);
+   }
+ 
++  /* 导演是场景级配置（不属于任何角色），其余类别是角色级 */
++  function apiBase() {
++    return state.kind === "director" ? "/api/director/model" : "/api/char/model";
++  }
++
+   function load(kind, cb) {
+-    api("/api/char/model").then(function (d) {
++    api(apiBase()).then(function (d) {
+       state.data = d || {};
+       fill(kind || state.kind);
+       if (cb) cb();
+@@ -84,7 +89,7 @@
+   }
+ 
+   function saveFields(cb) {
+-    api("/api/char/model", {
++    api(apiBase(), {
+       kind: state.kind,
+       endpoint: el("spmdEndpoint").value,
+       key: el("spmdKey").value
+@@ -99,7 +104,7 @@
+     state.busy = true;
+     paintStatus("连接中…", true);
+     saveFields(function () {
+-      api("/api/char/model/connect", { kind: state.kind }).then(function (d) {
++      api(apiBase() + "/connect", { kind: state.kind }).then(function (d) {
+         state.busy = false;
+         if (d && d.ok) {
+           load(state.kind, function () { setConnectLabel(true); paintStatus("已连接" + (d.model ? "：" + d.model : "")); });
+@@ -112,7 +117,7 @@
+ 
+   function doDisconnect() {
+     saveFields(function () {
+-      api("/api/char/model/disconnect", { kind: state.kind }).then(function (d) {
++      api(apiBase() + "/disconnect", { kind: state.kind }).then(function (d) {
+         if (d && d.ok) { load(state.kind, function () { setConnectLabel(false); paintStatus("已断开"); }); }
+         else toast((d && d.error) || "断开失败");
+       });
+@@ -121,7 +126,7 @@
+ 
+   /* 切换连接：一键清空输入框与已存配置，重新输入端点/API 连新的模型 */
+   function doSwitch() {
+-    api("/api/char/model/switch", { kind: state.kind }).then(function (d) {
++    api(apiBase() + "/switch", { kind: state.kind }).then(function (d) {
+       if (d && d.ok) {
+         el("spmdEndpoint").value = "";
+         el("spmdKey").value = "";
+diff --git a/program/src/ui/wt-audio.js b/program/src/ui/wt-audio.js
+index 33707f6..ca15a89 100644
+--- a/program/src/ui/wt-audio.js
++++ b/program/src/ui/wt-audio.js
+@@ -13,7 +13,8 @@
+ (function () {
+   var WA2 = window.WA2 = window.WA2 || {};
+ 
+-  var BGM_KEY = { menu: "bgmMenu", calm: "bgmCalm", warm: "bgmWarm", sad: "bgmSad", tense: "bgmTense" };
++  var BGM_KEY = { menu: "bgmMenu", calm: "bgmCalm", warm: "bgmWarm", sad: "bgmSad", tense: "bgmTense",
++                 kazusa: "bgmKazusa", toukanai: "bgmToukanai", answer: "bgmAnswer" };
+   var SE_BASE = "assets/snd/";
+   var seCache = {};
+ 
+@@ -22,9 +23,22 @@
+ 
+   function bgmSrc(name) {
+     var P = prefs(), C = catalog();
+-    var id = P[BGM_KEY[name] || "bgmCalm"];
+-    var item = C.bgm && C.bgm[id === undefined ? 0 : id];
+-    return item ? "assets/snd/" + item.file : "";
++    var list = C.bgm || [];
++    /* 1) 老名字走偏好里的 id（用户可以在设置里换“静かな冬の夜”用哪首） */
++    var key = BGM_KEY[name];
++    if (key) {
++      var item = list[P[key] === undefined ? 0 : P[key]];
++      if (item) return "assets/snd/" + item.file;
++    }
++    /* 2) 新曲（33 首）直接按曲名或文件名找 */
++    for (var i = 0; i < list.length; i++) {
++      if (list[i] && (list[i].name === name || list[i].file === name)) {
++        return "assets/snd/" + list[i].file;
++      }
++    }
++    /* 3) 兜底：还是回到 calm */
++    var fallback = list[P.bgmCalm === undefined ? 0 : P.bgmCalm];
++    return fallback ? "assets/snd/" + fallback.file : "";
+   }
+ 
+   /* OPTION 2 的 BGM 滑块优先（volBgm），没有就退回旧的 bgmVol；两者都要乘全体音量 */
+diff --git a/program/src/ui/wt-auto.js b/program/src/ui/wt-auto.js
+index 60cbf96..1a1a421 100644
+--- a/program/src/ui/wt-auto.js
++++ b/program/src/ui/wt-auto.js
+@@ -24,6 +24,7 @@
+     generating: false,
+     showing: false,            // 当前这句还在播
+     timer: null,
++    retry: null,
+     errors: 0
+   };
+ 
+@@ -48,6 +49,17 @@
+ 
+   function clearTimer() {
+     if (state.timer) { clearTimeout(state.timer); state.timer = null; }
++    if (state.retry) { clearTimeout(state.retry); state.retry = null; }
++  }
++
++  /* 这一轮没轮到（正在打字 / 没拿到台词）：过一会儿再看一次 */
++  function retry(ms) {
++    if (!state.on) return;
++    if (state.retry) clearTimeout(state.retry);
++    state.retry = setTimeout(function () {
++      state.retry = null;
++      if (state.on) pump();
++    }, ms || 1500);
+   }
+ 
+   function chat() { return WA2.chat || {}; }
+@@ -112,7 +124,10 @@
+       state.timer = null;
+       if (!state.on) return;
+       var why = blocked();
+-      if (why) { stop(why); return; }
++      if (why) {
++        if (why === "正在打字") { retry(1200); return; }
++        stop(why); return;
++      }
+       if (state.queue.length) showNext();
+       else pump();
+     }, ms === undefined ? GAP_MS : ms);
+@@ -121,18 +136,22 @@
+   /* 补队列，直到 CAP 条 */
+   function pump() {
+     if (!state.on) return false;
+-    /* 多角色/导演在跑：演出由导演那条链路负责，这里不要再自己调模型 */
+-    try { if (window.__directorOn) return false; } catch (e) {}
++    /* 多角色/导演真的在跑：演出由导演那条链路负责，这里不要再自己调模型。
++       __directorOn 只在「导演开着 + 阵容里有演员」时为真，所以阵容空时这里照常生成。 */
++    try {
++      if (window.WA2 && WA2.play && WA2.play.isDirectorOn && WA2.play.isDirectorOn()) return false;
++    } catch (e) {}
+     /* 缓冲语义：最多领先「正在播的那句」CAP 条；满了就等播完再补，**不是**总共只生成三条 */
+     if (state.queue.length >= CAP) return false;
+     if (state.generating) return false;
+     var why = blocked();
+     if (why) {
+-      /* 「正在打字」只是这一轮还没轮到，不该把自动模式关掉 */
+-      if (why === "正在打字") return false;
++      /* 「正在打字」只是这一轮还没轮到：不该关自动模式，但必须排一次重试，
++         否则这一句之后就再也没人叫 pump 了（表现就是「只生成一条」）。 */
++      if (why === "正在打字") { retry(1200); return false; }
+       stop(why); return false;
+     }
+-    if (!chat().generateContinue) return false;
++    if (!chat().generateContinue) { retry(2000); return false; }
+ 
+     state.generating = true;
+     chat().generateContinue().then(function (d) {
+@@ -140,6 +159,7 @@
+       if (!d) {
+         state.errors++;
+         if (state.errors >= 3) stop("连续出错");
++        else retry(2000);
+         return;
+       }
+       state.errors = 0;
+@@ -153,6 +173,7 @@
+       state.generating = false;
+       state.errors++;
+       if (state.errors >= 3) stop("连续出错");
++      else retry(2000);
+     });
+     return true;
+   }
+@@ -161,6 +182,11 @@
+     if (state.on) return true;
+     state.queue.length = 0;
+     state.errors = 0;
++    /* 单角色：先把上一场多角色留下的「拍」清掉，别让它们冒出来 */
++    try {
++      var _dir = !!(window.WA2 && WA2.play && WA2.play.isDirectorOn && WA2.play.isDirectorOn());
++      if (!_dir) fetch("/api/play/clear", { method: "POST" }).catch(function () {});
++    } catch (e) {}
+     state.on = true;
+     paint();
+     savePref();
+diff --git a/program/src/ui/wt-backlog.js b/program/src/ui/wt-backlog.js
+index b4e6e6e..c951ee8 100644
+--- a/program/src/ui/wt-backlog.js
++++ b/program/src/ui/wt-backlog.js
+@@ -20,7 +20,7 @@
+     } catch (e) { return false; }
+   }
+ 
+-  function addHistory(role, text, raw, emo) {
++  function addHistory(role, text, raw, emo, speaker, narr) {
+     const d = document.createElement("div");
+     d.className = "hline " + (role === "user" ? "me" : "her");
+     if (raw) d.dataset.ja = raw;      /* 原始日文（含 action/emotion），只存不显示 */
+@@ -28,6 +28,8 @@
+        以前重播写死 emotion=neutral，而当时合成用的是 calm/毒舌 → 缓存永远不命中，
+        每次重播都要重新合成 2~5 秒（用户报「重放不像重放，像重新加载」）。 */
+     if (emo) d.dataset.emo = emo;
++    if (speaker) d.dataset.sp = speaker;      /* 这句是谁说的（多角色时不能都写当前角色） */
++    if (narr) d.dataset.narr = "1";           /* 旁白：不加「」、不写名字 */
+     const ico = document.createElement("div");
+     ico.className = "ico";
+     const ic = document.createElement("img");
+@@ -40,9 +42,9 @@
+     body.className = "body";
+     const who = document.createElement("span");
+     who.className = "who";
+-    who.textContent = role === "user" ? "你" : CHAR_NAME;
++    who.textContent = role === "user" ? "你" : (narr ? "" : (d.dataset.sp || CHAR_NAME));
+     /* 和纱的话统一加「」：存档里的 zh 是翻译原文（不带括号），实时消息带括号，这里统一 */
+-    if (role === "assistant") {
++    if (role === "assistant" && !narr) {
+       text = "「" + String(text).replace(/^[「『]/, "").replace(/[」』]$/, "") + "」";
+     }
+     /* 长句按面板宽度折行：每行最多 26 个全角字（游戏里也是这个宽度） */
+@@ -135,8 +137,11 @@
+        带 hscene=1 让后端按 H 念，和实时播放保持一致 */
+     const _hs = (row.dataset.hscene === "1" ||
+                  (document.body && document.body.dataset.hscene === "1")) ? "&hscene=1" : "";
++    /* 多角色：这一行是谁说的就用谁的音色（没有就用当前角色） */
++    var _sp = (row.dataset.sp || "").trim();
++    var _charQ = _sp ? ("&char=" + encodeURIComponent(_sp)) : "";
+     fetch("/api/tts?text=" + encodeURIComponent(vText) + "&lang=" + encodeURIComponent(vLang) +
+-          "&emotion=" + encodeURIComponent(emo) + "&speak_ja=" + encodeURIComponent(clean) + _hs)
++          "&emotion=" + encodeURIComponent(emo) + "&speak_ja=" + encodeURIComponent(clean) + _hs + _charQ)
+       .then(function (r) { if (!r.ok) throw new Error("tts " + r.status); return r.blob(); })
+       .then(function (b) {
+         const u = URL.createObjectURL(b);
+@@ -159,7 +164,9 @@
+       const isHer = m.role === "assistant";
+       const shown = isHer ? (m.zh || m.content || "") : (m.content || "");
+       if (!shown) return;
+-      addHistory(m.role, shown, isHer ? (m.content || "") : "", isHer ? (m.emo || "") : "");
++      addHistory(m.role, shown, isHer ? (m.content || "") : "",
++                 isHer ? (m.emo || "") : "", isHer ? (m.speaker || "") : "",
++                 isHer ? !!m.narr : false);
+     });
+   }
+ 
+diff --git a/program/src/ui/wt-chat.js b/program/src/ui/wt-chat.js
+index 2cd8d68..dc1c96c 100644
+--- a/program/src/ui/wt-chat.js
++++ b/program/src/ui/wt-chat.js
+@@ -44,7 +44,19 @@
+     /* 旁白（不是角色说的话）：不进左上角动作区 */
+     if (_isNarr) { window.__lastThinking = ""; window.__lastAction = ""; }
+     /* 当前是不是成人场面（后端判定）：写在 body 上，回想重放旧句时要读它（不新增全局） */
+-    try { document.body.dataset.hscene = d.hscene ? "1" : "0"; } catch (e) {}
++    /* 场面标记要有粘性：单句没带标记不该立刻退回普通参考
++       （否则同一场戏里时好时坏，回想重播反而对）。连续 3 句都没有才回落。 */
++    try {
++      if (d.hscene === undefined || d.hscene === null) {
++        /* 队列/导演的条目不带这个字段：保持当前场面不变，也不要加连击 */
++      } else if (d.hscene) {
++        window.__hsceneStreak = 0;
++        document.body.dataset.hscene = "1";
++      } else {
++        window.__hsceneStreak = (window.__hsceneStreak || 0) + 1;
++        if (window.__hsceneStreak >= 3) document.body.dataset.hscene = "0";
++      }
++    } catch (e) {}
+     renderThinking();
+       history.push({ role: "assistant", content: reply });
+       window.__history = history;
+@@ -61,10 +73,19 @@
+         shown = "「" + _lineText.replace(/^[「『]+|[」』]+$/g, "") + "」";
+       }
+       window.__speakJa = replyZh ? reply.replace(/^「|」$/g, "") : "";
++      if (d && d.ja) window.__speakJa = String(d.ja);   /* 角色自己写的日语原文优先 */
+       /* 中日对照：content 保留语言模型原句（含 action/emotion 未过滤），zh 存翻译模型原样输出 */
+       history[history.length - 1].zh = replyZh;
+       history[history.length - 1].emo = window.__lastEmo || "";   /* 重播要按当时的情绪算缓存 key */
+-      addHistory("assistant", shown, reply, window.__lastEmo || "");   /* 三参：日文原句；四参：当时的情绪 */
++      /* 说话人：队列条目带的是真实说话人；单角色路径用当前角色名。
++         写进历史，读档/回想才不会把别人的台词标成当前角色。 */
++      if (_isNarr) {
++        history[history.length - 1].narr = true;     /* 旁白：回想里不写名字、不加「」 */
++      } else {
++        var _spkName = _speaker || _ownName || (typeof CHAR_NAME !== "undefined" ? String(CHAR_NAME) : "");
++        if (_spkName) history[history.length - 1].speaker = _spkName;
++      }
++      addHistory("assistant", shown, reply, window.__lastEmo || "", _speaker, _isNarr);   /* 六参：旁白 */
+       // 先合成语音；语音没准备好就先不出文字，等语音出来一起出
+       try { if (WA2.backlog && WA2.backlog.setVoiceOnLast) WA2.backlog.setVoiceOnLast(window.__lastVoiceReq); } catch (e) {}
+       const mood = (window.__lastEmo || detectMood(shown));
+@@ -98,7 +119,22 @@
+           }
+           window.__nextScene = "";
+           window.__nextOutfit = "";
+-          setSpriteByScene((WA2.session && WA2.session.currentBg ? WA2.session.currentBg() : "") || "classroom", mood, true, _want);
++          /* 多角色：立绘跟着说话人走（没有立绘的角色保持原样）。
++             换角色要等服装表拉到再画，否则画的时候用的还是上一位的表。 */
++          var _spriteFor = function (cb) {
++            try {
++              if (WA2.sprite && WA2.sprite.useCharacter) {
++                var _ownNow = (typeof CHAR_NAME !== "undefined" && CHAR_NAME) ? String(CHAR_NAME) : "";
++                WA2.sprite.useCharacter(_speaker && _speaker !== _ownNow ? _speaker : "", cb || function () {});
++                return;
++              }
++            } catch (e) {}
++            if (cb) cb();
++          };
++          var _drawSprite = function () {
++            setSpriteByScene((WA2.session && WA2.session.currentBg ? WA2.session.currentBg() : "") || "classroom", mood, true, _want);
++          };
++          _spriteFor(_drawSprite);
+           try {
+             var _plate = document.getElementById("namePlate");
+             if (_plate) {
+@@ -117,17 +153,23 @@
+       /* 自动续写里，旁白和「你的台词」是没有语音的：
+          立刻显示，然后按字数留阅读时间，时间到了才算这一条结束（自动模式据此推进）。 */
+       const _lineType = (d.line_type || "her");
+-      const _readMs = Math.min(9000, Math.max(2200, (shown || "").length * 130));
++      const _readMs = Math.min(30000, Math.max(2000, (shown || "").length * 500));
+       var _ownName = "";
+       try { if (typeof CHAR_NAME !== "undefined" && CHAR_NAME) _ownName = String(CHAR_NAME); } catch (e) {}
+       var _canVoice = (_lineType === "her") && (!_speaker || _speaker === _ownName);
++      /* 队列里别的角色说话：他/她有自己的音色也照样念 */
++      try {
++        if (!_canVoice && _speaker && window.__voiceMap && window.__voiceMap[_speaker] === true) {
++          _canVoice = true;
++        }
++      } catch (e) {}
+       /* 玩家永远不出语音；说话人没有音色也不出 */
+       try {
+         if (window.__playerName && _speaker === window.__playerName) _canVoice = false;
+         if (_speaker && window.__voiceMap && window.__voiceMap[_speaker] === false) _canVoice = false;
+       } catch (e) {}
+       const voiceDone = _canVoice
+-        ? speakReply(reply, renderNow).then(function () {
++        ? speakReply(reply, renderNow, _speaker).then(function () {
+             renderNow();      /* 没有语音 / 播失败时兜底：文字照样要出 */
+           })
+         : Promise.resolve().then(function () {
+@@ -175,6 +217,35 @@
+     }
+     hidePageCursor();
+ 
++    /* 多角色开着：这句话交给导演当「剧情走向」，由队列依次演出各角色的台词。
++       缓存值可能是 5 秒前的（刚打开多角色就打字），所以先快速确认一次。 */
++    var _dirOn = !!(window.WA2 && WA2.play && WA2.play.isDirectorOn && WA2.play.isDirectorOn());
++    if (!_dirOn) {
++      try {
++        var _st = await fetch("/api/direct/status", { cache: "no-store" }).then(function (r) { return r.json(); });
++        var _d = (_st && _st.director) || {};
++        var _others = ((_d.cast || {}).members || []).filter(function (m) { return m.role !== "player"; });
++        _dirOn = !!_d.enabled && _others.length > 0;
++      } catch (e) {}
++    }
++    if (_dirOn) {
++      try {
++        await fetch("/api/play/clear", { method: "POST" });
++        await fetch("/api/direct/options", {
++          method: "POST", headers: { "Content-Type": "application/json" },
++          body: JSON.stringify({ direction: text })
++        });
++        var _g = await fetch("/api/direct/gen", {
++          method: "POST", headers: { "Content-Type": "application/json" },
++          body: JSON.stringify({ n: 3 })     /* 多要一拍：至少让两个在场角色都开口 */
++        });
++        var _gd = await _g.json().catch(function () { return null; });
++        if (_gd && _gd.error && window.__toast) window.__toast("导演没能接话：" + _gd.error, 3200);
++      } catch (e) {}
++      if (WA2.perf) WA2.perf.end("DIALOGUE_STREAMING");
++      return;                       /* 余下的交给 wt-play 的队列 */
++    }
++
+     try {
+       const r = await fetch("/api/chat", {
+         method: "POST",
+@@ -222,6 +293,14 @@
+   }
+ 
+   /* 自动续说：只请求、不渲染（预生成用） */
++  /* 场面标记（当前是不是特殊场面）：读档 / 新游戏 / 每句回复都从这里改 */
++  function setSceneFlag(isSpecial) {
++    try {
++      window.__hsceneStreak = 0;
++      document.body.dataset.hscene = isSpecial ? "1" : "0";
++    } catch (e) {}
++  }
++
+   async function generateContinue() {
+     try {
+       const r = await fetch("/api/chat", {
+@@ -244,7 +323,16 @@
+       });
+       const d = await r.json();
+       if (!d || d.error) return null;
+-      if (!String(d.reply || '').trim()) return null;   /* 空回复别进队列，否则卡一条空白 */
++      if (!String(d.reply || '').trim()) {
++        /* 模型这一拍只写了旁白/动作（line_type=narr 且 reply 为空）：
++           这是合法的，当成一条旁白播下去，不要算成失败——
++           否则连续几次就把「自动续说」关掉了。 */
++        const act = String(d.action_zh || d.action || '').trim();
++        if (!act) return null;
++        d.line_type = 'narr';
++        d.reply = act;
++        d.reply_zh = act;
++      }
+       return d;
+     } catch (e) { return null; }
+   }
+@@ -256,6 +344,7 @@
+   }
+ 
+   WA2.chat = { send: send, resetPending: resetPending, generateContinue: generateContinue,
++              setSceneFlag: setSceneFlag,
+               renderQueued: renderQueued,
+               isBusy: function () { return !!typing; } };
+   WA2.register("chat", WA2.chat);
+diff --git a/program/src/ui/wt-mood.js b/program/src/ui/wt-mood.js
+index d0eca5f..8caad2c 100644
+--- a/program/src/ui/wt-mood.js
++++ b/program/src/ui/wt-mood.js
+@@ -16,6 +16,45 @@
+   }
+ 
+   const MOOD_BGM = { angry: "tense", sad: "sad", warm: "warm", smile: "warm", calm: "calm" };
++
++  /* 每个氛围允许多首：切到该氛围时轮流挑一首，避免同一首听一整局。
++     顺序就是「更常用 → 更有画面感」。 */
++  var SLOT_TRACKS = {
++    calm: ["calm", "kazusa"],
++    warm: ["warm", "kazusa"],
++    sad: ["sad", "toukanai"],
++    tense: ["tense", "answer"]
++  };
++  /* 曲库 41 首按 slot 字段分组；有 catalog 就用它，没有就退回上面那 4 组 */
++  (function buildSlotTracks() {
++    try {
++      var C = (window.App && window.App.catalogGet) ? window.App.catalogGet() : null;
++      var list = (C && C.bgm) || [];
++      if (!list.length) return;
++      var by = {};
++      for (var i = 0; i < list.length; i++) {
++        var it = list[i];
++        if (!it || !it.slot || it.slot === "menu") continue;
++        (by[it.slot] || (by[it.slot] = [])).push(it.name);
++      }
++      var keys = Object.keys(by);
++      if (!keys.length) return;
++      for (var k = 0; k < keys.length; k++) SLOT_TRACKS[keys[k]] = by[keys[k]];
++    } catch (e) {}
++  })();
++  /* 反查：某首曲子属于哪个氛围（判断「当前氛围」用） */
++  var TRACK_SLOT = {
++    menu: "menu", calm: "calm", kazusa: "calm", warm: "warm",
++    sad: "sad", toukanai: "sad", tense: "tense", answer: "tense"
++  };
++  var slotRound = {};
++
++  function nextTrack(slot) {
++    var list = SLOT_TRACKS[slot] || [];
++    if (!list.length) { slot = "calm"; list = SLOT_TRACKS[slot] || [slot]; }
++    var i = (slotRound[slot] = (slotRound[slot] || 0) + 1) - 1;
++    return list[i % list.length];
++  }
+   /* 情绪→表情不在这里：立绘那边已改成中文名别名表（wt-sprite.js 的 EMO_ALIAS），
+      这里的 MOOD_SPRITE 早就没人用了，删掉省得以后两边映射打架。 */
+ 
+@@ -28,12 +67,12 @@
+      哭腔算难过（sad），「沉重」留给真的争执（词表里已补，见 performance_hints）。 */
+   var EMO_BGM = {
+     calm: "calm", "毒舌": "calm", "问句": "calm",
+-    soft: "warm", "撒娇": "warm", "调侃吐槽": "warm",
++    soft: "warm", "撒娇": "warm", "调侃吐槽": "comic",
+     "哭腔": "sad",
+     "沉重": "tense",
+     /* 新标签：按"这段该配什么氛围"归到四个槽位 */
+     "紧张": "tense",
+-    "激动": "tense",
++    "激动": "warm",
+     "委屈巴巴": "sad",
+     "自怨自艾": "sad",
+     "故作轻松": "calm",
+@@ -50,8 +89,12 @@
+     // 「笨蛋/哼/少来/别管/烦」是她日常的嘴硬，落回 calm，不再算 tense
+   ];
+ 
++  /* 唱歌 / 演出这类场面：热闹、往上走，不该配「氷の刃」这种紧张曲 */
++  var MUSIC_RE = /歌|唱|舞台|学园祭|學園祭|演奏|合练|排练|ライブ|バンド|乐队|主唱|合唱/i;
++
+   function bgmSlot(text, emo) {
+     var e = (emo || "").trim();
++    if (MUSIC_RE.test(text || "")) return "kazusa";   /* 她唱的就是 POWDER SNOW 这一族 */
+     if (e && EMO_BGM[e]) return EMO_BGM[e];
+     var t = text || "";
+     for (var i = 0; i < TEXT_SLOT.length; i++) {
+@@ -61,7 +104,7 @@
+   }
+ 
+   /* ---------- 氛围累积（BGM 不随单句变化） ---------- */
+-  const moodScore = { calm: 0, warm: 0, sad: 0, tense: 0 };
++  const moodScore = { calm: 0, warm: 0, sad: 0, tense: 0, comic: 0, kazusa: 0, answer: 0 };
+   let moodStable = { name: "calm", turns: 0 };
+ 
+   function accumulateMood(reply, emo) {
+@@ -88,20 +131,23 @@
+     }
+     const enough = bestV - curV >= 1.5 && moodStable.turns >= 2;
+     if (best !== currentBgmMood() && enough) {
+-      setBgm(best);
++      setBgm(nextTrack(best));
+     }
+   }
+ 
+   function currentBgmMood() {
++    var cur = WA2.audio.current || "";
++    if (TRACK_SLOT[cur]) return TRACK_SLOT[cur];
+     for (const k in MOOD_BGM) {
+-      if (MOOD_BGM[k] === WA2.audio.current) return k === "smile" ? "warm" : MOOD_BGM[k];
++      if (MOOD_BGM[k] === cur) return k === "smile" ? "warm" : MOOD_BGM[k];
+     }
+-    return WA2.audio.current || "calm";
++    return cur || "calm";
+   }
+ 
+   /* 开新游戏：氛围分归零（不然上一局的「难过/紧张」会带进新局，BGM 一开就偏） */
+   function reset() {
+     for (const k in moodScore) moodScore[k] = 0;
++    for (const k in slotRound) slotRound[k] = 0;
+     moodStable = { name: "calm", turns: 0 };
+     return true;
+   }
+diff --git a/program/src/ui/wt-nav.js b/program/src/ui/wt-nav.js
+index d2ec731..9c9bb2b 100644
+--- a/program/src/ui/wt-nav.js
++++ b/program/src/ui/wt-nav.js
+@@ -77,6 +77,7 @@
+       try { turnCount = 0; } catch (e) {}
+       try { if (WA2.mood && WA2.mood.reset) WA2.mood.reset(); } catch (e) {}
+       try { if (WA2.chat && WA2.chat.resetPending) WA2.chat.resetPending(); } catch (e) {}
++      try { if (WA2.chat && WA2.chat.setSceneFlag) WA2.chat.setSceneFlag(0); } catch (e) {}   /* 新游戏：场面回到普通 */
+       try { rebuildBacklog(); } catch (e) {}   /* 新游戏：回想清空 */
+       try {
+         fetch("/api/session/save", {
+diff --git a/program/src/ui/wt-play.js b/program/src/ui/wt-play.js
+index 490e7f2..cfcffbc 100644
+--- a/program/src/ui/wt-play.js
++++ b/program/src/ui/wt-play.js
+@@ -25,8 +25,8 @@
+ 
+   function readMs(text) {
+     var n = (text || "").length;
+-    /* 用户定的：没语音时每个字 300ms */
+-    return Math.min(20000, Math.max(1200, Math.round(n * 300)));
++    /* 用户定的：没语音时每个字 500ms */
++    return Math.min(30000, Math.max(2000, Math.round(n * 500)));
+   }
+ 
+   function sleep(ms) {
+@@ -83,7 +83,9 @@
+         p = WA2.chat.renderQueued({
+           reply: body,
+           speaker: isNarr ? "" : speaker,
+-          line_type: isNarr ? "narr" : "her"
++          line_type: isNarr ? "narr" : "her",
++          ja: line.ja || "",                 /* 角色自己写的日语原文：配音直接用它 */
++          emotion: line.emotion || ""
+         });
+       }
+     } catch (e) {}
+@@ -94,7 +96,7 @@
+     }
+ 
+     /* 语音由 applyServerReply 按说话人决定，这里不再重复念；
+-       阅读时长按 300ms/字 兜底（有语音时那边的 promise 会等语音播完） */
++       阅读时长按 500ms/字 兜底（有语音时那边的 promise 会等语音播完） */
+     return p.then(function () {
+       var ms = readMs(text);
+       return sleep(ms).then(function () { return ms; });
+@@ -103,6 +105,11 @@
+ 
+   function maybeGenerate() {
+     if (!genOn) return Promise.resolve(false);
++    /* 自动模式没开：导演只在玩家主动要的时候写（发消息 / 菜单「写一拍」），
++       不要在这里自己往下滚。 */
++    try {
++      if (!(window.WA2 && WA2.auto && WA2.auto.isOn && WA2.auto.isOn())) return Promise.resolve(false);
++    } catch (e) { return Promise.resolve(false); }
+     var now = Date.now();
+     if (now - lastGen < 5000) return Promise.resolve(false);
+     lastGen = now;
+@@ -110,7 +117,14 @@
+       method: "POST", headers: { "Content-Type": "application/json" },
+       body: JSON.stringify({ n: 1 })
+     }).then(function (r) { return r.json(); })
+-      .then(function (d) { return !!(d && d.ok); })
++      .then(function (d) {
++        if (d && d.ok) return true;
++        if (d && d.error && window.__toast && !window.__genErrToasted) {
++          window.__genErrToasted = 1;
++          window.__toast("导演没能写出台词：" + d.error, 4000);
++        }
++        return false;
++      })
+       .catch(function () { return false; });
+   }
+ 
+@@ -133,13 +147,29 @@
+   }
+ 
+   function syncFlags() {
++    /* 阵容里谁有音色：多角色时决定某句该不该出声 */
++    fetch("/api/cast/status", { cache: "no-store" })
++      .then(function (r) { return r.json(); })
++      .then(function (d) {
++        var map = {};
++        ((d && d.cast && d.cast.members) || []).forEach(function (m) {
++          if (m && m.name) map[m.name] = !!m.voice;
++        });
++        window.__voiceMap = map;
++      })
++      .catch(function () {});
+     fetch("/api/direct/status", { cache: "no-store" })
+       .then(function (r) { return r.json(); })
+       .then(function (d) {
+         var dir = (d && d.director) || {};
+-        genOn = !!dir.enabled;
+-        /* 告诉自动模式：导演在跑，别再用 /api/chat 并行写 */
+-        window.__directorOn = !!dir.enabled;
++        var cast = dir.cast || {};
++        var others = (cast.members || []).filter(function (m) { return m.role !== "player"; });
++        /* 导演开着却没人可演：不算「导演在跑」，否则自动模式会一直空转 */
++        genOn = !!dir.enabled && others.length > 0;
++        if (dir.enabled && !others.length && window.__toast && !window.__noCastToasted) {
++          window.__noCastToasted = 1;
++          window.__toast("多角色开着但阵容是空的：先加角色，或关掉多角色用普通续说", 4000);
++        }
+       })
+       .catch(function () {});
+   }
+@@ -157,7 +187,8 @@
+     window.__playRunning = false;
+   }
+ 
+-  var api = { start: start, stop: stop, tick: tick, isPlaying: function () { return busy; } };
++  var api = { start: start, stop: stop, tick: tick, refresh: syncFlags,
++              isPlaying: function () { return busy; }, isDirectorOn: function () { return !!genOn; } };
+   WA2.play = api;
+   WA2.register && WA2.register("play", api);
+   window.__playStart = start;
+diff --git a/program/src/ui/wt-session.js b/program/src/ui/wt-session.js
+index 0d05e19..5fcece0 100644
+--- a/program/src/ui/wt-session.js
++++ b/program/src/ui/wt-session.js
+@@ -70,6 +70,25 @@
+     return "「" + s.replace(/^[「『]+|[」』]+$/g, "") + "」";
+   }
+ 
++  /* 读档 / 新游戏时按存档重置「当前是不是特殊场面」（标记归 WA2.chat 管） */
++  function setSceneFlag(isSpecial) {
++    try {
++      if (window.WA2 && WA2.chat && WA2.chat.setSceneFlag) WA2.chat.setSceneFlag(!!isSpecial);
++      else document.body.dataset.hscene = isSpecial ? "1" : "0";
++    } catch (e) {}
++  }
++
++
++  loadActiveId();
++
++  /* 记住当前角色 id：存档要用它做绑定（别依赖 game.js 里的局部变量） */
++  function loadActiveId() {
++    return fetch("/api/character/list", { cache: "no-store" })
++      .then(function (r) { return r.json(); })
++      .then(function (d) { window.__activeCharId = (d && d.active) || ""; return window.__activeCharId; })
++      .catch(function () { return ""; });
++  }
++
+   function sessionRestore() {
+     return fetch("/api/session/load?slot=auto", { cache: "no-store" })
+       .then(function (r) { return r.json(); })
+@@ -85,19 +104,34 @@
+         if (!d.messages || !d.messages.length) return false;
+         applyHistory(d.messages);
+         const meta = d.meta || {};
++        /* 存档绑定角色：读档自动切回去（不 await，切完让页面自己刷新） */
++        try {
++          if (meta.char && meta.char !== (window.__activeCharId || "")) {
++            fetch("/api/character/switch", { method: "POST",
++              headers: { "Content-Type": "application/json" },
++              body: JSON.stringify({ id: meta.char }) }).then(function () {
++                window.__activeCharId = meta.char || window.__activeCharId;
++              }).catch(function () {});
++          }
++        } catch (e) {}
+         if (meta.bg) { setBg(meta.bg); }
+         else if (!currentBgName()) { setBg("classroom"); }   /* 旧档没存背景：别让它是空的，否则之后存的档也空 */
+         if (meta.outfit) { WA2.state.outfit = meta.outfit; }
+         /* 立绘表情 / BGM 按存档还原（以前这里只还原背景，表情停在默认） */
+         try {
+-          var _spriteEmo = (meta.hscene === 1 || meta.hscene === "1") ? "H" : (meta.emo || "calm");
++          var _hsNow = (meta.hscene === 1 || meta.hscene === "1");
++          setSceneFlag(_hsNow);
++          try { WA2.voice.setEmotion(meta.emo || (_hsNow ? "H" : "calm")); } catch (e) {}
++          var _spriteEmo = _hsNow ? "H" : (meta.emo || "calm");
+           setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
+           if (meta.bgm) setBgm(meta.bgm, 600);
+         } catch (e) {}
+         var line = lastAssistant();
+         if (line.zh) {
+           try { showReply(quoteLine(line.zh)); } catch (e) { $("msgText").textContent = quoteLine(line.zh); }
+-          if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) speakLineJa(line.ja, line.emo || "");
++          if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) {
++            speakLineJa(line.ja, line.emo || window.__lastEmo || "");
++          }
+         }
+         if (meta.outfit) {
+           try { setSpriteByScene(meta.bg || "classroom", "calm", true, meta.outfit); } catch (e) {}
+@@ -145,14 +179,19 @@
+       if (meta.bg) { setBg(meta.bg); }
+       else if (!currentBgName()) { setBg("classroom"); }
+       if (meta.outfit) { WA2.state.outfit = meta.outfit; }
+-      var _spriteEmo = (meta.hscene === 1 || meta.hscene === "1") ? "H" : (meta.emo || "calm");
++      var _hsNow2 = (meta.hscene === 1 || meta.hscene === "1");
++      setSceneFlag(_hsNow2);
++      try { WA2.voice.setEmotion(meta.emo || (_hsNow2 ? "H" : "calm")); } catch (e) {}
++      var _spriteEmo = _hsNow2 ? "H" : (meta.emo || "calm");
+       setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
+       gdiRenderName(CHAR_NAME, $("namePlate"));
+       setBgm(meta.bgm || meta.emo || "calm", 600);
+       var line = lastAssistant();
+       if (line.zh) {
+         try { showReply(quoteLine(line.zh)); } catch (e) { $("msgText").textContent = quoteLine(line.zh); }
+-        if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) speakLineJa(line.ja, line.emo || "");
++        if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) {
++          speakLineJa(line.ja, line.emo || window.__lastEmo || "");
++        }
+       }
+       try { rebuildBacklog(); } catch (e) {}
+       /* 存档里存着「还没选的分支」：摆回来，并且不要抢输入框焦点 */
+@@ -172,6 +211,7 @@
+       emo: (window.__lastEmo || ""),
+       /* 当时是不是成人场面：表情标签可能被写成 calm，光靠 emo 会还原成平静脸 */
+       hscene: (document.body.dataset.hscene === "1") ? 1 : 0,
++      char: (window.__activeCharId || ""),
+       bgm: (WA2.audio && WA2.audio.current) || "",
+       at: Date.now()
+     };
+diff --git a/program/src/ui/wt-sprite.js b/program/src/ui/wt-sprite.js
+index 80df8d4..8d688a2 100644
+--- a/program/src/ui/wt-sprite.js
++++ b/program/src/ui/wt-sprite.js
+@@ -28,6 +28,32 @@
+ 
+   var SPRITE_INDEX = {};       // 衣服名 -> {code, label, default, emotions, variants}
+   var currentSprite = null;
++  var SPRITE_CHAR = "";        // 当前立绘用哪个角色（空 = 当前激活角色）
++  var INDEX_CACHE = {};        // 角色 -> 他的服装表
++
++  /* 按角色拉服装表；同一角色只拉一次 */
++  function useCharacter(cid, cb) {
++    var want = cid || "";
++    if (want === SPRITE_CHAR) { if (cb) cb(); return; }
++    var apply = function (map) {
++      Object.keys(SPRITE_INDEX).forEach(function (k) { delete SPRITE_INDEX[k]; });
++      Object.assign(SPRITE_INDEX, map || {});
++      SPRITE_CHAR = want;
++      currentSprite = null;      // 强制重画
++      if (cb) cb();
++    };
++    if (INDEX_CACHE[want]) { apply(INDEX_CACHE[want]); return; }
++    var url = "/api/character/sprite/index.json" + (want ? "?char=" + encodeURIComponent(want) : "");
++    fetch(url, { cache: "no-store" })
++      .then(function (r) { return r.json(); })
++      .then(function (d) {
++        var m = (d && d.outfits) || {};
++        if (!Object.keys(m).length && want) { apply({}); return; }   // 没立绘：空表即可
++        INDEX_CACHE[want] = m;
++        apply(m);
++      })
++      .catch(function () {});
++  }
+ 
+   function loadIndex(cb) {
+     fetch("/api/character/sprite/index.json", { cache: "no-store" })
+@@ -138,11 +164,26 @@
+ 
+   function spritePath(outfit, emotion) {
+     var o = SPRITE_INDEX[outfit];
++    if (!o) {
++      /* 这个角色没有当前这套衣服：用她自己表里带 default 的那套 */
++      var keys = Object.keys(SPRITE_INDEX);
++      for (var i = 0; i < keys.length; i++) {
++        if (SPRITE_INDEX[keys[i]] && SPRITE_INDEX[keys[i]].default) {
++          outfit = keys[i];
++          o = SPRITE_INDEX[outfit];
++          break;
++        }
++      }
++      if (!o && keys.length) { outfit = keys[0]; o = SPRITE_INDEX[outfit]; }
++    }
+     if (!o) return "assets/kaz_cold.png";
+     var u = function (name) {
+       var url = "/api/character/sprite/" + encodeURIComponent(outfit) + "/" + encodeURIComponent(name);
++      var q = [];
++      if (SPRITE_CHAR) q.push("char=" + encodeURIComponent(SPRITE_CHAR));
+       /* #20 热重载：换了图之后靠 ?v= 让 WebView2 重新取，不然还吃旧缓存 */
+-      if (WA2.assetsVer) url += "?v=" + WA2.assetsVer;
++      if (WA2.assetsVer) q.push("v=" + WA2.assetsVer);
++      if (q.length) url += "?" + q.join("&");
+       return url;
+     };
+     var file = pickEmotion(o, emotion);
+@@ -237,7 +278,7 @@
+   // 兼容老调用点（game.js / menubar.js 直接用了这些全局名）
+   window.__reloadSprites = function () { reload(window.__curBg || "classroom", window.__lastEmo || ""); };
+   var _exp = {};
+-  var _names = ["loadIndex", "outfitOf", "reload", "refreshCurrent", "resolveOutfit", "setSpriteByScene", "spritePath", "summary"];
++  var _names = ["useCharacter", "loadIndex", "outfitOf", "reload", "refreshCurrent", "resolveOutfit", "setSpriteByScene", "spritePath", "summary"];
+   for (var _i = 0; _i < _names.length; _i++) {
+     try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
+   }
+diff --git a/program/src/ui/wt-voice.js b/program/src/ui/wt-voice.js
+index 62d82b2..35279d5 100644
+--- a/program/src/ui/wt-voice.js
++++ b/program/src/ui/wt-voice.js
+@@ -18,6 +18,12 @@
+     }
+   }
+ 
++  /* 读档 / 外部需要重置情绪时走这里，别再直接写全局 */
++  function setEmotion(e) {
++    window.__lastEmo = (e || '') + '';
++    return window.__lastEmo;
++  }
++
+   function stopSpeak() {
+     try { if (_voiceResolve) { _voiceResolve(false); _voiceResolve = null; } } catch (e) {}
+     if (ttsAudio) { try { ttsAudio.pause(); } catch (e) {} ttsAudio = null; }
+@@ -60,15 +66,47 @@
+   }
+ 
+   /** 合成语音并返回 Audio（失败或超时返回 null） */
+-  function fetchVoice(text, timeoutMs) {
++  /* 这次合成该用哪个情绪参考：
++     模型标签优先，但当前场面是特殊场面时，平静/温柔/空 一律按特殊参考走
++     （后端只会纠正很短的纯拟声句，稍长的台词会漏过去，听起来就变平静）。 */
++  function emoFor(text) {
++    var e = (window.__lastEmo || (window.emoOf ? window.emoOf(text) : "") || "").trim();
++    var low = e.toLowerCase();
++    try {
++      if (document.body.dataset.hscene === "1" &&
++          (!e || low === "calm" || low === "soft" || low === "neutral" || low === "calm(平静)")) {
++        e = "H";
++      }
++    } catch (err) {}
++    return e;
++  }
++
++  /* 这句该按什么语言合成：
++     · 有日文原文（单角色正常对话）→ ja；
++     · 没有日文原文但知道说话人（导演写的台词）→ ja，让后端先翻成日文；
++     · 其它情况尊重设置（默认 zh）。 */
++  function voiceLangFor(text, speaker) {
++    if (window.__speakJa) return "ja";
++    if (speaker) return "ja";
++    return currentVoiceLang();
++  }
++
++  /* 说话人 → &char=xxx（队列里别人的台词要用他自己的音色） */
++  function charQ(speaker) {
++    var s = (speaker || "").trim();
++    return s ? "&char=" + encodeURIComponent(s) : "";
++  }
++
++  function fetchVoice(text, timeoutMs, speaker) {
+     if (!ttsOn) return Promise.resolve(null);
+     /* 把这次真正用到的参数记下来：回想重放要原样复用，否则参数一漂就缓存未命中
+        （用户报「同一句话重放还要等加载」）。 */
+     try {
+       window.__lastVoiceReq = {
+         t: text,
+-        l: currentVoiceLang(),
+-        e: (window.__lastEmo || (window.emoOf ? window.emoOf(text) : "") || "")
++        l: voiceLangFor(text, speaker),
++        e: emoFor(text),
++        c: speaker || ""
+       };
+     } catch (e) {}
+     return new Promise((resolve) => {
+@@ -89,8 +127,8 @@
+         setTimeout(function () {
+           if (done) return;
+           done = true;
+-          fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() +
+-                "&emotion=" + (window.__lastEmo || emoOf(text)) +
++          fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + voiceLangFor(text, speaker) +
++                "&emotion=" + encodeURIComponent(emoFor(text)) + charQ(speaker) +
+                 (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""))
+             .then(function (r) { if (!r.ok) throw new Error("tts " + r.status); return r.blob(); })
+             .then(function (blob) {
+@@ -103,7 +141,7 @@
+         }, 1500);
+         return;
+       }, _budget);
+-      fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() + "&emotion=" + (window.__lastEmo || emoOf(text)) + (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""), ctrl ? { signal: ctrl.signal } : {})
++      fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + voiceLangFor(text, speaker) + "&emotion=" + encodeURIComponent(emoFor(text)) + charQ(speaker) + (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""), ctrl ? { signal: ctrl.signal } : {})
+         .then((r) => {
+           if (!r.ok) throw new Error("tts " + r.status);
+           return r.blob();
+@@ -144,21 +182,21 @@
+       });
+   }
+ 
+-  function speakLineJa(ja, emo) {
++  function speakLineJa(ja, emo, speaker) {
+     if (!ttsOn) return;
+     var clean = (ja || "").replace(/^[「『]|[」』]$/g, "").trim();
+     if (!clean) return;
+     window.__speakJa = clean;
+   window.__lastEmo = emo || window.__lastEmo || "soft";
+-    waitTtsReady(function () { speakReply(clean); }, 60);
++    waitTtsReady(function () { speakReply(clean, null, speaker); }, 60);
+   }
+ 
+   /* 播放并**等它播完**再 resolve —— 自动续说靠这个避免"语音没说完就下一句"。
+      onStart：音频真正开始播放时回调一次，文字/立绘要跟它同时出，
+      不能等播完（否则就是「语音响了，字还没出」）。 */
+-  function speakReply(text, onStart) {
++  function speakReply(text, onStart, speaker) {
+     stopSpeak();
+-    return fetchVoice(text).then((a) => new Promise((resolve) => {
++    return fetchVoice(text, 0, speaker).then((a) => new Promise((resolve) => {
+       if (!a) { resolve(false); return; }
+       ttsAudio = a;
+       _voiceResolve = resolve;          /* stopSpeak 里用它收尾，别让 Promise 挂着 */
+@@ -186,7 +224,7 @@
+   }
+   var _voiceResolve = null;
+   var _exp = {};
+-  var _names = ["_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak",
++  var _names = ["setEmotion", "emoFor", "_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak",
+                 "suspendForDevice", "resumeAfterDevice", "waitTtsReady"];
+   for (var _i = 0; _i < _names.length; _i++) {
+     try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}
+@@ -194,7 +232,7 @@
+   WA2.voice = _exp;
+   WA2.register("voice", _exp);
+   /* __export_all__ */
+-  ["_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak", "waitTtsReady", "WA2", "_exp", "_names", "a", "clean", "ctrl", "done", "emoOf", "timer", "ttsAudio", "url"].forEach(function (n) {
++  ["emoFor", "_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak", "waitTtsReady", "WA2", "_exp", "_names", "a", "clean", "ctrl", "done", "emoOf", "timer", "ttsAudio", "url"].forEach(function (n) {
+     try { var v = eval(n); if (v !== undefined) { window[n] = v; } } catch (e) {}
+   });
+ })();
+diff --git a/program/src/version.py b/program/src/version.py
+index 585eaa5..08f94db 100644
+--- a/program/src/version.py
++++ b/program/src/version.py
+@@ -1,7 +1,7 @@
+ # -*- coding: utf-8 -*-
+ """版本号与更新检查的常量（发布时改这里 + 仓库根目录 version.json）。"""
+ 
+-VERSION = "2026-11-09.1"                     # 本机版本：YYYY-MM-DD.N
++VERSION = "2026-11-10.1"                     # 本机版本：YYYY-MM-DD.N
+ REPO = "yiyusen1229-eng/ai-chat-ui-arch"     # GitHub 仓库
+ RAW_VERSION_URL = "https://raw.githubusercontent.com/%s/master/version.json" % REPO
+ REPO_URL = "https://github.com/%s" % REPO
+diff --git a/program/tools/arch_map.py b/program/tools/arch_map.py
+index bed5c4e..0639861 100644
+--- a/program/tools/arch_map.py
++++ b/program/tools/arch_map.py
+@@ -45,6 +45,7 @@ LEVELS = {
+     "cast.py": ("二级 · 角色", "本场阵容：谁在场、谁是主角、龙套；连接状态汇总"),
+     "director.py": ("二级 · 剧情", "导演骨架：幕/拍计划、导演提示词、占位拍（暂不接模型）"),
+     "playqueue.py": ("二级 · 剧情", "播放队列（后端内存）：入队/取一条/清空/快照"),
++    "actor.py": ("二级 · 剧情", "角色开口：导演给意图，角色自己的模型写一句日语台词"),
+     "characters.py": ("二级 · 角色", "角色文件夹/切换/立绘索引"),
+     "char_res.py": ("二级 · 角色", "角色资源定位与状态"),
+     "char_pack.py": ("二级 · 角色", "角色包导出/导入（zip）"),
+diff --git a/program/tools/import_bgm.py b/program/tools/import_bgm.py
+new file mode 100644
+index 0000000..86a217a
+--- /dev/null
++++ b/program/tools/import_bgm.py
+@@ -0,0 +1,126 @@
++# -*- coding: utf-8 -*-
++"""把解包目录里的 41 首 BGM 全部转成 mp3 并接进曲库。
++
++映射规则：
++  · 原曲库里已有的 8 首（menu/kazusa/calm/warm/sad/toukanai/tense/answer）
++    用同一首 FLAC 重新压一遍，覆盖原来的 mp3（旧的是低码率，重压后音质更好）；
++  · 其余 33 首新增为 id 8..，文件名 bgm_nNN.mp3，并给每首标一个「氛围槽」；
++  · catalog.json 里每首带 slot 字段，前端按槽轮播（以后加歌只改 catalog 就行）。
++"""
++import io
++import json
++import os
++import re
++import subprocess
++
++SRC = r"E:\IDM下载目录\解包\BGM"
++OUT = r"program/res/assets/snd"
++FFMPEG = r"other/dev/tts/GPT-SoVITS/runtime/ffmpeg.exe"
++
++# 原曲库 8 首：源文件 → 目标文件名（slot 沿用）
++LEGACY = [
++    ("主菜单背景音乐.flac", "bgm_menu.mp3", "menu"),
++    ("POWDER SNOW PIANO 〜kazusa〜 - AQUAPLUS.flac", "bgm_kazusa.mp3", "kazusa"),
++    ("静かな冬の夜 - AQUAPLUS.flac", "bgm_calm.mp3", "calm"),
++    ("穏やかに過ぎゆく時 (缓缓而逝的时间) - AQUAPLUS.flac", "bgm_warm.mp3", "warm"),
++    ("ためいき (叹息) - AQUAPLUS.flac", "bgm_sad.mp3", "sad"),
++    ("届かない恋 (无法传达的爱恋 Live at CampusFes)(Piano version) - AQUAPLUS.flac", "bgm_toukanai.mp3", "sad"),
++    ("氷の刃 (冰之刃) - AQUAPLUS.flac", "bgm_tense.mp3", "tense"),
++    ("Answer - AQUAPLUS.flac", "bgm_answer.mp3", "answer"),
++]
++
++# 其余 33 首：源文件 → (显示名, slot)
++EXTRA = [
++    ("After All〜綴る想い〜 (instrumental) - AQUAPLUS.flac", "After All〜綴る想い〜 (instrumental)", "sad"),
++    ("boy meets girl and girl - AQUAPLUS.flac", "boy meets girl and girl", "comic"),
++    ("closing (Acoustic Guitar) - AQUAPLUS.flac", "closing (Acoustic Guitar)", "sad"),
++    ("closing instrumental (Instrumental) - AQUAPLUS.flac", "closing (instrumental)", "sad"),
++    ("Dear Friends - AQUAPLUS.flac", "Dear Friends", "warm"),
++    ("Honesty - AQUAPLUS.flac", "Honesty", "warm"),
++    ("POWDER SNOW Guitar solo - AQUAPLUS.flac", "POWDER SNOW Guitar solo", "kazusa"),
++    ("POWDER SNOW PIANO 2010 - AQUAPLUS.flac", "POWDER SNOW PIANO 2010", "kazusa"),
++    ("SLAPSTICK STREET - AQUAPLUS.flac", "SLAPSTICK STREET", "comic"),
++    ("Snowfalls - AQUAPLUS.flac", "Snowfalls", "calm"),
++    ("Sunshine Day - AQUAPLUS.flac", "Sunshine Day", "warm"),
++    ("Twinkle Snow (Piano quartet) - AQUAPLUS.flac", "Twinkle Snow (Piano quartet)", "answer"),
++    ("Twinkle Snow instrumental (Instrumental) - AQUAPLUS.flac", "Twinkle Snow (instrumental)", "answer"),
++    ("あの頃のように - AQUAPLUS.flac", "あの頃のように", "warm"),
++    ("いつか見た景色 - AQUAPLUS.flac", "いつか見た景色", "calm"),
++    ("イルミネーションタウン - AQUAPLUS.flac", "イルミネーションタウン", "comic"),
++    ("キャンドルライト - AQUAPLUS.flac", "キャンドルライト", "calm"),
++    ("愛する心 (爱恋之心) - 津田朱里.flac", "愛する心", "warm"),
++    ("愛する心instrumental (爱恋之心)(Instrumental) - AQUAPLUS.flac", "愛する心 (instrumental)", "warm"),
++    ("愛する心Music Box (爱恋之心)(Music Box) - AQUAPLUS.flac", "愛する心 (Music Box)", "warm"),
++    ("本当の、嘘 (真正的谎言) - AQUAPLUS.flac", "本当の、嘘", "tense"),
++    ("冬の街路樹 - AQUAPLUS.flac", "冬の街路樹", "calm"),
++    ("見果てぬ夢 (无止境的梦) - AQUAPLUS.flac", "見果てぬ夢", "sad"),
++    ("綺麗で儚いもの - AQUAPLUS.flac", "綺麗で儚いもの", "calm"),
++    ("溶け合う心 (相融的心) - AQUAPLUS.flac", "溶け合う心", "warm"),
++    ("聖夜 - AQUAPLUS.flac", "聖夜", "calm"),
++    ("時の魔法 (时间的魔法)(Music Box) - AQUAPLUS.flac", "時の魔法 (Music Box)", "warm"),
++    ("誰かが傷ついても (两败俱伤) - AQUAPLUS.flac", "誰かが傷ついても", "tense"),
++    ("吐露 - AQUAPLUS.flac", "吐露", "tense"),
++    ("心はいつもあなたのそばにinstrumental (我的心永远在你的身边)(Instrumental) - AQUAPLUS.flac",
++     "心はいつもあなたのそばに (instrumental)", "warm"),
++    ("言葉にできない想い - AQUAPLUS.flac", "言葉にできない想い", "sad"),
++    ("優しい嘘Piano (温柔的谎言)(Piano) - AQUAPLUS.flac", "優しい嘘 (Piano)", "sad"),
++    ("最後に残るもの (最后残存之物) - AQUAPLUS.flac", "最後に残るもの", "sad"),
++]
++
++
++def convert(src_name, dst_name):
++    src = os.path.join(SRC, src_name)
++    dst = os.path.join(OUT, dst_name)
++    if not os.path.isfile(src):
++        return "缺失"
++    cmd = [FFMPEG, "-y", "-loglevel", "error", "-i", src,
++           "-codec:a", "libmp3lame", "-b:a", "128k", "-map_metadata", "-1", dst]
++    r = subprocess.run(cmd, capture_output=True)
++    return "ok" if r.returncode == 0 and os.path.isfile(dst) else ("失败 " + r.stderr.decode("utf-8", "replace")[:60])
++
++
++def main():
++    ok, bad = 0, []
++    for src_name, dst_name, _slot in LEGACY:
++        r = convert(src_name, dst_name)
++        if r == "ok":
++            ok += 1
++        else:
++            bad.append((src_name, r))
++    for i, (src_name, _disp, _slot) in enumerate(EXTRA, start=8):
++        r = convert(src_name, "bgm_n%02d.mp3" % i)
++        if r == "ok":
++            ok += 1
++        else:
++            bad.append((src_name, r))
++
++    items = []
++    for idx, (src_name, dst_name, slot) in enumerate(LEGACY):
++        disp = {
++            "bgm_menu.mp3": "主菜单",
++            "bgm_kazusa.mp3": "POWDER SNOW 〜kazusa〜",
++            "bgm_calm.mp3": "静かな冬の夜",
++            "bgm_warm.mp3": "穏やかに過ぎゆく時",
++            "bgm_sad.mp3": "ためいき",
++            "bgm_toukanai.mp3": "届かない恋 (Piano)",
++            "bgm_tense.mp3": "氷の刃",
++            "bgm_answer.mp3": "Answer",
++        }[dst_name]
++        items.append({"id": idx, "file": dst_name, "name": disp, "slot": slot})
++    for i, (src_name, disp, slot) in enumerate(EXTRA, start=8):
++        items.append({"id": i, "file": "bgm_n%02d.mp3" % i, "name": disp, "slot": slot})
++
++    path = os.path.join(OUT, "catalog.json")
++    cat = json.loads(io.open(path, encoding="utf-8").read())
++    cat["bgm"] = items
++    io.open(path, "w", encoding="utf-8").write(json.dumps(cat, ensure_ascii=False, indent=2))
++    print("转换成功 %d 首，失败 %d 首" % (ok, len(bad)))
++    for b in bad:
++        print("   ", b)
++    print("catalog: %d 首 BGM" % len(items))
++    from collections import Counter
++    print("按槽统计:", dict(Counter(x["slot"] for x in items)))
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/program/tools/test_hscene_gate.py b/program/tools/test_hscene_gate.py
+new file mode 100644
+index 0000000..e4a5eda
+--- /dev/null
++++ b/program/tools/test_hscene_gate.py
+@@ -0,0 +1,45 @@
++# -*- coding: utf-8 -*-
++"""验证场面判定：日常对话不该判成特殊，真正的特殊场面仍要判出来。"""
++import sys
++import os
++
++sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build_env"))
++
++import hscene
++
++DAILY = [
++    [{"role": "assistant", "content": "……まだ、そんなこと言ってるの", "zh": "……你还在说这种话啊"}],
++    [{"role": "assistant", "content": "だめだよ、そんなの", "zh": "不行的啦，那种事"}],
++    [{"role": "assistant", "content": "そこ、座ってていいから", "zh": "你在那儿坐着就好"}],
++    [{"role": "assistant", "content": "もっと練習しないとね", "zh": "得多练练才行呢"}],
++    [{"role": "assistant", "content": "……べつに。まだ時間あるし", "zh": "……没什么。还有时间"}],
++    [{"role": "user", "content": "今天也一起回去吧", "zh": "今天也一起回去吧"},
++     {"role": "assistant", "content": "……好きにすれば", "zh": "……随你便"}],
++]
++
++SPECIAL = [
++    [{"role": "assistant", "content": "んっ…だめ、そこ…っ", "zh": "嗯…不行，那里…"}],
++    [{"role": "assistant", "content": "はぁっ…まだ、いってる…っ", "zh": "哈…还在去…"}],
++    [{"role": "user", "content": "腰を上げて", "zh": "抬起腰"},
++     {"role": "assistant", "content": "むり…っ、うごけない…", "zh": "不行…动不了…"}],
++]
++
++bad = 0
++print("— 日常对话（应判否）—")
++for msgs in DAILY:
++    r = hscene.is_intimate(msgs)
++    tag = "ok " if not r else "误判"
++    if r:
++        bad += 1
++    print("  %s %s" % (tag, msgs[-1]["content"][:24]))
++
++print("— 特殊场面（应判是）—")
++for msgs in SPECIAL:
++    r = hscene.is_intimate(msgs)
++    tag = "ok " if r else "漏判"
++    if not r:
++        bad += 1
++    print("  %s %s" % (tag, msgs[-1]["content"][:24]))
++
++print("问题数:", bad)
++sys.exit(1 if bad else 0)
+diff --git a/program/tools/test_mood_bgm.js b/program/tools/test_mood_bgm.js
+index bc65271..9c99c2b 100644
+--- a/program/tools/test_mood_bgm.js
++++ b/program/tools/test_mood_bgm.js
+@@ -44,7 +44,7 @@ console.log("[1] 模型 <emotion> → BGM 槽位");
+   const { mood } = boot();
+   const cases = [
+     ["沉重", "tense"], ["毒舌", "calm"], ["问句", "calm"], ["calm", "calm"],
+-    ["soft", "warm"], ["撒娇", "warm"], ["调侃吐槽", "warm"], ["哭腔", "sad"]
++    ["soft", "warm"], ["撒娇", "warm"], ["调侃吐槽", "comic"], ["哭腔", "sad"]
+   ];
+   for (const [emo, want] of cases) {
+     check(emo + " → " + want, mood.bgmSlot("随便一句", emo) === want, mood.bgmSlot("随便一句", emo));
+diff --git a/version.json b/version.json
+index 1a8330d..2f44744 100644
+--- a/version.json
++++ b/version.json
+@@ -1,5 +1,5 @@
+ {
+-  "version": "2026-11-09.1",
++  "version": "2026-11-10.1",
+   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
+-  "notes": "多角色与导演（框架+接入模型）/ 角色卡与阵容 / 角色级模型与语音 / 设置页精简"
++  "notes": "多角色：台词由角色自己写 / 语音一对一进程 / 立绘按说话人 / 存档绑定角色"
+ }
+\ No newline at end of file
