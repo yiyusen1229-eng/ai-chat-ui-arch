@@ -50,7 +50,8 @@
   var slotRound = {};
 
   function nextTrack(slot) {
-    var list = SLOT_TRACKS[slot] || [slot];
+    var list = SLOT_TRACKS[slot] || [];
+    if (!list.length) { slot = "calm"; list = SLOT_TRACKS[slot] || [slot]; }
     var i = (slotRound[slot] = (slotRound[slot] || 0) + 1) - 1;
     return list[i % list.length];
   }
@@ -71,7 +72,7 @@
     "沉重": "tense",
     /* 新标签：按"这段该配什么氛围"归到四个槽位 */
     "紧张": "tense",
-    "激动": "answer",
+    "激动": "warm",
     "委屈巴巴": "sad",
     "自怨自艾": "sad",
     "故作轻松": "calm",
@@ -89,11 +90,11 @@
   ];
 
   /* 唱歌 / 演出这类场面：热闹、往上走，不该配「氷の刃」这种紧张曲 */
-  var MUSIC_RE = /歌|唱|舞台|学园祭|学園祭|演奏|合练|排练|ライブ|バンド|乐队|主唱|合唱/i;
+  var MUSIC_RE = /歌|唱|舞台|学园祭|學園祭|演奏|合练|排练|ライブ|バンド|乐队|主唱|合唱/i;
 
   function bgmSlot(text, emo) {
     var e = (emo || "").trim();
-    if (MUSIC_RE.test(text || "")) return "answer";
+    if (MUSIC_RE.test(text || "")) return "kazusa";   /* 她唱的就是 POWDER SNOW 这一族 */
     if (e && EMO_BGM[e]) return EMO_BGM[e];
     var t = text || "";
     for (var i = 0; i < TEXT_SLOT.length; i++) {
