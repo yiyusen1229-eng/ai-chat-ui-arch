@@ -685,8 +685,12 @@ def available():
         return False
 
 
-def _post(path, timeout=30):
-    with urllib.request.urlopen(URL + path, timeout=timeout) as r:
+def _post(path, timeout=30, port=0):
+    """POST 到语音服务；port 非 0 时走进程池里的指定端口"""
+    base = URL
+    if port:
+        base = "http://%s:%d" % (bind_host(), port)
+    with urllib.request.urlopen(base + path, timeout=timeout) as r:
         return r.read()
 
 
@@ -705,6 +709,7 @@ def state():
         "active_gpt": os.path.basename(m.get("gpt") or GPT_W),
         "active_sovits": os.path.basename(m.get("sovits") or SOVITS_W),
         "refs_owner": os.path.basename(os.path.dirname(refs_dir() or "")),
+        "pool": {k: {"port": v.get("port"), "ready": bool(v.get("ready"))} for k, v in _SERVERS.items()},
         "last_ref": os.path.basename(_last_ref or ""),
         "last_ref_dir": os.path.basename(os.path.dirname(_last_ref or "")),
         "ready": bool(_ready),
@@ -761,6 +766,101 @@ def _child_env():
     except Exception:
         pass
     return env
+
+
+# ---------------------------------------------------------------- 进程池
+# 每个角色一个常驻进程：端口 9881 起，各自加载自己的权重，互不干扰。
+_SERVERS = {}            # dirname -> {"port": int, "proc": Popen|None, "ready": bool, "key": str}
+_POOL_BASE_PORT = 9881
+
+
+def _pool_enabled():
+    return (os.environ.get("WA2_TTS_POOL", "1") or "1") != "0"
+
+
+def _char_key(cid):
+    """角色目录名当池的 key（空 = 当前激活角色）"""
+    if not cid:
+        return os.path.basename(characters.active_dir() or "")
+    return os.path.basename(_active_dir() or "")
+
+
+def _server_for(cid):
+    """拿到（必要时拉起）这个角色的进程，返回端口；失败返回 0"""
+    if not _pool_enabled():
+        return 0
+    key = _char_key(cid)
+    if not key:
+        return 0
+    ent = _SERVERS.get(key)
+    if ent and ent.get("bad"):
+        return 0            # 之前失败过：不再尝试，交给共享进程
+    if ent and ent.get("ready"):
+        return ent["port"]
+    # 分配端口
+    used = {e["port"] for e in _SERVERS.values()}
+    port = _POOL_BASE_PORT
+    while port in used:
+        port += 1
+    try:
+        cfg = _write_pool_cfg(port, key)
+        proc = subprocess.Popen(
+            [PY, API_PY, "-a", bind_host(), "-p", str(port), "-c", cfg],
+            cwd=GSV, env=_child_env(),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=0x08000000 if os.name == "nt" else 0,
+        )
+        _SERVERS[key] = {"port": port, "proc": proc, "ready": False, "key": key}
+        import socket, time
+        t0 = time.time()
+        while time.time() - t0 < READY_TIMEOUT_S:
+            try:
+                with socket.create_connection((bind_host(), port), timeout=2):
+                    _SERVERS[key]["ready"] = True
+                    return port
+            except Exception:
+                time.sleep(1.0)
+        return 0
+    except Exception:
+        _SERVERS.pop(key, None)
+        return 0
+
+
+def _write_pool_cfg(port, key):
+    """给这个进程写一份配置：custom 段指向该角色的权重。"""
+    base = os.path.join(GSV, "GPT_SoVITS", "configs", "tts_infer.yaml")
+    src = io.open(base, encoding="utf-8").read()
+    m = _character_tts_for(key) or {}
+    gpt = m.get("gpt") or GPT_W
+    sovits = m.get("sovits") or SOVITS_W
+    import re as _re
+    out = _re.sub(r'(?ms)^custom:\n(?:[ \t].*\n)+',
+                  "custom:\n"
+                  "  bert_base_path: GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large\n"
+                  "  cnhuhbert_base_path: GPT_SoVITS/pretrained_models/chinese-hubert-base\n"
+                  "  device: cuda\n"
+                  "  is_half: true\n"
+                  "  t2s_weights_path: \"%s\"\n"
+                  "  version: v4\n"
+                  "  vits_weights_path: \"%s\"\n" % (gpt.replace("\\", "/"), sovits.replace("\\", "/")),
+                  src, count=1)
+    dst = os.path.join(GSV, "GPT_SoVITS", "configs", "tts_infer_%d.yaml" % port)
+    io.open(dst, "w", encoding="utf-8").write(out)
+    return dst
+
+
+def _character_tts_for(key):
+    """按角色目录名取权重（不依赖 _voice_char）"""
+    try:
+        d = os.path.join(characters.root(), key, "voice_model")
+        if os.path.isdir(d):
+            ckpt = [f for f in os.listdir(d) if f.lower().endswith(".ckpt")]
+            pth = [f for f in os.listdir(d) if f.lower().endswith(".pth")]
+            if ckpt and pth:
+                return {"gpt": os.path.join(d, ckpt[0]), "sovits": os.path.join(d, pth[0])}
+    except Exception:
+        pass
+    return {}
 
 
 def start():
@@ -1111,15 +1211,33 @@ def synthesize(text, lang="zh", timeout=SYNTH_TIMEOUT_S, emo="neutral", char="")
         if char and char != _prev_char:
             _voice_char = char
             _refs_sig = ""          # 强制重扫该角色的参考音频
+        # 进程池：这个角色有常驻服务就直接用，不用切权重
+        _port = 0
+        if char:
+            try:
+                _port = _server_for(char) or 0
+            except Exception:
+                _port = 0
         try:
-            return _synthesize_inner(text, lang, timeout, emo)
+            data = _synthesize_inner(text, lang, timeout, emo, port=_port)
+            if not data and _port:
+                # 这个角色的常驻进程不可用（显存不够 / 加载失败）：
+                # 标记它，之后这个角色一律走共享进程（切权重）。
+                try:
+                    _SERVERS[_char_key(char)]["bad"] = True
+                    import applog
+                    applog.log("语音进程池：%s 的进程不可用，改用共享进程" % char, "WARN")
+                except Exception:
+                    pass
+                data = _synthesize_inner(text, lang, timeout, emo, port=0)
+            return data
         finally:
             if char:
                 _voice_char = _prev_char
                 _refs_sig = ""
 
 
-def _synthesize_inner(text, lang, timeout, emo):
+def _synthesize_inner(text, lang, timeout, emo, port=0):
     global _last_err, _ready
     if not _ready:
         return None
@@ -1139,7 +1257,7 @@ def _synthesize_inner(text, lang, timeout, emo):
     except Exception:
         _cp = None
     if True:      # 锁已经在 synthesize() 外层拿过（Lock 不可重入）
-        if not _ensure_char_model():
+        if not port and not _ensure_char_model():
             return None
         if _cp:
             try:
@@ -1196,7 +1314,11 @@ def _synthesize_inner(text, lang, timeout, emo):
         })
         try:
             # 第一次合成要加载模型，给足时间
-            _data = _post("/tts?" + q, timeout=timeout)
+            # port=0 时保持老调用形状（自测里 _post 是被替换的桩函数，不接受新参数）
+            if port:
+                _data = _post("/tts?" + q, timeout=timeout, port=port)
+            else:
+                _data = _post("/tts?" + q, timeout=timeout)
             try:
                 if _data and _cp:
                     diag.count("tts.render")
