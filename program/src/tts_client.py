@@ -91,11 +91,38 @@ SOVITS_W = os.path.join(GSV, "GPT_SoVITS", "pretrained_models", "gsv-v4-pretrain
 _model_key = ""      # 合并版：当前已加载的角色语音配置签名
 
 
+# 合成时临时指定的角色（多角色配音用）：空 = 用当前激活角色
+_voice_char = ""
+
+
+def _active_dir():
+    """当前该用哪个角色的目录（可能被 synthesize 的 char 参数临时覆盖）。"""
+    if _voice_char:
+        try:
+            import characters
+            root = characters.root()
+            for cid in os.listdir(root):
+                d = os.path.join(root, cid)
+                if not os.path.isdir(d):
+                    continue
+                if cid == _voice_char:
+                    return d
+                try:
+                    if characters.display_name(cid) == _voice_char:
+                        return d
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    import characters
+    return characters.active_dir()
+
+
 def _char_json(name):
     """读当前角色文件夹里的可选配置文件；没有/坏了都返回 {}。"""
     try:
         import characters
-        p = os.path.join(characters.active_dir(), name)
+        p = os.path.join(_active_dir() or "", name)
         if os.path.isfile(p):
             import json
             with open(p, encoding="utf-8") as f:
@@ -115,7 +142,7 @@ def _character_tts():
     """
     try:
         import characters
-        vm = os.path.join(characters.active_dir() or "", "voice_model")
+        vm = os.path.join(_active_dir() or "", "voice_model")
         if os.path.isdir(vm):
             ckpt = [f for f in os.listdir(vm) if f.lower().endswith(".ckpt")]
             pth = [f for f in os.listdir(vm) if f.lower().endswith(".pth")]
@@ -977,7 +1004,7 @@ _NAME_CACHE = {"path": "", "mtime": 0, "pairs": []}
 def _name_pairs():
     try:
         import characters
-        p = os.path.join(characters.active_dir(), "pronunciation.json")
+        p = os.path.join(_active_dir() or "", "pronunciation.json")
         if not os.path.isfile(p):
             return []
         mt = os.path.getmtime(p)
@@ -1012,12 +1039,35 @@ def normalize_ja_names(text):
     return text
 
 
-def synthesize(text, lang="zh", timeout=SYNTH_TIMEOUT_S, emo="neutral"):
+def synthesize(text, lang="zh", timeout=SYNTH_TIMEOUT_S, emo="neutral", char=""):
     """返回 wav 字节；失败返回 None
 
     合成串行：GPT-SoVITS 的 api 同时来两个请求会抢模型，这里排队；
     排队时先看缓存，同一句重复播不会重复合成。
     """
+    global _last_err, _ready, _voice_char, _refs_sig
+    if not _ready:
+        return None
+    # 指定了别的角色：临时切目录（权重 + 参考音频），合成完恢复
+    _prev_char = _voice_char
+    if char and char != _prev_char:
+        _voice_char = char
+        try:
+            _refs_sig = ""          # 强制重扫该角色的参考音频
+        except Exception:
+            pass
+    try:
+        return _synthesize_inner(text, lang, timeout, emo)
+    finally:
+        if char:
+            _voice_char = _prev_char
+            try:
+                _refs_sig = ""
+            except Exception:
+                pass
+
+
+def _synthesize_inner(text, lang, timeout, emo):
     global _last_err, _ready
     if not _ready:
         return None

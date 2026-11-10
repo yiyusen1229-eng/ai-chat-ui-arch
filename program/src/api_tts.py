@@ -42,6 +42,8 @@ class TtsApi:
                     applog.log("重放：按当前场面用 H 参考（原标签 %r）" % (emotion,), "TTS")
                     emotion = "H"
             speak_ja = qs(q, ("speak_ja", "sp")).strip()
+            # 多角色：这句是谁说的就用谁的权重/参考音频（不传 = 当前激活角色）
+            speak_char = qs(q, ("char", "speaker", "who")).strip()
             if not text:
                 return self._json({"error": "empty"}, 400)
             if NO_MODELS:
@@ -64,10 +66,10 @@ class TtsApi:
                     lang = "zh"          # 翻译失败就退回中文
             if lang == "ja":
                 speak_text = tts_client.normalize_ja_names(speak_text)
-            applog.log("TTS 准备: lang=%s emo=%s 文本=%s (翻译耗时 %.1fs)"
-                       % (lang, emotion, speak_text[:24], time.time() - t_t0), "TTS")
+            applog.log("TTS 准备: lang=%s emo=%s 角色=%s 文本=%s (翻译耗时 %.1fs)"
+                       % (lang, emotion, speak_char or "(当前)", speak_text[:24], time.time() - t_t0), "TTS")
             t_s0 = time.time()
-            data = tts_client.synthesize(speak_text, lang, emo=emotion)
+            data = tts_client.synthesize(speak_text, lang, emo=emotion, char=speak_char)
             applog.log("TTS 合成: %s 字节, 耗时 %.1fs"
                        % (len(data or b""), time.time() - t_s0), "TTS")
             if not data:

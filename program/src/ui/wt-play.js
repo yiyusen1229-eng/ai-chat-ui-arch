@@ -140,6 +140,17 @@
   }
 
   function syncFlags() {
+    /* 阵容里谁有音色：多角色时决定某句该不该出声 */
+    fetch("/api/cast/status", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var map = {};
+        ((d && d.cast && d.cast.members) || []).forEach(function (m) {
+          if (m && m.name) map[m.name] = !!m.voice;
+        });
+        window.__voiceMap = map;
+      })
+      .catch(function () {});
     fetch("/api/direct/status", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (d) {

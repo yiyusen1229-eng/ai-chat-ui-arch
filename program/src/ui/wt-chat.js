@@ -139,13 +139,19 @@
       var _ownName = "";
       try { if (typeof CHAR_NAME !== "undefined" && CHAR_NAME) _ownName = String(CHAR_NAME); } catch (e) {}
       var _canVoice = (_lineType === "her") && (!_speaker || _speaker === _ownName);
+      /* 队列里别的角色说话：他/她有自己的音色也照样念 */
+      try {
+        if (!_canVoice && _speaker && window.__voiceMap && window.__voiceMap[_speaker] === true) {
+          _canVoice = true;
+        }
+      } catch (e) {}
       /* 玩家永远不出语音；说话人没有音色也不出 */
       try {
         if (window.__playerName && _speaker === window.__playerName) _canVoice = false;
         if (_speaker && window.__voiceMap && window.__voiceMap[_speaker] === false) _canVoice = false;
       } catch (e) {}
       const voiceDone = _canVoice
-        ? speakReply(reply, renderNow).then(function () {
+        ? speakReply(reply, renderNow, _speaker).then(function () {
             renderNow();      /* 没有语音 / 播失败时兜底：文字照样要出 */
           })
         : Promise.resolve().then(function () {

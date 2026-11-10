@@ -75,7 +75,13 @@
     return e;
   }
 
-  function fetchVoice(text, timeoutMs) {
+  /* 说话人 → &char=xxx（队列里别人的台词要用他自己的音色） */
+  function charQ(speaker) {
+    var s = (speaker || "").trim();
+    return s ? "&char=" + encodeURIComponent(s) : "";
+  }
+
+  function fetchVoice(text, timeoutMs, speaker) {
     if (!ttsOn) return Promise.resolve(null);
     /* 把这次真正用到的参数记下来：回想重放要原样复用，否则参数一漂就缓存未命中
        （用户报「同一句话重放还要等加载」）。 */
@@ -83,7 +89,8 @@
       window.__lastVoiceReq = {
         t: text,
         l: currentVoiceLang(),
-        e: emoFor(text)
+        e: emoFor(text),
+        c: speaker || ""
       };
     } catch (e) {}
     return new Promise((resolve) => {
@@ -105,7 +112,7 @@
           if (done) return;
           done = true;
           fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() +
-                "&emotion=" + encodeURIComponent(emoFor(text)) +
+                "&emotion=" + encodeURIComponent(emoFor(text)) + charQ(speaker) +
                 (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""))
             .then(function (r) { if (!r.ok) throw new Error("tts " + r.status); return r.blob(); })
             .then(function (blob) {
@@ -118,7 +125,7 @@
         }, 1500);
         return;
       }, _budget);
-      fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() + "&emotion=" + encodeURIComponent(emoFor(text)) + (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""), ctrl ? { signal: ctrl.signal } : {})
+      fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() + "&emotion=" + encodeURIComponent(emoFor(text)) + charQ(speaker) + (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""), ctrl ? { signal: ctrl.signal } : {})
         .then((r) => {
           if (!r.ok) throw new Error("tts " + r.status);
           return r.blob();
@@ -159,21 +166,21 @@
       });
   }
 
-  function speakLineJa(ja, emo) {
+  function speakLineJa(ja, emo, speaker) {
     if (!ttsOn) return;
     var clean = (ja || "").replace(/^[「『]|[」』]$/g, "").trim();
     if (!clean) return;
     window.__speakJa = clean;
   window.__lastEmo = emo || window.__lastEmo || "soft";
-    waitTtsReady(function () { speakReply(clean); }, 60);
+    waitTtsReady(function () { speakReply(clean, null, speaker); }, 60);
   }
 
   /* 播放并**等它播完**再 resolve —— 自动续说靠这个避免"语音没说完就下一句"。
      onStart：音频真正开始播放时回调一次，文字/立绘要跟它同时出，
      不能等播完（否则就是「语音响了，字还没出」）。 */
-  function speakReply(text, onStart) {
+  function speakReply(text, onStart, speaker) {
     stopSpeak();
-    return fetchVoice(text).then((a) => new Promise((resolve) => {
+    return fetchVoice(text, 0, speaker).then((a) => new Promise((resolve) => {
       if (!a) { resolve(false); return; }
       ttsAudio = a;
       _voiceResolve = resolve;          /* stopSpeak 里用它收尾，别让 Promise 挂着 */
