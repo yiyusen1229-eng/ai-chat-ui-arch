@@ -1,5 +1,5 @@
 {
-  "version": "2026-11-09.1",
+  "version": "2026-11-10.1",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
-  "notes": "多角色与导演（框架+接入模型）/ 角色卡与阵容 / 角色级模型与语音 / 设置页精简"
+  "notes": "多角色：台词由角色自己写 / 语音一对一进程 / 立绘按说话人 / 存档绑定角色"
 }
