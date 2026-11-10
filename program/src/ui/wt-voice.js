@@ -75,6 +75,16 @@
     return e;
   }
 
+  /* 这句该按什么语言合成：
+     · 有日文原文（单角色正常对话）→ ja；
+     · 没有日文原文但知道说话人（导演写的台词）→ ja，让后端先翻成日文；
+     · 其它情况尊重设置（默认 zh）。 */
+  function voiceLangFor(text, speaker) {
+    if (window.__speakJa) return "ja";
+    if (speaker) return "ja";
+    return currentVoiceLang();
+  }
+
   /* 说话人 → &char=xxx（队列里别人的台词要用他自己的音色） */
   function charQ(speaker) {
     var s = (speaker || "").trim();
@@ -88,7 +98,7 @@
     try {
       window.__lastVoiceReq = {
         t: text,
-        l: currentVoiceLang(),
+        l: voiceLangFor(text, speaker),
         e: emoFor(text),
         c: speaker || ""
       };
@@ -111,7 +121,7 @@
         setTimeout(function () {
           if (done) return;
           done = true;
-          fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() +
+          fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + voiceLangFor(text, speaker) +
                 "&emotion=" + encodeURIComponent(emoFor(text)) + charQ(speaker) +
                 (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""))
             .then(function (r) { if (!r.ok) throw new Error("tts " + r.status); return r.blob(); })
@@ -125,7 +135,7 @@
         }, 1500);
         return;
       }, _budget);
-      fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + currentVoiceLang() + "&emotion=" + encodeURIComponent(emoFor(text)) + charQ(speaker) + (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""), ctrl ? { signal: ctrl.signal } : {})
+      fetch("/api/tts?text=" + encodeURIComponent(text) + "&lang=" + voiceLangFor(text, speaker) + "&emotion=" + encodeURIComponent(emoFor(text)) + charQ(speaker) + (window.__speakJa ? "&speak_ja=" + encodeURIComponent(window.__speakJa) : ""), ctrl ? { signal: ctrl.signal } : {})
         .then((r) => {
           if (!r.ok) throw new Error("tts " + r.status);
           return r.blob();
