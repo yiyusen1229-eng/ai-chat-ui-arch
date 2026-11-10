@@ -119,14 +119,22 @@
           }
           window.__nextScene = "";
           window.__nextOutfit = "";
-          /* 多角色：立绘跟着说话人走（没有立绘的角色保持原样） */
-          try {
-            if (WA2.sprite && WA2.sprite.useCharacter) {
-              var _ownNow = (typeof CHAR_NAME !== "undefined" && CHAR_NAME) ? String(CHAR_NAME) : "";
-              WA2.sprite.useCharacter(_speaker && _speaker !== _ownNow ? _speaker : "");
-            }
-          } catch (e) {}
-          setSpriteByScene((WA2.session && WA2.session.currentBg ? WA2.session.currentBg() : "") || "classroom", mood, true, _want);
+          /* 多角色：立绘跟着说话人走（没有立绘的角色保持原样）。
+             换角色要等服装表拉到再画，否则画的时候用的还是上一位的表。 */
+          var _spriteFor = function (cb) {
+            try {
+              if (WA2.sprite && WA2.sprite.useCharacter) {
+                var _ownNow = (typeof CHAR_NAME !== "undefined" && CHAR_NAME) ? String(CHAR_NAME) : "";
+                WA2.sprite.useCharacter(_speaker && _speaker !== _ownNow ? _speaker : "", cb || function () {});
+                return;
+              }
+            } catch (e) {}
+            if (cb) cb();
+          };
+          var _drawSprite = function () {
+            setSpriteByScene((WA2.session && WA2.session.currentBg ? WA2.session.currentBg() : "") || "classroom", mood, true, _want);
+          };
+          _spriteFor(_drawSprite);
           try {
             var _plate = document.getElementById("namePlate");
             if (_plate) {
