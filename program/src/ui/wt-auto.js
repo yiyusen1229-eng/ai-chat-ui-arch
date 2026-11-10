@@ -182,6 +182,11 @@
     if (state.on) return true;
     state.queue.length = 0;
     state.errors = 0;
+    /* 单角色：先把上一场多角色留下的「拍」清掉，别让它们冒出来 */
+    try {
+      var _dir = !!(window.WA2 && WA2.play && WA2.play.isDirectorOn && WA2.play.isDirectorOn());
+      if (!_dir) fetch("/api/play/clear", { method: "POST" }).catch(function () {});
+    } catch (e) {}
     state.on = true;
     paint();
     savePref();

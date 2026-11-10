@@ -153,7 +153,10 @@
     /* 开关 */
     menu.appendChild(sub("开关", [
       subRow("多角色：" + (d && d.enabled ? "开" : "关"), function () {
-        api("/api/direct/options", { enabled: !(d && d.enabled) }).then(function () {
+        var _next = !(d && d.enabled);
+        api("/api/direct/options", { enabled: _next }).then(function () {
+        /* 切回单角色：把还没播的「拍」清掉，否则它们会在自动模式里冒出来 */
+        if (!_next) { try { fetch("/api/play/clear", { method: "POST" }).catch(function () {}); } catch (e) {} }
         /* 切换后立刻让播放器重新读一次开关，别等 5 秒轮询 */
         try { if (WA2.play && WA2.play.refresh) WA2.play.refresh(); } catch (e) {}
         refresh();
