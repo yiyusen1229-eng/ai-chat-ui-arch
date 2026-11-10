@@ -71,11 +71,11 @@ SYSTEM = """你是这出戏的导演。你不扮演任何角色，只决定「�
    不要整拍只有一个人回话。"""
 
 
-def _user_prompt(beat_index, total_beats):
+def _user_prompt(beat_index, total_beats, n=2):
     p = _state()
     spec = p.get("beats") or 7
     chars_per = p.get("chars_per_beat") or 350
-    n_beats = 2 if beat_index + 2 <= total_beats else max(1, total_beats - beat_index)
+    n_beats = max(1, int(n or 2))
     return """【本场阵容】
 %s
 
@@ -231,6 +231,30 @@ def _render_beats(beats, scene=""):
     except Exception:
         done = {}
 
+    # 只有一个人说话时，补一句另一个角色的反应
+    try:
+        say_spk = [ (b.get("speaker") or "").strip() for b in beats if b.get("type") == "say" ]
+        distinct = [x for x in say_spk if x in by_name]
+        if len(set(distinct)) < 2 and len(by_name) >= 2:
+            said = set(distinct)
+            missing = [n for n in by_name.keys() if n not in said]
+            if missing:
+                last = ""
+                for b in reversed(beats):
+                    if (b.get("text") or "").strip():
+                        last = b.get("text")
+                        break
+                r = actor.speak(by_name[missing[0]], "对刚才那句话的反应，简短一句",
+                                scene=scene, prev=last)
+                if r and r.get("ja"):
+                    beats = list(beats) + [{
+                        "speaker": missing[0], "type": "say",
+                        "text": r.get("zh") or r.get("ja"), "ja": r.get("ja"),
+                        "voice": True, "emotion": r.get("emo") or ""
+                    }]
+    except Exception:
+        pass
+
     out = []
     for i, b in enumerate(beats):
         r = done.get(i)
@@ -275,7 +299,7 @@ def generate(n=2, timeout=45):
         "model": cfg.get("model") or "",
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": _user_prompt(beat_index, total)}
+            {"role": "user", "content": _user_prompt(beat_index, total, n)}
         ],
         "temperature": 0.85,
         "max_tokens": MAX_TOKENS.get(planned.get("length") or "small", 500)
