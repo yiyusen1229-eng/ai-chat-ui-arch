@@ -18,6 +18,12 @@
     }
   }
 
+  /* 读档 / 外部需要重置情绪时走这里，别再直接写全局 */
+  function setEmotion(e) {
+    window.__lastEmo = (e || '') + '';
+    return window.__lastEmo;
+  }
+
   function stopSpeak() {
     try { if (_voiceResolve) { _voiceResolve(false); _voiceResolve = null; } } catch (e) {}
     if (ttsAudio) { try { ttsAudio.pause(); } catch (e) {} ttsAudio = null; }
@@ -218,7 +224,7 @@
   }
   var _voiceResolve = null;
   var _exp = {};
-  var _names = ["emoFor", "_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak",
+  var _names = ["setEmotion", "emoFor", "_tts", "currentVoiceLang", "fetchVoice", "speakLineJa", "speakReply", "stopSpeak",
                 "suspendForDevice", "resumeAfterDevice", "waitTtsReady"];
   for (var _i = 0; _i < _names.length; _i++) {
     try { var _f = eval(_names[_i]); if (typeof _f === "function") { _exp[_names[_i]] = _f; window[_names[_i]] = _f; } } catch (e) {}

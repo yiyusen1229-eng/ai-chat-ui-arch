@@ -101,7 +101,7 @@
         try {
           var _hsNow = (meta.hscene === 1 || meta.hscene === "1");
           setSceneFlag(_hsNow);
-          window.__lastEmo = meta.emo || (_hsNow ? "H" : "calm");
+          try { WA2.voice.setEmotion(meta.emo || (_hsNow ? "H" : "calm")); } catch (e) {}
           var _spriteEmo = _hsNow ? "H" : (meta.emo || "calm");
           setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
           if (meta.bgm) setBgm(meta.bgm, 600);
@@ -161,7 +161,7 @@
       if (meta.outfit) { WA2.state.outfit = meta.outfit; }
       var _hsNow2 = (meta.hscene === 1 || meta.hscene === "1");
       setSceneFlag(_hsNow2);
-      window.__lastEmo = meta.emo || (_hsNow2 ? "H" : "calm");
+      try { WA2.voice.setEmotion(meta.emo || (_hsNow2 ? "H" : "calm")); } catch (e) {}
       var _spriteEmo = _hsNow2 ? "H" : (meta.emo || "calm");
       setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
       gdiRenderName(CHAR_NAME, $("namePlate"));

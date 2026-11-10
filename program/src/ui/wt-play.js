@@ -83,7 +83,9 @@
         p = WA2.chat.renderQueued({
           reply: body,
           speaker: isNarr ? "" : speaker,
-          line_type: isNarr ? "narr" : "her"
+          line_type: isNarr ? "narr" : "her",
+          ja: line.ja || "",                 /* 角色自己写的日语原文：配音直接用它 */
+          emotion: line.emotion || ""
         });
       }
     } catch (e) {}

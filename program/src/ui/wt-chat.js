@@ -73,6 +73,7 @@
         shown = "「" + _lineText.replace(/^[「『]+|[」』]+$/g, "") + "」";
       }
       window.__speakJa = replyZh ? reply.replace(/^「|」$/g, "") : "";
+      if (d && d.ja) window.__speakJa = String(d.ja);   /* 角色自己写的日语原文优先 */
       /* 中日对照：content 保留语言模型原句（含 action/emotion 未过滤），zh 存翻译模型原样输出 */
       history[history.length - 1].zh = replyZh;
       history[history.length - 1].emo = window.__lastEmo || "";   /* 重播要按当时的情绪算缓存 key */

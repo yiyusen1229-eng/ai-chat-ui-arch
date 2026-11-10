@@ -188,6 +188,75 @@ def _clean(beats, limit):
     return out, dropped
 
 
+def _render_beats(beats, scene=""):
+    """把 say 类台词换成角色自己写的那一句（并发调用各角色模型）。"""
+    if not beats:
+        return beats
+    import cast as cast_mod
+    by_name = {}
+    for m in cast_mod.get_cast().get("members", []):
+        if m.get("role") in ("player", "extra"):
+            continue
+        cid = m.get("id") or ""
+        name = m.get("name") or ""
+        try:
+            name = cast_mod.chars.display_name(cid) or name
+        except Exception:
+            pass
+        if name and cid:
+            by_name[name] = cid
+    if not by_name:
+        return beats
+
+    import actor
+    from concurrent.futures import ThreadPoolExecutor
+    jobs = []
+    for i, b in enumerate(beats):
+        sp = (b.get("speaker") or "").strip()
+        if b.get("type") == "say" and sp in by_name:
+            jobs.append((i, by_name[sp], b.get("text") or ""))
+    if not jobs:
+        return beats
+
+    def run(job):
+        _i, cid, intent = job
+        return _i, actor.speak(cid, intent, scene=scene)
+
+    done = {}
+    try:
+        with ThreadPoolExecutor(max_workers=min(4, len(jobs))) as ex:
+            for i, r in ex.map(run, jobs):
+                if r:
+                    done[i] = r
+    except Exception:
+        done = {}
+
+    out = []
+    for i, b in enumerate(beats):
+        r = done.get(i)
+        if r:
+            b = dict(b)
+            b["ja"] = r.get("ja") or ""
+            b["text"] = r.get("zh") or r.get("ja") or b.get("text")
+            b["voice"] = True
+            if r.get("emo"):
+                b["emotion"] = r["emo"]
+        else:
+            # 角色模型没给出日语（偶尔会中文作答）：把导演给的意图翻成日语，
+            # 至少保证配音有日语原文可用。
+            try:
+                import translate
+                ja = translate.to_ja(b.get("text") or "") or ""
+                if ja:
+                    b = dict(b)
+                    b["ja"] = ja
+                    b["voice"] = True
+            except Exception:
+                pass
+        out.append(b)
+    return out
+
+
 def generate(n=2, timeout=45):
     """生成一拍。返回 dict：{ok, beats, dropped, raw, error}"""
     cfg = _cfg()
@@ -221,6 +290,11 @@ def generate(n=2, timeout=45):
     raw_beats = _parse(text)
     limit = int((planned.get("chars_per_beat") or 350) * 2)
     beats, dropped = _clean(raw_beats, limit)
+    # 角色生成：say 类台词交给角色自己的模型写（日语原作，中文译文给字幕）
+    try:
+        beats = _render_beats(beats, p.get("direction") or "")
+    except Exception:
+        pass
     if not beats:
         return {"ok": False, "error": "模型没给出可用的台词", "raw": text[:400], "beats": []}
     try:
