@@ -76,7 +76,13 @@
       /* 中日对照：content 保留语言模型原句（含 action/emotion 未过滤），zh 存翻译模型原样输出 */
       history[history.length - 1].zh = replyZh;
       history[history.length - 1].emo = window.__lastEmo || "";   /* 重播要按当时的情绪算缓存 key */
-      addHistory("assistant", shown, reply, window.__lastEmo || "");   /* 三参：日文原句；四参：当时的情绪 */
+      /* 说话人：队列条目带的是真实说话人；单角色路径用当前角色名。
+         写进历史，读档/回想才不会把别人的台词标成当前角色。 */
+      if (!_isNarr) {
+        var _spkName = _speaker || _ownName || (typeof CHAR_NAME !== "undefined" ? String(CHAR_NAME) : "");
+        if (_spkName) history[history.length - 1].speaker = _spkName;
+      }
+      addHistory("assistant", shown, reply, window.__lastEmo || "", _speaker);   /* 三参：日文原句；四参：当时的情绪；五参：说话人 */
       // 先合成语音；语音没准备好就先不出文字，等语音出来一起出
       try { if (WA2.backlog && WA2.backlog.setVoiceOnLast) WA2.backlog.setVoiceOnLast(window.__lastVoiceReq); } catch (e) {}
       const mood = (window.__lastEmo || detectMood(shown));
@@ -186,6 +192,35 @@
       $("msgText").textContent = "「……」";
     }
     hidePageCursor();
+
+    /* 多角色开着：这句话交给导演当「剧情走向」，由队列依次演出各角色的台词。
+       缓存值可能是 5 秒前的（刚打开多角色就打字），所以先快速确认一次。 */
+    var _dirOn = !!(window.WA2 && WA2.play && WA2.play.isDirectorOn && WA2.play.isDirectorOn());
+    if (!_dirOn) {
+      try {
+        var _st = await fetch("/api/direct/status", { cache: "no-store" }).then(function (r) { return r.json(); });
+        var _d = (_st && _st.director) || {};
+        var _others = ((_d.cast || {}).members || []).filter(function (m) { return m.role !== "player"; });
+        _dirOn = !!_d.enabled && _others.length > 0;
+      } catch (e) {}
+    }
+    if (_dirOn) {
+      try {
+        await fetch("/api/play/clear", { method: "POST" });
+        await fetch("/api/direct/options", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ direction: text })
+        });
+        var _g = await fetch("/api/direct/gen", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ n: 2 })
+        });
+        var _gd = await _g.json().catch(function () { return null; });
+        if (_gd && _gd.error && window.__toast) window.__toast("导演没能接话：" + _gd.error, 3200);
+      } catch (e) {}
+      if (WA2.perf) WA2.perf.end("DIALOGUE_STREAMING");
+      return;                       /* 余下的交给 wt-play 的队列 */
+    }
 
     try {
       const r = await fetch("/api/chat", {

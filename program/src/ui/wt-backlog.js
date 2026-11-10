@@ -20,7 +20,7 @@
     } catch (e) { return false; }
   }
 
-  function addHistory(role, text, raw, emo) {
+  function addHistory(role, text, raw, emo, speaker) {
     const d = document.createElement("div");
     d.className = "hline " + (role === "user" ? "me" : "her");
     if (raw) d.dataset.ja = raw;      /* 原始日文（含 action/emotion），只存不显示 */
@@ -28,6 +28,7 @@
        以前重播写死 emotion=neutral，而当时合成用的是 calm/毒舌 → 缓存永远不命中，
        每次重播都要重新合成 2~5 秒（用户报「重放不像重放，像重新加载」）。 */
     if (emo) d.dataset.emo = emo;
+    if (speaker) d.dataset.sp = speaker;      /* 这句是谁说的（多角色时不能都写当前角色） */
     const ico = document.createElement("div");
     ico.className = "ico";
     const ic = document.createElement("img");
@@ -40,7 +41,7 @@
     body.className = "body";
     const who = document.createElement("span");
     who.className = "who";
-    who.textContent = role === "user" ? "你" : CHAR_NAME;
+    who.textContent = role === "user" ? "你" : (d.dataset.sp || CHAR_NAME);
     /* 和纱的话统一加「」：存档里的 zh 是翻译原文（不带括号），实时消息带括号，这里统一 */
     if (role === "assistant") {
       text = "「" + String(text).replace(/^[「『]/, "").replace(/[」』]$/, "") + "」";
@@ -159,7 +160,8 @@
       const isHer = m.role === "assistant";
       const shown = isHer ? (m.zh || m.content || "") : (m.content || "");
       if (!shown) return;
-      addHistory(m.role, shown, isHer ? (m.content || "") : "", isHer ? (m.emo || "") : "");
+      addHistory(m.role, shown, isHer ? (m.content || "") : "",
+                 isHer ? (m.emo || "") : "", isHer ? (m.speaker || "") : "");
     });
   }
 

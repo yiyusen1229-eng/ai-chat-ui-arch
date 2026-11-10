@@ -138,7 +138,9 @@
     if (!state.on) return false;
     /* 多角色/导演真的在跑：演出由导演那条链路负责，这里不要再自己调模型。
        __directorOn 只在「导演开着 + 阵容里有演员」时为真，所以阵容空时这里照常生成。 */
-    try { if (window.__directorOn) return false; } catch (e) {}
+    try {
+      if (window.WA2 && WA2.play && WA2.play.isDirectorOn && WA2.play.isDirectorOn()) return false;
+    } catch (e) {}
     /* 缓冲语义：最多领先「正在播的那句」CAP 条；满了就等播完再补，**不是**总共只生成三条 */
     if (state.queue.length >= CAP) return false;
     if (state.generating) return false;

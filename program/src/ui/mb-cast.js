@@ -153,7 +153,11 @@
     /* 开关 */
     menu.appendChild(sub("开关", [
       subRow("多角色：" + (d && d.enabled ? "开" : "关"), function () {
-        api("/api/direct/options", { enabled: !(d && d.enabled) }).then(refresh);
+        api("/api/direct/options", { enabled: !(d && d.enabled) }).then(function () {
+        /* 切换后立刻让播放器重新读一次开关，别等 5 秒轮询 */
+        try { if (WA2.play && WA2.play.refresh) WA2.play.refresh(); } catch (e) {}
+        refresh();
+      });
       }),
     ]));
 

@@ -152,7 +152,6 @@
           window.__noCastToasted = 1;
           window.__toast("多角色开着但阵容是空的：先加角色，或关掉多角色用普通续说", 4000);
         }
-        window.__directorOn = genOn;
       })
       .catch(function () {});
   }
@@ -170,7 +169,8 @@
     window.__playRunning = false;
   }
 
-  var api = { start: start, stop: stop, tick: tick, isPlaying: function () { return busy; } };
+  var api = { start: start, stop: stop, tick: tick, refresh: syncFlags,
+              isPlaying: function () { return busy; }, isDirectorOn: function () { return !!genOn; } };
   WA2.play = api;
   WA2.register && WA2.register("play", api);
   window.__playStart = start;
