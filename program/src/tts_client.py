@@ -803,7 +803,15 @@ _TTS_CACHE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(_
 # v3（2026-11-07）：H 不再借 calm 音色。旧音频是用 calm 参考合成的，
 # key 里不含"选了哪条参考"，所以必须靠版本号让它们全部失效，
 # 否则同一句话重放时仍然是那种平静嗓音（表现就是"偶尔还是平静"）。
-_CACHE_VERSION = 3
+_CACHE_VERSION = 4        # 4：把语音权重算进 key（换权重后不会再放旧音频）
+
+
+def _model_sig():
+    """当前角色用的权重签名（没有权重就是底模）。换权重后缓存必须失效。"""
+    m = _character_tts()
+    if not m:
+        return os.path.basename(GPT_W) + "|" + os.path.basename(SOVITS_W)
+    return os.path.basename(m["gpt"]) + "|" + os.path.basename(m["sovits"])
 
 
 def _tts_cache_path(text, lang, emo):
@@ -817,8 +825,8 @@ def _tts_cache_path(text, lang, emo):
     # 不会先命中导入前的旧缓存
     # 参数也要进 key：否则改了温度/top_k/切分，还是放上一次的旧音频
     _prm = EMOTION_PARAMS.get(EMOTION_ALIAS.get(emo, emo)) or EMOTION_PARAMS["neutral"]
-    _sig = "%s|%s|%s|%s|%s|%s|%s|%s" % (
-        text, lang, emo, _char_voice_sig(), _CACHE_VERSION,
+    _sig = "%s|%s|%s|%s|%s|%s|%s|%s|%s" % (
+        text, lang, emo, _char_voice_sig(), _model_sig(), _CACHE_VERSION,
         _prm.get("temperature"), _prm.get("top_k"), _prm.get("top_p"))
     key = _sig
     h = hashlib.md5(key.encode("utf-8")).hexdigest()[:20]
