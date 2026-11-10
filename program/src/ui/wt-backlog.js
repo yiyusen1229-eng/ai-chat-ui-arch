@@ -137,8 +137,11 @@
        带 hscene=1 让后端按 H 念，和实时播放保持一致 */
     const _hs = (row.dataset.hscene === "1" ||
                  (document.body && document.body.dataset.hscene === "1")) ? "&hscene=1" : "";
+    /* 多角色：这一行是谁说的就用谁的音色（没有就用当前角色） */
+    var _sp = (row.dataset.sp || "").trim();
+    var _charQ = _sp ? ("&char=" + encodeURIComponent(_sp)) : "";
     fetch("/api/tts?text=" + encodeURIComponent(vText) + "&lang=" + encodeURIComponent(vLang) +
-          "&emotion=" + encodeURIComponent(emo) + "&speak_ja=" + encodeURIComponent(clean) + _hs)
+          "&emotion=" + encodeURIComponent(emo) + "&speak_ja=" + encodeURIComponent(clean) + _hs + _charQ)
       .then(function (r) { if (!r.ok) throw new Error("tts " + r.status); return r.blob(); })
       .then(function (b) {
         const u = URL.createObjectURL(b);

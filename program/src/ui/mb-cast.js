@@ -118,11 +118,24 @@
       api("/api/cast/set", { members: [] }).then(refresh);
     })];
     if (c && c.can_join) {
+      var _inCast = {};
+      (c.members || []).forEach(function (m) { if (m.id) _inCast[m.id] = true; });
       c.can_join.forEach(function (x) {
+        if (_inCast[x.id]) {
+          /* 已经在场：给一个「移出」 */
+          castRows.push(subRow("移出：" + x.name, function () {
+            var members = ((c.members || []).filter(function (m) { return m.role !== "extra"; })
+              .filter(function (m) { return m.id !== x.id; })
+              .map(function (m) { return { id: m.id, role: m.role }; }));
+            api("/api/cast/set", { members: members }).then(refresh);
+          }));
+          return;
+        }
         castRows.push(subRow((x.ok ? "加入：" : "缺导演卡：") + x.name, function () {
           if (!x.ok) return;
           var members = ((c.members || []).filter(function (m) { return m.role !== "extra"; })
             .map(function (m) { return { id: m.id, role: m.role }; }));
+          if (members.some(function (m) { return m.id === x.id; })) return;   /* 已加入就不重复 */
           members.push({ id: x.id, role: "actor" });
           api("/api/cast/set", { members: members }).then(refresh);
         }));

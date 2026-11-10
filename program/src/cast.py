@@ -85,8 +85,16 @@ def set_cast(members):
         if not cid or not os.path.isdir(_char_dir(cid)):
             continue
         clean.append({"id": cid, "role": role})
-    _state["members"] = clean
-    return {"ok": True, "cast": get_cast()}
+    # 去重：同一个角色（id 或名字）只保留第一份，避免「同一个角色能加两次」
+    seen, uniq = set(), []
+    for m in clean:
+        key = (m.get("id") or m.get("name") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        uniq.append(m)
+    _state["members"] = uniq
+    return {"ok": True, "cast": get_cast(), "deduped": len(clean) - len(uniq)}
 
 
 def clear():

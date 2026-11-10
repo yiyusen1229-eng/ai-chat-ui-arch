@@ -79,6 +79,16 @@
   }
 
 
+  loadActiveId();
+
+  /* 记住当前角色 id：存档要用它做绑定（别依赖 game.js 里的局部变量） */
+  function loadActiveId() {
+    return fetch("/api/character/list", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { window.__activeCharId = (d && d.active) || ""; return window.__activeCharId; })
+      .catch(function () { return ""; });
+  }
+
   function sessionRestore() {
     return fetch("/api/session/load?slot=auto", { cache: "no-store" })
       .then(function (r) { return r.json(); })
@@ -94,6 +104,16 @@
         if (!d.messages || !d.messages.length) return false;
         applyHistory(d.messages);
         const meta = d.meta || {};
+        /* 存档绑定角色：读档自动切回去（不 await，切完让页面自己刷新） */
+        try {
+          if (meta.char && meta.char !== (window.__activeCharId || "")) {
+            fetch("/api/character/switch", { method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: meta.char }) }).then(function () {
+                window.__activeCharId = meta.char || window.__activeCharId;
+              }).catch(function () {});
+          }
+        } catch (e) {}
         if (meta.bg) { setBg(meta.bg); }
         else if (!currentBgName()) { setBg("classroom"); }   /* 旧档没存背景：别让它是空的，否则之后存的档也空 */
         if (meta.outfit) { WA2.state.outfit = meta.outfit; }
@@ -191,6 +211,7 @@
       emo: (window.__lastEmo || ""),
       /* 当时是不是成人场面：表情标签可能被写成 calm，光靠 emo 会还原成平静脸 */
       hscene: (document.body.dataset.hscene === "1") ? 1 : 0,
+      char: (window.__activeCharId || ""),
       bgm: (WA2.audio && WA2.audio.current) || "",
       at: Date.now()
     };
