@@ -1045,26 +1045,22 @@ def synthesize(text, lang="zh", timeout=SYNTH_TIMEOUT_S, emo="neutral", char="")
     合成串行：GPT-SoVITS 的 api 同时来两个请求会抢模型，这里排队；
     排队时先看缓存，同一句重复播不会重复合成。
     """
-    global _last_err, _ready, _voice_char, _refs_sig
+    global _ready, _voice_char, _refs_sig
     if not _ready:
         return None
-    # 指定了别的角色：临时切目录（权重 + 参考音频），合成完恢复
-    _prev_char = _voice_char
-    if char and char != _prev_char:
-        _voice_char = char
-        try:
+    # 整段（覆盖角色 → 切权重 → 选参考 → 合成）都放在同一把锁里，
+    # 否则两个角色并发合成时会串成「和纱的权重 + 雪菜的参考」。
+    with _synth_lock:
+        _prev_char = _voice_char
+        if char and char != _prev_char:
+            _voice_char = char
             _refs_sig = ""          # 强制重扫该角色的参考音频
-        except Exception:
-            pass
-    try:
-        return _synthesize_inner(text, lang, timeout, emo)
-    finally:
-        if char:
-            _voice_char = _prev_char
-            try:
+        try:
+            return _synthesize_inner(text, lang, timeout, emo)
+        finally:
+            if char:
+                _voice_char = _prev_char
                 _refs_sig = ""
-            except Exception:
-                pass
 
 
 def _synthesize_inner(text, lang, timeout, emo):
@@ -1086,7 +1082,7 @@ def _synthesize_inner(text, lang, timeout, emo):
         _cp = _tts_cache_path(text, lang, emo)
     except Exception:
         _cp = None
-    with _synth_lock:
+    if True:      # 锁已经在 synthesize() 外层拿过（Lock 不可重入）
         if not _ensure_char_model():
             return None
         if _cp:

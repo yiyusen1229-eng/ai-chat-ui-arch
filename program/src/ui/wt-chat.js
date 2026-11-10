@@ -221,7 +221,7 @@
         });
         var _g = await fetch("/api/direct/gen", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ n: 2 })
+          body: JSON.stringify({ n: 3 })     /* 多要一拍：至少让两个在场角色都开口 */
         });
         var _gd = await _g.json().catch(function () { return null; });
         if (_gd && _gd.error && window.__toast) window.__toast("导演没能接话：" + _gd.error, 3200);
