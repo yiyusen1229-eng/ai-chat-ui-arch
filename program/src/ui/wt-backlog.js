@@ -20,7 +20,7 @@
     } catch (e) { return false; }
   }
 
-  function addHistory(role, text, raw, emo, speaker) {
+  function addHistory(role, text, raw, emo, speaker, narr) {
     const d = document.createElement("div");
     d.className = "hline " + (role === "user" ? "me" : "her");
     if (raw) d.dataset.ja = raw;      /* 原始日文（含 action/emotion），只存不显示 */
@@ -29,6 +29,7 @@
        每次重播都要重新合成 2~5 秒（用户报「重放不像重放，像重新加载」）。 */
     if (emo) d.dataset.emo = emo;
     if (speaker) d.dataset.sp = speaker;      /* 这句是谁说的（多角色时不能都写当前角色） */
+    if (narr) d.dataset.narr = "1";           /* 旁白：不加「」、不写名字 */
     const ico = document.createElement("div");
     ico.className = "ico";
     const ic = document.createElement("img");
@@ -41,9 +42,9 @@
     body.className = "body";
     const who = document.createElement("span");
     who.className = "who";
-    who.textContent = role === "user" ? "你" : (d.dataset.sp || CHAR_NAME);
+    who.textContent = role === "user" ? "你" : (narr ? "" : (d.dataset.sp || CHAR_NAME));
     /* 和纱的话统一加「」：存档里的 zh 是翻译原文（不带括号），实时消息带括号，这里统一 */
-    if (role === "assistant") {
+    if (role === "assistant" && !narr) {
       text = "「" + String(text).replace(/^[「『]/, "").replace(/[」』]$/, "") + "」";
     }
     /* 长句按面板宽度折行：每行最多 26 个全角字（游戏里也是这个宽度） */
@@ -161,7 +162,8 @@
       const shown = isHer ? (m.zh || m.content || "") : (m.content || "");
       if (!shown) return;
       addHistory(m.role, shown, isHer ? (m.content || "") : "",
-                 isHer ? (m.emo || "") : "", isHer ? (m.speaker || "") : "");
+                 isHer ? (m.emo || "") : "", isHer ? (m.speaker || "") : "",
+                 isHer ? !!m.narr : false);
     });
   }
 

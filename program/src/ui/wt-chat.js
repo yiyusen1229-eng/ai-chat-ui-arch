@@ -78,11 +78,13 @@
       history[history.length - 1].emo = window.__lastEmo || "";   /* 重播要按当时的情绪算缓存 key */
       /* 说话人：队列条目带的是真实说话人；单角色路径用当前角色名。
          写进历史，读档/回想才不会把别人的台词标成当前角色。 */
-      if (!_isNarr) {
+      if (_isNarr) {
+        history[history.length - 1].narr = true;     /* 旁白：回想里不写名字、不加「」 */
+      } else {
         var _spkName = _speaker || _ownName || (typeof CHAR_NAME !== "undefined" ? String(CHAR_NAME) : "");
         if (_spkName) history[history.length - 1].speaker = _spkName;
       }
-      addHistory("assistant", shown, reply, window.__lastEmo || "", _speaker);   /* 三参：日文原句；四参：当时的情绪；五参：说话人 */
+      addHistory("assistant", shown, reply, window.__lastEmo || "", _speaker, _isNarr);   /* 六参：旁白 */
       // 先合成语音；语音没准备好就先不出文字，等语音出来一起出
       try { if (WA2.backlog && WA2.backlog.setVoiceOnLast) WA2.backlog.setVoiceOnLast(window.__lastVoiceReq); } catch (e) {}
       const mood = (window.__lastEmo || detectMood(shown));
