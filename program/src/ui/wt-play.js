@@ -25,8 +25,8 @@
 
   function readMs(text) {
     var n = (text || "").length;
-    /* 用户定的：没语音时每个字 300ms */
-    return Math.min(20000, Math.max(1200, Math.round(n * 300)));
+    /* 用户定的：没语音时每个字 500ms */
+    return Math.min(30000, Math.max(2000, Math.round(n * 500)));
   }
 
   function sleep(ms) {
@@ -94,7 +94,7 @@
     }
 
     /* 语音由 applyServerReply 按说话人决定，这里不再重复念；
-       阅读时长按 300ms/字 兜底（有语音时那边的 promise 会等语音播完） */
+       阅读时长按 500ms/字 兜底（有语音时那边的 promise 会等语音播完） */
     return p.then(function () {
       var ms = readMs(text);
       return sleep(ms).then(function () { return ms; });

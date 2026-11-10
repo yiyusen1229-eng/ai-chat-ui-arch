@@ -71,7 +71,7 @@
     "沉重": "tense",
     /* 新标签：按"这段该配什么氛围"归到四个槽位 */
     "紧张": "tense",
-    "激动": "tense",
+    "激动": "answer",
     "委屈巴巴": "sad",
     "自怨自艾": "sad",
     "故作轻松": "calm",
@@ -88,8 +88,12 @@
     // 「笨蛋/哼/少来/别管/烦」是她日常的嘴硬，落回 calm，不再算 tense
   ];
 
+  /* 唱歌 / 演出这类场面：热闹、往上走，不该配「氷の刃」这种紧张曲 */
+  var MUSIC_RE = /歌|唱|舞台|学园祭|学園祭|演奏|合练|排练|ライブ|バンド|乐队|主唱|合唱/i;
+
   function bgmSlot(text, emo) {
     var e = (emo || "").trim();
+    if (MUSIC_RE.test(text || "")) return "answer";
     if (e && EMO_BGM[e]) return EMO_BGM[e];
     var t = text || "";
     for (var i = 0; i < TEXT_SLOT.length; i++) {

@@ -129,7 +129,7 @@
       /* 自动续写里，旁白和「你的台词」是没有语音的：
          立刻显示，然后按字数留阅读时间，时间到了才算这一条结束（自动模式据此推进）。 */
       const _lineType = (d.line_type || "her");
-      const _readMs = Math.min(9000, Math.max(2200, (shown || "").length * 130));
+      const _readMs = Math.min(30000, Math.max(2000, (shown || "").length * 500));
       var _ownName = "";
       try { if (typeof CHAR_NAME !== "undefined" && CHAR_NAME) _ownName = String(CHAR_NAME); } catch (e) {}
       var _canVoice = (_lineType === "her") && (!_speaker || _speaker === _ownName);
