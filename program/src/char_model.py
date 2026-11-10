@@ -24,9 +24,13 @@ import urllib.request
 KINDS = ("chat", "voice", "director")
 
 
-def _char_dir():
+def _char_dir(cid=None):
     try:
         import characters
+        if cid:
+            fn = getattr(characters, "dir_for", None)
+            if callable(fn):
+                return fn(cid) or ""
         fn = getattr(characters, "active_dir", None)
         if callable(fn):
             return fn() or ""
@@ -35,13 +39,13 @@ def _char_dir():
     return ""
 
 
-def _path():
-    d = _char_dir()
+def _path(cid=None):
+    d = _char_dir(cid)
     return os.path.join(d, "model.json") if d else ""
 
 
-def _load_raw():
-    p = _path()
+def _load_raw(cid=None):
+    p = _path(cid)
     if not p or not os.path.isfile(p):
         return {}
     try:
@@ -51,8 +55,8 @@ def _load_raw():
         return {}
 
 
-def _save_raw(d):
-    p = _path()
+def _save_raw(d, cid=None):
+    p = _path(cid)
     if not p:
         return False
     try:

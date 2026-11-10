@@ -62,8 +62,13 @@
     setConnectLabel(!!k.connected);
   }
 
+  /* 导演是场景级配置（不属于任何角色），其余类别是角色级 */
+  function apiBase() {
+    return state.kind === "director" ? "/api/director/model" : "/api/char/model";
+  }
+
   function load(kind, cb) {
-    api("/api/char/model").then(function (d) {
+    api(apiBase()).then(function (d) {
       state.data = d || {};
       fill(kind || state.kind);
       if (cb) cb();
@@ -84,7 +89,7 @@
   }
 
   function saveFields(cb) {
-    api("/api/char/model", {
+    api(apiBase(), {
       kind: state.kind,
       endpoint: el("spmdEndpoint").value,
       key: el("spmdKey").value
@@ -99,7 +104,7 @@
     state.busy = true;
     paintStatus("连接中…", true);
     saveFields(function () {
-      api("/api/char/model/connect", { kind: state.kind }).then(function (d) {
+      api(apiBase() + "/connect", { kind: state.kind }).then(function (d) {
         state.busy = false;
         if (d && d.ok) {
           load(state.kind, function () { setConnectLabel(true); paintStatus("已连接" + (d.model ? "：" + d.model : "")); });
@@ -112,7 +117,7 @@
 
   function doDisconnect() {
     saveFields(function () {
-      api("/api/char/model/disconnect", { kind: state.kind }).then(function (d) {
+      api(apiBase() + "/disconnect", { kind: state.kind }).then(function (d) {
         if (d && d.ok) { load(state.kind, function () { setConnectLabel(false); paintStatus("已断开"); }); }
         else toast((d && d.error) || "断开失败");
       });
@@ -121,7 +126,7 @@
 
   /* 切换连接：一键清空输入框与已存配置，重新输入端点/API 连新的模型 */
   function doSwitch() {
-    api("/api/char/model/switch", { kind: state.kind }).then(function (d) {
+    api(apiBase() + "/switch", { kind: state.kind }).then(function (d) {
       if (d && d.ok) {
         el("spmdEndpoint").value = "";
         el("spmdKey").value = "";

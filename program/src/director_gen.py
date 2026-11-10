@@ -19,6 +19,14 @@ MAX_TOKENS = {"small": 900, "medium": 1400, "large": 2200}
 
 def _cfg():
     """导演模型配置：优先角色自己的 director 段，没有就用全局 chat"""
+    # 场景级导演配置优先（和角色解耦）：characters/director.json
+    try:
+        import scene_model
+        c = scene_model.cfg()
+        if c.get("base_url") or c.get("api_key"):
+            return c
+    except Exception:
+        pass
     try:
         import char_model
         raw = char_model._load_raw() or {}

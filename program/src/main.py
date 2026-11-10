@@ -1071,6 +1071,28 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
                                    "info": char_cards.info()})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] == "/api/director/model":
+            try:
+                import scene_model
+                if self.command == "POST":
+                    body = self._body() or {}
+                    r = scene_model.save(body.get("endpoint"), body.get("key"))
+                    return self._json(r, 200 if r.get("ok") else 400)
+                return self._json(scene_model.state())
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] in ("/api/director/model/connect",
+                                       "/api/director/model/disconnect",
+                                       "/api/director/model/switch"):
+            try:
+                import scene_model
+                tail = self.path.split("?")[0].rsplit("/", 1)[-1]
+                r = {"connect": scene_model.connect,
+                     "disconnect": scene_model.disconnect,
+                     "switch": scene_model.switch}[tail]()
+                return self._json(r, 200 if r.get("ok") else 400)
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
         if self.path.split("?")[0] == "/api/char/model":
             try:
                 import char_model
@@ -1322,6 +1344,24 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
                 body = self._body() or {}
                 import char_cards
                 r = char_cards.write_card(body.get("kind") or "director", body.get("text") or "")
+                return self._json(r, 200 if r.get("ok") else 400)
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0].startswith("/api/director/model"):
+            # 场景级导演模型：和角色无关
+            try:
+                import scene_model
+                body = self._body() or {}
+                act = self.path.split("?")[0].rsplit("/", 1)[-1]
+                if act == "model":
+                    r = scene_model.save(body.get("endpoint"), body.get("key"))
+                else:
+                    fn = {"connect": scene_model.connect,
+                          "disconnect": scene_model.disconnect,
+                          "switch": scene_model.switch}.get(act)
+                    if fn is None:
+                        return self._json({"ok": False, "error": "bad action"}, 404)
+                    r = fn()
                 return self._json(r, 200 if r.get("ok") else 400)
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 500)
