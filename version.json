@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-22.2",
+  "version": "2026-11-22.3",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
   "portable_url": "",
-  "notes": "更新检测修复：版本号与 GitHub 对齐（11-22.1 漏 bump，导致只弹到 11.10）、打包版不再假装能原地更新、同一版本不再每次启动都提示"
+  "notes": "动作/旁白里指玩家改成第二人称「你」（以前写成第三人称「他」，读起来像旁人在看戏）；提示词在 api_chat【人称】+ 角色人设 + 导演旁白三处"
 }

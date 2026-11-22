@@ -107,7 +107,7 @@ STEPS = [
     ("核心", "角色包规范与迁移 32 项", "py", ["tools/test_pack_migrate.py"], 90),
     ("核心", "导出与首次自检 25 项", "py", ["tools/test_export.py"], 60),
     ("核心", "模型接入层 50 项", "py", ["tools/test_llm.py"], 60),
-    ("核心", "演出标签提示 15 项", "py", ["tools/test_chat_hints.py"], 60),
+    ("核心", "演出标签提示 29 项", "py", ["tools/test_chat_hints.py"], 60),
     ("核心", "立绘索引扫描 13 项", "py", ["tools/test_sprite_scan.py"], 60),
     ("核心", "回复标签解析 44 项", "py", ["tools/test_text_parse.py"], 60),
     ("核心", "翻译层 21 项", "py", ["tools/test_translate.py"], 60),

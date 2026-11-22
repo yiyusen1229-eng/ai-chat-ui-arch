@@ -65,6 +65,15 @@ def main():
     check("说明了只用来挑语音参考", "语音参考" in hints)
 
 
+    print("[人称] 动作/旁白里指玩家要用「你」（2026-11-22 用户反馈：动作文本写成「他」）")
+    check("【人称】规则本地和云端都有", "【人称】" in local and "【人称】" in cloud, "")
+    check("要求指玩家一律用「你」", "一律用「你」" in cloud, "")
+    check("明确禁止写「他」", "不要写「他」" in cloud, "")
+    check("带「你」的动作示例", "按在你额头上" in cloud, "")
+    _dg = io.open(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "src", "director_gen.py"), encoding="utf-8").read()
+    check("导演写的旁白也要求「你」", "旁白里指玩家一律写「你」" in _dg, "")
+
     print("[续说] continue 模式要提示她接着说")
     _src = io.open(os.path.join(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))), "src", "api_chat.py"), encoding="utf-8").read()
