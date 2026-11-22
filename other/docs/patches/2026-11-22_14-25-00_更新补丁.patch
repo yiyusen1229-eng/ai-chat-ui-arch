@@ -1,8 +1,8 @@
 diff --git a/README.md b/README.md
-index 1542b53..fe8c57b 100644
+index 1542b53..76af306 100644
 --- a/README.md
 +++ b/README.md
-@@ -30,6 +30,21 @@
+@@ -30,6 +30,22 @@
  > **非官方、非商业、个人技术验证项目。**
  > 本仓库**只包含源代码与文档**：不含任何游戏素材，不含任何模型权重，不含游戏本体。
  
@@ -18,6 +18,7 @@ index 1542b53..fe8c57b 100644
 +- 动作文本（括号里的描写）改回字模渲染：多行折行、字号与对话框一致、不压缩不裁切。
 +- 模型接入支持 **OpenCode Go**（OpenAI 兼容）：补 `x-opencode-session`、关思考避免空回复，
 +  出错时日志会写清端点与错误类型。
++- 语音：回放先查缓存、不再先切权重；修进程池端口与翻译服务撞车（每个角色独立进程）。
 +- 修「直接跑 `src/main.py` 会另生一套空数据根」的问题（雪菜角色文件夹"消失"的真相）。
 +- 冒烟 56 项、拆分 91 处基线、21 个自测脚本全绿。
 +
@@ -40,7 +41,7 @@ index 01ce1cf..4be7f40 100644
  - **为什么**：`main.py --serve-only` 跑的是 `build_env/` 里的那份 `.py`；`run_dev.py`
    才负责把 `src/` 同步过去。
 diff --git a/other/docs/交接速览.md b/other/docs/交接速览.md
-index e1fe439..0d3646e 100644
+index e1fe439..d7e491b 100644
 --- a/other/docs/交接速览.md
 +++ b/other/docs/交接速览.md
 @@ -28,7 +28,7 @@ WA2 冬马和纱桌面聊天程序：Python 本地 HTTP + WebView2 无边框窗
@@ -70,7 +71,7 @@ index e1fe439..0d3646e 100644
 -本版要点见 `更新日志_2026-11-06_19-25-56.md`：**BGM 情绪映射**（嘴硬不再当生气，`沉重` 才配冰之刃）· **世界书修好**（一直没注入过）· **桌面行为**（置顶/不透明度/拉回本屏/睡眠唤醒）· **聊天导出 + 首次自检** · **角色包规范 + 示例 + 迁移工具** · **模型接入层**（7 类错误 + 降级 + 预算）· **三个时期的人设差异**（IC 装冷淡 / CC 思念成疾 / CODA 撒娇最多）。自测 `run_smoke.py` **49 项**全绿。
 +本版 `2026-11-22.1`（2026-11-22 14:25）已推：远端 `master` = 本版 → **本地未推 0 个**。
 +本版补丁：`other/docs/patches/2026-11-22_14-25-00_更新补丁.patch`（基线 `9138eb6`）。
-+本版要点见 `更新日志_2026-11-22_14-25-00.md`：**场景按时段/天气/细节匹配**（白天去学校不再出晚上校门口；雪停了不挂雪景）· **模型判场景**（卫生间洗漱 → 洗手台）· **配音修复**（旁白不念 / 读档不串角色）· **参考音频导入工具** · **动作文本回字模**（多行、字号一致）· **OpenCode Go 接入**（会话头 + 关思考）· **数据根修复**（直接跑 src/main.py 不再另生空数据）。自测 `run_smoke.py` **56 项**全绿。
++本版要点见 `更新日志_2026-11-22_14-25-00.md`：**场景按时段/天气/细节匹配**（白天去学校不再出晚上校门口；雪停了不挂雪景）· **模型判场景**（卫生间洗漱 → 洗手台）· **配音修复**（旁白不念 / 读档不串角色）· **语音回放缓存/进程池修复** · **参考音频导入工具** · **动作文本回字模**（多行、字号一致）· **OpenCode Go 接入**（会话头 + 关思考）· **数据根修复**（直接跑 src/main.py 不再另生空数据）。自测 `run_smoke.py` **56 项**全绿。
  
  上一版（`2026-11-06.3`）：演出标签喂稳（`<scene>` 0/6 → 4~5/6）· 开新游戏清历史 · 角色包导出脱敏 · 窗口置顶/穿透/多显示器 · 睡眠唤醒检测。
  
@@ -295,10 +296,10 @@ index 37e78e2..2bf33f1 100644
 +注意 `ui_probe` **不会 await Promise**：探针里用 `window.__diag = {...}` + `--check` 同步读。
 diff --git a/other/docs/更新日志_2026-11-22_14-25-00.md b/other/docs/更新日志_2026-11-22_14-25-00.md
 new file mode 100644
-index 0000000..c53f866
+index 0000000..1749588
 --- /dev/null
 +++ b/other/docs/更新日志_2026-11-22_14-25-00.md
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,82 @@
 +# 更新日志 · 2026-11-22 —— 版本 `2026-11-22.1`
 +
 +（自 `2026-11-10.1` 之后。中间 11-07～11-10 的版本各有单独日志；
@@ -337,6 +338,20 @@ index 0000000..c53f866
 +- 新增参考音频导入工具 `tools/import_voice_refs.py`（剧本原文优先、缺的用 ASR 补），
 +  `tools/ref_vad_scan.py` 支持 `--char` 指定角色。
 +
++## 语音：回放不再重新加载
++
++- 合成前**先查缓存**（key 只看文本 / 参考音频签名 / 参数签名，不需要加载权重），
++  命中就直接返回；以前是先切权重（3~7 秒）再看缓存，回想里重放一句听过的台词
++  看起来就像「重新加载」。
++- 修进程池端口撞车：每个角色的语音子进程以前用 9881，和翻译服务 `T_PORT` 同一个端口，
++  绑不上 → 该角色一直被标「进程不可用」→ 退回共享进程反复切权重。
++  基端口改 9882；分配端口时跳过已被占用的（崩溃留下的孤儿进程会一直 listen）；
++  就绪判断从「TCP 连得上」改成 HTTP 健康检查（`404` 也算就绪，只把 5xx/连接失败当没起）。
++- `_char_key(cid)` 以前无视传入的角色、永远返回「当前激活角色」；
++  `stop()` 以前只收共享进程，池子里的子进程会挂成孤儿占端口。都修了。
++- 实测：和纱 9882 / 雪菜 9883 各自独立；冷门台词首次约 10 秒（含子进程加载权重），
++  之后重放 0.001 秒；`stop()` 后端口释放、无残留。
++
 +## 界面：动作文本改回字模
 +
 +- 括号里的动作/心理描写改回**字模渲染**，并且是**按行折的多行图**：字号与对话框一致
@@ -368,7 +383,7 @@ index 0000000..c53f866
 +用本版补丁一键更新（`other/docs/patches/2026-11-22_14-25-00_更新补丁.patch`，基线 `9138eb6`）；旧补丁保留在
 +`other/docs/patches/`，回滚时按文件名顺序逐个反向应用。
 diff --git a/other/docs/架构/映射表.md b/other/docs/架构/映射表.md
-index de06122..2041a46 100644
+index de06122..19e6d04 100644
 --- a/other/docs/架构/映射表.md
 +++ b/other/docs/架构/映射表.md
 @@ -13,7 +13,7 @@
@@ -550,7 +565,7 @@ index de06122..2041a46 100644
 -| `src/special_files.py` | 404 | 特别模式导入/打开/立绘落盘 | char_dir, set_assets_dir, save_upload, set_default_paths, kind_dir, portrait_dir | characters | char_res, main |
 -| `src/tts_client.py` | 1359 | 语音合成与参考音频 | endpoint, is_remote, bind_host, refs_dir, load_refs, pick_ref | audio_gain, cache_io, char_res, diag | api_chat, api_modelcfg, api_tts, main |
 +| `src/special_files.py` | 415 | 特别模式导入/打开/立绘落盘 | char_dir, set_assets_dir, save_upload, set_default_paths, kind_dir, portrait_dir | characters | char_res, main |
-+| `src/tts_client.py` | 1359 | 语音合成与参考音频 | endpoint, is_remote, bind_host, refs_dir, load_refs, pick_ref | audio_gain, cache_io, char_res, datadir, diag | api_chat, api_modelcfg, api_tts, main |
++| `src/tts_client.py` | 1421 | 语音合成与参考音频 | endpoint, is_remote, bind_host, refs_dir, load_refs, pick_ref | audio_gain, cache_io, char_res, datadir, diag | api_chat, api_modelcfg, api_tts, main |
 +| `src/tts_prefetch.py` | 165 | 预合成：把接下来要播的一两句提前合成好，播到时命中缓存 | configure, enabled, kick, clear, drain, stats | — | — |
  
  ## 二级 · 记忆
@@ -601,8 +616,9 @@ index de06122..2041a46 100644
  | 文件 | 行数 | 建议 |
  |---|---|---|
 -| `src/main.py` | 1759 | 超过 800 行，必须拆 |
+-| `src/tts_client.py` | 1359 | 超过 800 行，必须拆 |
 +| `src/main.py` | 1931 | 超过 800 行，必须拆 |
- | `src/tts_client.py` | 1359 | 超过 800 行，必须拆 |
++| `src/tts_client.py` | 1421 | 超过 800 行，必须拆 |
 +| `src/api_chat.py` | 719 | 超过 400 行，建议拆 |
  | `src/ui/menubar.js` | 644 | 超过 400 行，建议拆 |
 +| `src/director_gen.py` | 622 | 超过 400 行，建议拆 |
@@ -3871,7 +3887,7 @@ index 6566a1d..4e0e1dd 100644
          return out, "" if out else "云端返回空"
      except Exception as e:
 diff --git a/program/src/tts_client.py b/program/src/tts_client.py
-index 40d91bf..1b3d2d2 100644
+index 40d91bf..244ad81 100644
 --- a/program/src/tts_client.py
 +++ b/program/src/tts_client.py
 @@ -21,6 +21,7 @@ import urllib.request
@@ -3882,7 +3898,115 @@ index 40d91bf..1b3d2d2 100644
  import diag
  
  BASE = os.path.dirname(os.path.abspath(__file__))
-@@ -978,8 +979,7 @@ def translate_via_service(text, to="ja", timeout=30):
+@@ -652,6 +653,35 @@ def pick_ref(emo="neutral", target=""):
+     return random.choice(wordy or with_text or items)
+ 
+ 
++def _port_taken(port, timeout=0.6):
++    """端口上已经有东西在听？（上次崩溃留下的孤儿进程也会占着）"""
++    if not port:
++        return False
++    try:
++        import socket
++        with socket.create_connection((bind_host(), port), timeout=timeout):
++            return True
++    except Exception:
++        return False
++
++
++def _http_ok_port(port, timeout=2.0):
++    """对**指定端口**发轻请求：TCP 连得上不代表服务真的在干活
++    （孤儿进程/半死的子进程照样能 accept）。所以健康检查走 HTTP。
++
++    注意：api_v2 的根路径返回 404 会**抛 HTTPError**，那不是"服务没起"，
++    404/405 一样说明它已经在跑 —— 只把 5xx 和连接失败当没起。
++    """
++    url = "http://%s:%d/" % (bind_host(), port)
++    try:
++        with urllib.request.urlopen(url, timeout=timeout) as r:
++            return r.status < 500
++    except urllib.error.HTTPError as e:
++        return e.code < 500
++    except Exception:
++        return False
++
++
+ def _http_ok(timeout=2.0):
+     """对当前 URL 发一个轻请求，看服务在不在（远程模式用）"""
+     try:
+@@ -771,7 +801,10 @@ def _child_env():
+ # ---------------------------------------------------------------- 进程池
+ # 每个角色一个常驻进程：端口 9881 起，各自加载自己的权重，互不干扰。
+ _SERVERS = {}            # dirname -> {"port": int, "proc": Popen|None, "ready": bool, "key": str}
+-_POOL_BASE_PORT = 9881
++_POOL_BASE_PORT = 9882
++# 踩过：这里原来写 9881，和 T_PORT（翻译服务）撞端口 —— 每个角色的语音进程
++# 都绑不上，请求打到翻译服务上失败，于是永远退回共享进程切权重（3~7 秒），
++# 回想重放看起来就像「重新加载」。端口要避开 PORT(9880) 和 T_PORT(9881)。
+ 
+ 
+ def _pool_enabled():
+@@ -779,9 +812,16 @@ def _pool_enabled():
+ 
+ 
+ def _char_key(cid):
+-    """角色目录名当池的 key（空 = 当前激活角色）"""
+-    if not cid:
+-        return os.path.basename(characters.active_dir() or "")
++    """角色目录名当池的 key（空 = 当前激活角色）
++
++    给了 cid 就直接用它 —— 以前无论传什么都取"当前激活角色"，
++    只有在 synthesize() 里靠 _voice_char 临时切换才对得上；
++    从外面直接问「雪菜用哪个端口」会拿到和纱的端口（串音排查时特别坑）。
++    """
++    if cid:
++        name = os.path.basename(str(cid).rstrip("/\\"))
++        if name:
++            return name
+     return os.path.basename(_active_dir() or "")
+ 
+ 
+@@ -797,10 +837,12 @@ def _server_for(cid):
+         return 0            # 之前失败过：不再尝试，交给共享进程
+     if ent and ent.get("ready"):
+         return ent["port"]
+-    # 分配端口
++    # 分配端口：避开自己登记过的，也避开**已经被占**的（上次崩溃留下的孤儿进程
++    # 会一直 listen，TCP 能连、请求却失败 —— 之前就因此把「和纱」的进程判成不可用，
++    # 每次都退回共享进程切权重，回想重放要等 3~7 秒）
+     used = {e["port"] for e in _SERVERS.values()}
+     port = _POOL_BASE_PORT
+-    while port in used:
++    while port in used or _port_taken(port):
+         port += 1
+     try:
+         cfg = _write_pool_cfg(port, key)
+@@ -811,15 +853,17 @@ def _server_for(cid):
+             creationflags=0x08000000 if os.name == "nt" else 0,
+         )
+         _SERVERS[key] = {"port": port, "proc": proc, "ready": False, "key": key}
+-        import socket, time
++        import time
+         t0 = time.time()
+         while time.time() - t0 < READY_TIMEOUT_S:
+-            try:
+-                with socket.create_connection((bind_host(), port), timeout=2):
+-                    _SERVERS[key]["ready"] = True
+-                    return port
+-            except Exception:
+-                time.sleep(1.0)
++            if proc.poll() is not None:          # 子进程自己退了：别等满超时
++                _SERVERS.pop(key, None)
++                return 0
++            if _http_ok_port(port, timeout=1.5):
++                _SERVERS[key]["ready"] = True
++                return port
++            time.sleep(0.8)
++        _SERVERS[key]["bad"] = True
+         return 0
+     except Exception:
+         _SERVERS.pop(key, None)
+@@ -978,8 +1022,7 @@ def translate_via_service(text, to="ja", timeout=30):
          return ""
  
  
@@ -3892,6 +4016,50 @@ index 40d91bf..1b3d2d2 100644
  
  
  # 合成行为（参数/参考挑选/切分）一变就 +1：否则会一直命中旧参数合成的音频。
+@@ -1257,8 +1300,10 @@ def _synthesize_inner(text, lang, timeout, emo, port=0):
+     except Exception:
+         _cp = None
+     if True:      # 锁已经在 synthesize() 外层拿过（Lock 不可重入）
+-        if not port and not _ensure_char_model():
+-            return None
++        # **先看缓存**：key 里已经有参考音频/模型/参数的签名，不需要加载权重就能算出来。
++        # 以前是先 _ensure_char_model() 再看缓存 —— 进程池不可用（某角色进程挂了）时，
++        # 回想里点一句已经合成过的台词，也要先把共享进程的权重切过来（3~7 秒），
++        # 用户看到的就是「重放又要重新加载」。
+         if _cp:
+             try:
+                 if os.path.exists(_cp):
+@@ -1276,6 +1321,9 @@ def _synthesize_inner(text, lang, timeout, emo, port=0):
+                         return _cached
+             except Exception:
+                 pass
++        # 没有缓存才需要权重：没走进程池时要先把当前角色的权重切过来
++        if not port and not _ensure_char_model():
++            return None
+         diag.count("tts.miss")
+         try:
+             import applog
+@@ -1348,6 +1396,20 @@ def stop():
+         except Exception:
+             pass
+         _proc = None
++    # 进程池里的角色进程也要收掉：以前只 terminate 共享进程，
++    # 池子里的子进程会一直挂着占端口，下次启动又撞端口（实测 9882 留下过孤儿）
++    for _k, _ent in list(_SERVERS.items()):
++        _p = _ent.get("proc")
++        if _p is not None:
++            try:
++                _p.terminate()
++                _p.wait(timeout=5)
++            except Exception:
++                try:
++                    _p.kill()
++                except Exception:
++                    pass
++    _SERVERS.clear()
+     _ready = False
+ 
+ 
 diff --git a/program/src/tts_prefetch.py b/program/src/tts_prefetch.py
 new file mode 100644
 index 0000000..3299591
@@ -8565,6 +8733,52 @@ index 0000000..02c5dec
 +
 +if __name__ == "__main__":
 +    sys.exit(main())
+diff --git a/program/tools/test_tts_cache.py b/program/tools/test_tts_cache.py
+index 59004dc..adc3a9b 100644
+--- a/program/tools/test_tts_cache.py
++++ b/program/tools/test_tts_cache.py
+@@ -138,6 +138,41 @@ def main():
+     check("最新 3 条还在", all(("c%d.wav" % i) in left for i in (3, 4, 5)), left)
+     check("更老的被删了", "c0.wav" not in left, left)
+ 
++    print("[9] 命中缓存时不去加载/切换权重（2026-11-22「回想重放又要重新加载」）")
++    d2 = tempfile.mkdtemp(prefix="wa2_hit_")
++    TC._TTS_CACHE_DIR = d2
++    hp = TC._tts_cache_path("テスト用の文です", "ja", "calm")
++    os.makedirs(os.path.dirname(hp), exist_ok=True)
++    io.open(hp, "wb").write(b"FAKE-CACHED")
++    calls = {"n": 0}
++    real_ensure, real_ready, real_post = TC._ensure_char_model, TC._ready, TC._post
++
++    def _counting():
++        calls["n"] += 1
++        return True
++
++    TC._ensure_char_model = _counting
++    TC._post = lambda *a, **k: b"NEW-AUDIO"
++    TC._ready = True
++    try:
++        data = TC._synthesize_inner("テスト用の文です", "ja", 3000, "calm", port=0)
++    finally:
++        TC._ensure_char_model, TC._ready, TC._post = real_ensure, real_ready, real_post
++    check("命中时直接返回缓存", data == b"FAKE-CACHED", data)
++    check("命中时没调 _ensure_char_model（不切权重）", calls["n"] == 0, calls["n"])
++
++    os.remove(hp)
++    calls["n"] = 0
++    TC._ensure_char_model = _counting
++    TC._post = lambda *a, **k: b"NEW-AUDIO"
++    TC._ready = True
++    try:
++        TC._synthesize_inner("别の未缓存文本です", "ja", 50, "calm", port=0)
++    finally:
++        TC._ensure_char_model, TC._ready, TC._post = real_ensure, real_ready, real_post
++    check("没缓存时才去切权重", calls["n"] == 1, calls["n"])
++    shutil.rmtree(d2, ignore_errors=True)
++
+     print()
+     if FAILS:
+         print("失败 %d 项：%s" % (len(FAILS), "、".join(FAILS)))
 diff --git a/program/tools/test_tts_prefetch.py b/program/tools/test_tts_prefetch.py
 new file mode 100644
 index 0000000..3974505
