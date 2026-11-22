@@ -1,5 +1,6 @@
 {
-  "version": "2026-11-10.1",
+  "version": "2026-11-22.2",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
-  "notes": "多角色：台词由角色自己写 / 语音一对一进程 / 立绘按说话人 / 存档绑定角色"
+  "portable_url": "",
+  "notes": "更新检测修复：版本号与 GitHub 对齐（11-22.1 漏 bump，导致只弹到 11.10）、打包版不再假装能原地更新、同一版本不再每次启动都提示"
 }

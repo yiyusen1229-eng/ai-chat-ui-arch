@@ -476,6 +476,11 @@
                        "发给别人之前请自己先看一遍，确认没有不想外传的内容。\n\n继续？")) return;
           exportDiag(20);
         } },
+      { label: "检查更新", action: function () {
+          /* ?force=1：绕过「提示过就不再提示」的策略，手动点就一定给结果 */
+          if (window.WA2 && WA2.update && WA2.update.forceCheck) { WA2.update.forceCheck(); return; }
+          alert("更新模块还没加载完，稍后再试");
+        } },
       { label: "关于本程序" }
     ]));
 

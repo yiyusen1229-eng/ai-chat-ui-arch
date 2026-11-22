@@ -61,8 +61,33 @@ def make_zip(dst, files, top="ai-chat-ui-arch-master"):
     return dst
 
 
+def _rmtree(path):
+    """删干净：Windows 下 git 会把 .git/objects 里的文件标成只读，直接 rmtree 会留半套"""
+
+    def _retry(func, p, _exc):
+        try:
+            os.chmod(p, 0o700)
+            func(p)
+        except Exception:
+            pass
+
+    kw = {"onexc": _retry} if sys.version_info >= (3, 12) else {"onerror": _retry}
+    try:
+        shutil.rmtree(path, **kw)
+    except Exception:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="wa2_upd_test_")
+    try:
+        return _run(tmp)
+    finally:
+        # 以前不清理：跑一趟就在 TEMP 里留一套假仓库 + 裸仓，跑多了能堆几百份
+        _rmtree(tmp)
+
+
+def _run(tmp):
     root = os.path.join(tmp, "repo")
     prog = os.path.join(root, "program")
     work = os.path.join(prog, "work_scratch")
@@ -227,6 +252,54 @@ def main():
         check("未推送的提交还在", os.path.exists(os.path.join(clone, "program", "src", "local_only.py")))
     else:
         print("  skip  git 模式（这台机器没装 git）")
+
+    # ---------------- 8 版本号一致性（2026-11-22 加：11-22.1 只写日志、忘了 bump）
+    import re as _re
+    repo = os.path.dirname(PROGRAM)
+    vj = os.path.join(repo, "version.json")
+    vpy = os.path.join(PROGRAM, "src", "version.py")
+    if os.path.isfile(vj) and os.path.isfile(vpy):
+        try:
+            jd = json.loads(read(vj))
+        except Exception:
+            jd = {}
+        jv = str(jd.get("version") or "")
+        m = _re.search(r'VERSION\s*=\s*["\']([^"\']+)["\']', read(vpy))
+        pv = m.group(1) if m else ""
+        check("version.json 与 version.py 版本号一致", bool(jv) and jv == pv, (jv, pv))
+        check("版本号格式 YYYY-MM-DD.N", bool(_re.match(r"^\d{4}-\d{2}-\d{2}\.\d+$", jv)), jv)
+        check("version.json 有 url / notes", bool(jd.get("url")) and bool(jd.get("notes")), jd)
+    else:
+        print("  skip  版本号一致性（找不到仓库根 version.json）")
+
+    # ---------------- 9 打包版（exe）不许假装能更新
+    # 真实踩到的坑：11-06 的便携版把「更新」写进了 exe 上一级目录（release/ 里那套
+    # 源码副本），exe 本身一个字没变 → 每次重开都还在提示同一个更新。
+    updater.reset_progress()
+    orig_frozen = updater._frozen
+    orig_exec = sys.executable
+    updater._frozen = lambda: True
+    try:
+        d4 = updater.detect()
+        check("打包版识别为 portable", d4.get("mode") == "portable", d4)
+        check("打包版 can_auto=False", d4.get("can_auto") is False, d4)
+        check("打包版给出拒绝原因", "打包版" in (d4.get("git_detail") or ""), d4)
+        updater.apply(wait=True)
+        p4 = updater.progress()
+        check("打包版 apply 直接拒绝", p4.get("ok") is False and "打包版" in (p4.get("error") or ""), p4)
+        check("打包版没动本地文件", read(os.path.join(prog, "src", "keep.py")) == "# 新版本\n")
+        # ROOT 不许指到 exe 上一级
+        fake_dir = os.path.join(tmp, "app")
+        os.makedirs(fake_dir, exist_ok=True)
+        sys.executable = os.path.join(fake_dir, "和纱.exe")
+        u5, r5 = updater._dirs()
+        same = lambda a, b: os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+        check("打包版 ROOT = exe 所在目录（不是上一级）",
+              same(u5, fake_dir) and same(r5, fake_dir), (u5, r5))
+    finally:
+        updater._frozen = orig_frozen
+        sys.executable = orig_exec
+        updater.reset_progress()
 
     print()
     if FAILS:

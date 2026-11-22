@@ -71,7 +71,7 @@ python program\tools\check_assets.py                  # 素材自检
 - `characters/`、`res/assets/`、`persona/`、`worldbook/`、`sessions/`、`release/` 是本地数据，**不入库、不上传**。
 - 世界书结构不改；人设/记忆书内容只留本机，文档里不抄设定细节。
 - 发布流程见 `新对话交接说明.md` 第11、12、13 条（先整合旧补丁再发新补丁，旧补丁保留）。
-- **改动前先看 `other/docs/不要动.md`**：14 条「碰不得 + 动了会怎样 + 正确改法」，每条都是踩过的坑
+- **改动前先看 `other/docs/不要动.md`**：15 条「碰不得 + 动了会怎样 + 正确改法」，每条都是踩过的坑
   （模块身份 `__main__`、像素系数 0.625、`window.__history` 同一个数组、hotreload 跳过清单、
   选择条不能实时叠 plus-lighter、`WA2.prefs` 不存在、改完 src 要 run_dev --sync-only …）。
 - 想知道「一次对话经过哪些模块、缓存落在哪」→ `other/docs/架构/00b_数据流.md`。

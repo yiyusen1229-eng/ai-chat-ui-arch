@@ -30,8 +30,27 @@ import zipfile
 
 import version as _ver
 
-UP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # program/
-ROOT = os.path.dirname(UP)                                          # 仓库根（可能没有 .git）
+def _frozen():
+    """打包版（PyInstaller 的 exe）：代码冻在 exe 里，磁盘上没有可覆盖的源码树"""
+    return bool(getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None))
+
+
+def _dirs():
+    """(UP, ROOT)。源码安装：UP=program/、ROOT=仓库根；打包版：两个都=exe 目录。
+
+    打包版**不能**用 `__file__` 算根：冻结后 `__file__` 落在 `_internal/` 里，
+    再往上两层会指到 exe 的**上一级目录**。2026-11-22 实测：11-06 的便携版因此把
+    「更新」写进了 `release/` 里另一套源码副本，exe 本身一个字没变 —— 用户看到的现象
+    就是「点了更新，每次重新打开又要再点一遍」。
+    """
+    if _frozen():
+        app = os.path.dirname(os.path.abspath(sys.executable))
+        return app, app
+    up = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # program/
+    return up, os.path.dirname(up)                                     # 仓库根（可能没有 .git）
+
+
+UP, ROOT = _dirs()
 WORK = os.path.join(UP, "work_scratch")
 
 # 只覆盖这些（代码 + 文档）；用户数据一个都不在里面
@@ -63,12 +82,17 @@ def _git_ok():
 
 def detect():
     """能不能自动更新、走哪条路"""
+    whitelist = list(WL_DIRS) + [f for f in WL_FILES]
+    if _frozen():
+        # 打包版：exe 里的代码没法原地替换，只能整包换新的 exe / 压缩包
+        return {"ok": True, "mode": "portable", "can_auto": False, "git": False,
+                "git_detail": "打包版（exe）：代码在 exe 内部，只能整包替换",
+                "root": ROOT, "zip_url": ZIP_URL, "whitelist": whitelist}
     ok, detail = _git_ok()
     mode = "git" if ok else "zip"
     return {"ok": True, "mode": mode, "can_auto": True,
             "git": ok, "git_detail": "" if ok else detail,
-            "root": ROOT, "zip_url": ZIP_URL,
-            "whitelist": list(WL_DIRS) + [f for f in WL_FILES]}
+            "root": ROOT, "zip_url": ZIP_URL, "whitelist": whitelist}
 
 
 # ---------------------------------------------------------------- 进度
@@ -141,6 +165,8 @@ def _download_zip(url, dst_dir):
 
 
 def _apply_zip(zip_url=None):
+    if _frozen():
+        raise RuntimeError("打包版（exe）不能原地更新：请下载新的压缩包")
     tmp = tempfile.mkdtemp(prefix="wa2_upd_")
     try:
         zp = _download_zip(zip_url or ZIP_URL, tmp)
@@ -205,6 +231,8 @@ def _git_out(exe, *args):
 
 
 def _apply_git():
+    if _frozen():
+        raise RuntimeError("打包版（exe）不能原地更新：请下载新的压缩包")
     _ok, exe = _git_ok()          # 注意顺序：_git_ok() 返回 (能不能用, git 路径)
     # 保护开发者：有未提交改动 / 未推送提交时不 reset --hard（那会把人家的工作抹掉）
     # 只算「被跟踪文件的改动」，未跟踪文件（日志/临时文件）不算
@@ -245,8 +273,11 @@ def _apply_git():
 
 
 def _local_version():
+    if _frozen():
+        return _ver.VERSION          # 打包版没有 version.json，版本号就在 exe 里
     try:
-        with io.open(os.path.join(ROOT, "version.json"), encoding="utf-8") as f:
+        # utf-8-sig：记事本改过的 version.json 带 BOM，按 utf-8 读会直接抛异常
+        with io.open(os.path.join(ROOT, "version.json"), encoding="utf-8-sig") as f:
             return str(json.load(f).get("version") or "")
     except Exception:
         return ""
@@ -256,6 +287,12 @@ def _local_version():
 def apply(zip_url=None, wait=False):
     """开始更新（默认后台线程）。返回进度快照。"""
     global _THREAD
+    if _frozen():
+        # 打包版没有源码树：绝不假装更新（以前会往 exe 上一级目录乱写一套 program/src）
+        _set(running=False, stage="停止", percent=0, ok=False,
+             message="请下载新版本压缩包",
+             error="打包版（exe）不能原地更新：请下载新的压缩包，解压后替换整个文件夹")
+        return progress()
     if progress().get("running"):
         return progress()
     _set(running=True, stage="准备", percent=2, message="准备更新",

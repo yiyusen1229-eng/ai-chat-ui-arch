@@ -89,7 +89,7 @@ STEPS = [
     ("核心", "常驻记忆书两段化 45 项", "py", ["tools/test_standing.py"], 120),
     ("核心", "演出/切片配置 44 项", "py", ["tools/test_perfcfg.py"], 120),
     ("核心", "剧情检索 27 项", "py", ["tools/test_story_rag.py"], 120),
-    ("核心", "一键更新 30 项", "py", ["tools/test_update.py"], 120),
+    ("核心", "一键更新 39 项", "py", ["tools/test_update.py"], 120),
     ("核心", "选择分支 29 项", "py", ["tools/test_choice.py"], 120),
     ("核心", "新游戏清历史 7 项", "py", ["tools/test_newgame.py"], 60),
     ("核心", "分支数量接线 9 项", "node", ["tools/test_choices_prefs.js"], 60),

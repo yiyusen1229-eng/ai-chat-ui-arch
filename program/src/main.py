@@ -1430,6 +1430,9 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
         if self.path.startswith("/api/update/apply"):
             # 一键更新：整份代码取最新，不走补丁链（漏几版都没关系）
             return self._update_apply()
+        if self.path.startswith("/api/update/ack"):
+            # 用户点过更新提示（打开了下载页）：这个版本别再提醒
+            return self._update_ack()
         if self.path.split("?")[0] == "/api/cast/set":
             try:
                 body = self._body() or {}
