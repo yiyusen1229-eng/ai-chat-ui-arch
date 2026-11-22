@@ -95,7 +95,7 @@ STEPS = [
     ("核心", "选择分支前端 20 项", "node", ["tools/test_choices_prefs.js"], 60),
     ("核心", "情绪迟滞 20 项", "py", ["tools/test_emotion.py"], 60),
     ("核心", "数据根归属 19 项", "py", ["tools/test_datadir.py"], 60),
-    ("核心", "BGM 情绪槽位 21 项", "node", ["tools/test_mood_bgm.js"], 60),
+    ("核心", "BGM 情绪槽位 32 项", "node", ["tools/test_mood_bgm.js"], 60),
     ("核心", "远程语音端点 14 项", "py", ["tools/test_tts_remote.py"], 60),
     ("静态", "pref 键冲突 12 项", "py", ["tools/test_prefs_keys.py"], 60),
     ("核心", "语音缓存与重放 20 项", "py", ["tools/test_tts_cache.py"], 60),

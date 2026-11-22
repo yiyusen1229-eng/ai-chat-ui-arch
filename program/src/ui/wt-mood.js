@@ -18,38 +18,55 @@
   const MOOD_BGM = { angry: "tense", sad: "sad", warm: "warm", smile: "warm", calm: "calm" };
 
   /* 每个氛围允许多首：切到该氛围时轮流挑一首，避免同一首听一整局。
-     顺序就是「更常用 → 更有画面感」。 */
+     顺序就是「更常用 → 更有画面感」。
+     注意：这里只是**曲库还没读进来时的兜底**。真曲库有 41 首、每首自带 slot 字段，
+     程序会调 buildFromCatalog() 用曲库重建（2026-11-22 修：以前只在脚本加载时建一次，
+     而那时 catalog.json 还没异步读完，结果永远用这份兜底表 —— 里面 tense 第二首是
+     Answer，于是"气氛一紧张就轮到 Answer"，用户报「老乱放 answer」）。 */
   var SLOT_TRACKS = {
     calm: ["calm", "kazusa"],
     warm: ["warm", "kazusa"],
     sad: ["sad", "toukanai"],
-    tense: ["tense", "answer"]
+    tense: ["tense"]
   };
-  /* 曲库 41 首按 slot 字段分组；有 catalog 就用它，没有就退回上面那 4 组 */
-  (function buildSlotTracks() {
-    try {
-      var C = (window.App && window.App.catalogGet) ? window.App.catalogGet() : null;
-      var list = (C && C.bgm) || [];
-      if (!list.length) return;
-      var by = {};
-      for (var i = 0; i < list.length; i++) {
-        var it = list[i];
-        if (!it || !it.slot || it.slot === "menu") continue;
-        (by[it.slot] || (by[it.slot] = [])).push(it.name);
-      }
-      var keys = Object.keys(by);
-      if (!keys.length) return;
-      for (var k = 0; k < keys.length; k++) SLOT_TRACKS[keys[k]] = by[keys[k]];
-    } catch (e) {}
-  })();
-  /* 反查：某首曲子属于哪个氛围（判断「当前氛围」用） */
+  /* 人声插曲不参与自动轮播（想让它自动出现，把这里删掉就行）。
+     Answer 是带唱的情歌，随机轮到它很跳戏；设置面板里仍然可以手动听/选。 */
+  var SKIP_AUTO = { "Answer": true, "bgm_answer.mp3": true };
+
+  /* 反查：某首曲子属于哪个氛围（判断「当前氛围」用；曲库加载后会补齐 41 首） */
   var TRACK_SLOT = {
     menu: "menu", calm: "calm", kazusa: "calm", warm: "warm",
     sad: "sad", toukanai: "sad", tense: "tense", answer: "tense"
   };
   var slotRound = {};
+  var _catBuilt = false;
+  var lastSlot = "";
+
+  /* 用曲库（catalog.json 的 bgm，每首带 slot）重建槽位表。
+     必须**惰性**建：脚本加载时 catalog 还在异步 fetch，那时建等于白建。 */
+  function buildFromCatalog() {
+    if (_catBuilt) return;
+    var C = null;
+    try { C = (window.App && window.App.catalogGet) ? window.App.catalogGet() : null; } catch (e) {}
+    var list = (C && C.bgm) || [];
+    if (!list.length) return;                 /* 还没读进来：下次再试 */
+    _catBuilt = true;
+    var by = {};
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      if (!it || !it.slot || it.slot === "menu") continue;
+      (by[it.slot] || (by[it.slot] = [])).push(it.name);
+      TRACK_SLOT[it.name] = it.slot;          /* 名字和文件名都认，currentBgmMood 才不会瞎猜 */
+      if (it.file) TRACK_SLOT[it.file] = it.slot;
+    }
+    for (var k in by) {
+      var names = by[k].filter(function (n) { return !SKIP_AUTO[n]; });
+      if (names.length) SLOT_TRACKS[k] = names;
+    }
+  }
 
   function nextTrack(slot) {
+    buildFromCatalog();
     var list = SLOT_TRACKS[slot] || [];
     if (!list.length) { slot = "calm"; list = SLOT_TRACKS[slot] || [slot]; }
     var i = (slotRound[slot] = (slotRound[slot] || 0) + 1) - 1;
@@ -131,13 +148,24 @@
     }
     const enough = bestV - curV >= 1.5 && moodStable.turns >= 2;
     if (best !== currentBgmMood() && enough) {
-      setBgm(nextTrack(best));
+      var _to = nextTrack(best);
+      lastSlot = best;
+      /* 排查「BGM 乱放」用：最近 20 次自动切换记在 window.__bgmLog 里（调试面板可看） */
+      try {
+        var _log = window.__bgmLog = window.__bgmLog || [];
+        _log.push({ at: Date.now(), from: WA2.audio && WA2.audio.current || "",
+                    to: _to, slot: best, scores: JSON.parse(JSON.stringify(moodScore)) });
+        if (_log.length > 20) _log.shift();
+      } catch (e) {}
+      setBgm(_to);
     }
   }
 
   function currentBgmMood() {
-    var cur = WA2.audio.current || "";
+    buildFromCatalog();
+    var cur = (WA2.audio && WA2.audio.current) || "";
     if (TRACK_SLOT[cur]) return TRACK_SLOT[cur];
+    if (lastSlot) return lastSlot;      /* 认不出这首就按"当初切它的槽位"算 */
     for (const k in MOOD_BGM) {
       if (MOOD_BGM[k] === cur) return k === "smile" ? "warm" : MOOD_BGM[k];
     }
@@ -149,6 +177,7 @@
     for (const k in moodScore) moodScore[k] = 0;
     for (const k in slotRound) slotRound[k] = 0;
     moodStable = { name: "calm", turns: 0 };
+    lastSlot = "";
     return true;
   }
 

@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-22.8",
+  "version": "2026-11-22.9",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
   "portable_url": "",
-  "notes": "场景 CG 不再乱跳：以前模型没写场景标签时，会拿整段文字模糊匹配，低分撞上别的地点也照样换图；现在必须句子里真提到了地点、地点相似度够才换"
+  "notes": "BGM 不再乱放 Answer：氛围→曲目表以前永远用兜底表（tense 第二首就是 Answer），所以气氛一紧张就轮到它；现在按曲库惰性重建，人声插曲不进自动轮播（设置里仍可手动选）"
 }
