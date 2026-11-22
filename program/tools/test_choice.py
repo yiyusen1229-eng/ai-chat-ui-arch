@@ -127,6 +127,68 @@ def main():
         S.SESS_DIR = old_dir
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # 7) 同一对话点不重复生成：have 够了就不调模型，不够只补差额（2026-11-22 加）
+    MSG = [{"role": "user", "content": "你还记得那天吗"},
+           {"role": "assistant", "content": "「……记得」"}]
+    check("count 夹到 2~5", (C.clamp_count(1), C.clamp_count(9), C.clamp_count("3")) == (2, 5, 3),
+          (C.clamp_count(1), C.clamp_count(9), C.clamp_count("3")))
+
+    # 数据根没有云端配置：真调模型会返回「没配云端模型」，所以 err=="" 就证明没发请求
+    opts, err = C.generate(MSG, 2, have=["放开手", "把脸背过去"])
+    check("已有 2 条、要 2 条 → 不调模型", opts == ["放开手", "把脸背过去"] and err == "", (opts, err))
+    opts, err = C.generate(MSG, 2, have=["放开手", "把脸背过去", "沉默", "转身走开"])
+    check("数量改小时只取前 count 条", opts == ["放开手", "把脸背过去"] and err == "", (opts, err))
+    opts, err = C.generate(MSG, 3, have=["放开手", "把脸背过去"])
+    check("不够时确实去调模型（这里没配置 → 报错并把已有带回来）",
+          opts == ["放开手", "把脸背过去"] and bool(err), (opts, err))
+
+    check("parse_options 会过滤已有的", C.parse_options("放开手\n靠过去\n沉默", 3,
+                                                         avoid=["放开手"]) == ["靠过去", "沉默"])
+    check("已有项的省略号/句号差别也算同一条",
+          C.parse_options("放开手\n靠过去", 2, avoid=["放开手。"]) == ["靠过去"])
+
+    # 增量提示词要点名别重复
+    _p = C.prompt_for(3, ["放开手", "把脸背过去"])
+    check("增量提示词只要 3 行", "只输出 3 行" in _p, _p[-80:])
+    check("增量提示词点名已有选项", "放开手" in _p and "不要重复" in _p, _p[-120:])
+    check("没有已有选项时不加这段", "不要重复" not in C.prompt_for(2), C.prompt_for(2))
+
+    # 把 _ask 换成假的：验「只补差额」「回来拼成 count 条」「顺序是旧的在前」
+    calls = []
+    _orig_ask = C._ask
+
+    def _fake_ask(ctx, need, avoid=None):
+        calls.append({"need": need, "avoid": list(avoid or [])})
+        if need == 3:
+            return "\n".join(["1. 把伞递过去", "2. 沉默", "3. 转身走开"]), ""
+        return "1. 新的甲\n2. 新的乙", ""
+
+    try:
+        C._ask = _fake_ask
+        opts, err = C.generate(MSG, 5, have=["放开手", "把脸背过去"])
+        check("数量 2→5：只要 3 个新选项", calls and calls[0]["need"] == 3, calls)
+        check("数量 2→5：已有选项也告诉模型", calls and calls[0]["avoid"] == ["放开手", "把脸背过去"], calls)
+        check("数量 2→5：拼成 5 条且旧的在前",
+              opts == ["放开手", "把脸背过去", "把伞递过去", "沉默", "转身走开"], opts)
+        check("数量 2→5：没有重复项", len(set(opts)) == 5, opts)
+
+        calls[:] = []
+        opts, err = C.generate(MSG, 2, have=["放开手", "把脸背过去"])
+        check("数量 5→2：一个请求都不发", calls == [] and opts == ["放开手", "把脸背过去"],
+              (calls, opts))
+
+        calls[:] = []
+        opts, err = C.generate(MSG, 4, have=["放开手", "把脸背过去", "把伞递过去", "沉默"])
+        check("已有 4 条要 4 条：不发请求", calls == [] and len(opts) == 4, (calls, opts))
+
+        # 模型漏给：补到几条算几条，别把旧的丢了
+        C._ask = lambda ctx, need, avoid=None: ("1. 只有一条", "")
+        opts, err = C.generate(MSG, 5, have=["放开手", "把脸背过去"])
+        check("模型补不满也保留已有 + 新的一条",
+              opts[:2] == ["放开手", "把脸背过去"] and len(opts) == 3 and bool(err), (opts, err))
+    finally:
+        C._ask = _orig_ask
+
     print()
     if FAILS:
         print("失败 %d 项：%s" % (len(FAILS), " / ".join(FAILS)))

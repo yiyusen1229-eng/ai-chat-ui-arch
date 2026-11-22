@@ -13,6 +13,11 @@
  *
  * 交互：悬停整条变亮 + 字变金；点击整层淡出后发送；数字键 1~5 选择，Esc 关闭。
  *
+ * 缓存（2026-11-22 加）：同一个对话点只生成一次 —— key = 历史条数 + 最后一条内容。
+ *       玩家没推进对话时 Esc / 右键关掉再打开，直接把上次那几条摆回来（不发请求）；
+ *       数量从 2 改成 5 只补差额（把已有的 `have` 带给后端），前 2 条保持不变。
+ *       对话一推进（发送 / 自动续说）key 就变，下次重新生成。
+ *
  * 存档：开着选项、一条都没选的时候存档，会把这几个选项写进存档的 `meta.choice`；
  *       读这个档时 `WA2.choices.show(options)` 原样摆回来，不再问模型。
  *       已经选过的那一层已经关了，`pendingOptions()` 返回 null，所以不会记。
@@ -32,9 +37,27 @@
   var SAFE_BOTTOM = 318;               /* 别压到对话框（#msgWrap 顶边 320） */
   var FADE_MS = 260;
 
-  var state = { open: false, busy: false, options: [], error: "" };
+  var state = { open: false, busy: false, options: [], error: "", cached: false };
 
   var COLORS = { normal: "", gold: "f0e0a0" };
+
+  /* 同一个对话点只生成一次（2026-11-22）：
+   * key 由「对话条数 + 最后一条内容」算出来 —— 玩家没推进对话时 key 不变，
+   * 所以 Esc / 右键关掉面板（不算推进）再打开，直接把上次那几条摆回来，一个请求都不发；
+   * 数量从小改大时（2 → 5），把已有的 `have` 带给后端，只补差额那几条。
+   * 对话一推进（发出去一句 / 自动续说），key 就变，自然重新生成。 */
+  var cache = { key: "", options: [] };
+
+  function historyKey() {
+    var h = window.__history || [];
+    var n = h.length;
+    var last = n ? (h[n - 1] || {}) : {};
+    return n + "|" + (last.role || "") + "|" + String(last.content || "").slice(0, 120);
+  }
+
+  function cachedFor(key) {
+    return (cache.key === key) ? cache.options.slice() : [];
+  }
 
   /* 读设置里的「分支数量」。注意：设置模块挂在 `window.App.getPrefs/setPref`，
      **没有 `WA2.prefs`**（2026-11-06 之前这里读 `WA2.prefs`，永远拿不到，
@@ -220,31 +243,58 @@
     return render(opts);
   }
 
+  function fail(msg) {
+    state.error = String(msg || "没有生成选项");
+    setBusy(false);
+    try { if (window.__toast) window.__toast("选择分支失败：" + state.error, 2400); } catch (e) {}
+    return state;
+  }
+
   function open() {
     if (state.busy || state.open) return Promise.resolve(state);
     setBusy(true);
     state.error = "";
+    state.cached = false;
     var count = prefsCount();
+    var key = historyKey();
+    var have = cachedFor(key);
+
+    /* 同一个对话点、已经够了：直接摆回去，连请求都不发 */
+    if (have.length >= count) {
+      state.cached = true;
+      return render(have.slice(0, count)).then(function () {
+        setBusy(false);
+        return state;
+      });
+    }
+
+    /* 不够（第一次 / 数量改多了）：只让后端补差额，已有的 `have` 带给它别重复 */
     return fetch("/api/choice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ count: count, messages: historyMsgs() })
+      body: JSON.stringify({ count: count, messages: historyMsgs(), have: have })
     }).then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d || !d.ok || !(d.options || []).length) {
-          state.error = (d && d.error) || "没有生成选项";
-          setBusy(false);
-          try { if (window.__toast) window.__toast("选择分支失败：" + state.error, 2400); } catch (e) {}
-          return state;
+        var opts = (d && d.options) || [];
+        if (!d || !d.ok || !opts.length) {
+          /* 增量时模型失败：手上那几条还能用，先摆出来，别整层失败 */
+          if (have.length >= 2) {
+            return render(have).then(function () {
+              setBusy(false);
+              try { if (window.__toast) window.__toast("只补到原来的选项：" + ((d && d.error) || ""), 2000); } catch (e) {}
+              return state;
+            });
+          }
+          return fail((d && d.error) || "没有生成选项");
         }
-        return render(d.options).then(function () { setBusy(false); return state; });
+        cache.key = key;
+        cache.options = opts.slice();
+        if (d.error) {          /* 差几个没补上：照样摆，提示一下 */
+          try { if (window.__toast) window.__toast("只补上了部分选项：" + d.error, 2000); } catch (e) {}
+        }
+        return render(opts.slice(0, count)).then(function () { setBusy(false); return state; });
       })
-      .catch(function (e) {
-        state.error = String(e);
-        setBusy(false);
-        try { if (window.__toast) window.__toast("选择分支失败：" + state.error, 2400); } catch (e) {}
-        return state;
-      });
+      .catch(function (e) { return fail(String(e)); });
   }
 
   function isOpen() { return state.open; }
@@ -273,7 +323,8 @@
   WA2.choices = {
     state: state, open: open, openChoices: open, showChoices: open,
     pick: pick, hide: hide, isOpen: isOpen, prefsCount: prefsCount,
-    show: show, pendingOptions: pendingOptions
+    show: show, pendingOptions: pendingOptions,
+    cache: cache, historyKey: historyKey
   };
   WA2.register("choices", WA2.choices);
 

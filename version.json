@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-22.3",
+  "version": "2026-11-22.4",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
   "portable_url": "",
-  "notes": "动作/旁白里指玩家改成第二人称「你」（以前写成第三人称「他」，读起来像旁人在看戏）；提示词在 api_chat【人称】+ 角色人设 + 导演旁白三处"
+  "notes": "选择分支：同一对话点不重复生成（关掉不选再打开直接复用、不发请求）；数量从 2 改成 5 只补差额 3 条，前几条保持不变"
 }
