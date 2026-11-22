@@ -99,6 +99,82 @@ def _judge_scene(prev_bg, player_text, action_text, reply_text, cfg, log, time_h
         return {}, ""
 
 _re_hscene = re.compile(r"<hscene>\s*([^<]{1,8}?)\s*</hscene>", re.I)
+
+# 场景「模糊推断」的最低相似度（2026-11-22）
+# 用户报「明明还在教室里，CG 突然跳到公寓」：模型这轮没给 <scene>，动作里一个「抽出来」
+# 被当成"移动"（_MOVE_WORDS 里有「出来」），拿整段文字去 scene_cg.match 模糊匹配，
+# 以 0.17 的低分匹配到「自己的公寓（房间）」，然后就直接换了图。
+# 现在按文字推断要过三道门：①必须有地点词 ②地点相似度够 ③匹配到的地点名（或近义词）
+# 真的出现在这句话里。任何一条不满足就**不动**（宁可背景不换，也不能乱跳）。
+SCENE_MIN_PLACE = 0.55
+
+
+def _scene_score_ok(hit, min_place=SCENE_MIN_PLACE):
+    """这次场景匹配的地点相似度够不够换图（够不着就别换，宁可不动）。
+
+    用 `place_score`（地点本身的相似度：精确 1.0 / 包含 0.72~0.9 / 其它打折），
+    不用 `score`（那是同地点变体之间的相对分，可以是负数、也能是 0.17 这种偶然分）。
+    """
+    if not hit:
+        return False
+    try:
+        ps = hit.get("place_score")
+        if ps is None:
+            ps = hit.get("score")
+        return float(ps or 0) >= min_place
+    except Exception:
+        return False
+
+
+def _place_mentioned(text, place):
+    """匹配到的地点名（或它在 PLACE_ALIAS 里的近义词）真的出现在这句话里吗？
+
+    「（把手抽出来）」这种整段文字和素材做模糊匹配，偶尔会以很低的分撞上某个地点，
+    以前就换图了；这里要求字面上真提到了，才认这次换场景。
+    只看地点主体（去掉「（房间）」这种括号细节），允许主体里任意两字出现在句子里
+    （「自己的公寓」← 「回公寓」）。
+    """
+    t = (text or "")
+    p = (place or "")
+    if not t or not p:
+        return False
+    if p in t:
+        return True
+    for k, v in scene_cg.PLACE_ALIAS.items():
+        if v == p and k and k in t:
+            return True
+    base = re.split(r"[（(]", p)[0].strip()
+    if base and base in t:
+        return True
+    return any(base[i:i + 2] in t for i in range(len(base) - 1))
+
+
+def _infer_scene_by_text(cue_txt, prev_bg, time_hint="", weather_hint="", detail_hints=None):
+    """模型没给 <scene> 时，用「移动动词 + 地点词」从文字里推断换没换地方。
+
+    返回命中的背景（没换/不确定返回 {}）；相似度太低时返回 {"_weak": hit} 让调用方记日志。
+    """
+    try:
+        if not cue_txt:
+            return {}
+        # ①必须真的提了地点（只是"抽出来/想到了/放进去"这种不算换地方）
+        if not any(w in cue_txt for w in _PLACE_CUES):
+            return {}
+        if not any(v in cue_txt for v in _MOVE_WORDS):
+            return {}
+        hit = scene_cg.match(cue_txt, prev_bg, time_hint=time_hint,
+                             weather_hint=weather_hint, detail_hints=detail_hints or []) or {}
+        if not hit.get("place"):
+            return {}
+        cur = scene_cg.parse_name(prev_bg)["place"] if prev_bg else ""
+        if hit.get("place") == cur:
+            return {}
+        # ②③ 地点像不像 + 是不是真提到了
+        if not _scene_score_ok(hit) or not _place_mentioned(cue_txt, hit.get("place")):
+            return {"_weak": hit}
+        return hit
+    except Exception:
+        return {}
 import llm
 import standing
 import text_parse as _tp
@@ -653,18 +729,19 @@ class ChatApi:
                 else:
                     log("场景：%r → %r" % (scene_now, bg_hit.get("id") or ""))
             else:
-                # 模型没给 <scene>（实测会漏）：先看文字里有没有移动动词
-                # （走进/到了/回家…），嘴上说"要不要去"不算。
+                # 模型没给 <scene>（实测会漏）：先看文字里有没有"移动"（走进/回家…）。
+                # 2026-11-22：必须同时有地点词 + 相似度够才换（见 _infer_scene_by_text）
                 try:
-                    if _cue_txt and any(v in _cue_txt for v in _MOVE_WORDS):
-                        _hit = scene_cg.match(_cue_txt, prev_bg, time_hint=_time_hint,
-                                             weather_hint=_weather_hint, detail_hints=_detail_hints)
-                        if _hit:
-                            _cur_place = scene_cg.parse_name(prev_bg)["place"]
-                            if _hit.get("place") and _hit.get("place") != _cur_place:
-                                bg_hit = _hit
-                                log("场景：模型没给标记，按文字推断 %r → %r"
-                                    % (_hit.get("place"), _hit.get("id") or ""))
+                    _hit = _infer_scene_by_text(_cue_txt, prev_bg, _time_hint,
+                                                _weather_hint, _detail_hints)
+                    if _hit.get("_weak"):
+                        _w = _hit["_weak"]
+                        log("场景：文字推断 %r 相似度 %.2f 太低，不换"
+                            % (_w.get("place") or "", float(_w.get("score") or 0)))
+                    elif _hit:
+                        bg_hit = _hit
+                        log("场景：模型没给标记，按文字推断 %r → %r"
+                            % (_hit.get("place"), _hit.get("id") or ""))
                 except Exception as e:
                     log("场景文字推断失败: %s" % e)
 
@@ -679,6 +756,11 @@ class ChatApi:
                              "base_url": base_url, "model": model}
                     _jhit, _jans = _judge_scene(prev_bg, _u_now, action, reply, _jcfg, log,
                                                    time_hint=_time_hint, weather_hint=_weather_hint)
+                    if _jhit and not _scene_score_ok(_jhit):
+                        # 判定器给的答案本身很勉强（相似度太低）：宁可不动
+                        log("场景：模型判断 %r 相似度 %.2f 太低，不换"
+                            % (_jhit.get("id") or "", float(_jhit.get("score") or 0)))
+                        _jhit = {}
                     if _jhit:
                         _cur_place = scene_cg.parse_name(prev_bg)["place"]
                         if _jhit.get("place") and _jhit.get("place") != _cur_place:
