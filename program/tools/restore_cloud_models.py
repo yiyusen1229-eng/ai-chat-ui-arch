@@ -28,7 +28,12 @@ LOCAL_CHAT = {"endpoint": "http://127.0.0.1:11434", "key": "",
 
 
 def _characters_root():
-    """角色目录：开发环境在 program/build_env/characters，打包版在 exe 旁边"""
+    """角色目录：开发环境在 program/build_env/characters，打包版在 exe 旁边
+
+    2026-11-22：去掉了最后那句 `return os.path.join(PROGRAM, "characters")` 的兜底 ——
+    数据根只有一个（`datadir.root()`），`program/characters` 是 11-21 之前那个老 bug
+    留下的副本，已经归档走人；再兜底回去只会让程序读到旧数据。
+    """
     dev = os.path.join(PROGRAM, "build_env", "characters")
     if os.path.isdir(dev):
         return dev
@@ -36,7 +41,7 @@ def _characters_root():
         import datadir
         return os.path.join(datadir.root(), "characters")
     except Exception:
-        return os.path.join(PROGRAM, "characters")
+        return dev
 
 
 def _dump(j):
