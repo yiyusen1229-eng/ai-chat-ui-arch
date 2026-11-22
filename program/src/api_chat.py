@@ -11,6 +11,7 @@ import persona_ctx
 import persona_stage
 import scene_cg
 import hscene
+import emotion as emo_smooth
 
 # <hscene>是</hscene>：聊天模型对「当前是不是成人场面」的判定
 import re
@@ -337,6 +338,17 @@ class ChatApi:
                 else:
                     system = system + ("\n【这一轮写她的台词】：只写一句她说的话（用「」）。")
         system = system + performance_hints(cc, outfit_hint)
+        # 情绪连续性（2026-11-22）：模型是逐句判情绪的，不告诉它上一句是什么，它就会一句一换
+        # （用户反馈「平静 → 突然哭腔 → 又平静」）。这里把上一句的情绪直接写进提示词，
+        # 后端 `emotion.settle()` 还会再做一层迟滞兜底。
+        try:
+            _prev = ((req.get("last_emo") or "").strip() or emo_smooth.last() or "").strip()
+            if _prev and _prev != emo_smooth.SCENE_EMO:
+                system = system + (
+                    "\n【情绪连续】上一句的情绪是「%s」。除非这句台词**明显**换了情绪，"
+                    "否则继续用「%s」；不要一句一换（平静和哭腔来回跳最出戏）。" % (_prev, _prev))
+        except Exception:
+            pass
         # 场面的最终判定在模型回复里（<hscene>），这里不预判；判定为「是」时解析后强制 H。
         _seg["tail"] = len(system) - _before_tail
         # 「为什么标签不出现」这类问题，光看代码猜不出来 —— WA2_DUMP_PROMPT=1 时把这一轮
@@ -519,6 +531,19 @@ class ChatApi:
                         emo = "H"
                 except Exception:
                     pass
+            # —— 情绪迟滞（2026-11-22）：立绘表情 / 参考音频别一句话一跳 ——
+            # 单句离群压回上一句的情绪；连续 2 次才真的换（规则见 emotion.py）。
+            try:
+                if len(raw_msgs) <= 1:          # 新游戏 / 空历史：重新建立基线
+                    emo_smooth.reset()
+                _e0 = emo
+                emo = emo_smooth.settle(emo, source=_src,
+                                        prev_hint=(req.get("last_emo") or ""),
+                                        scene_h=_intimate)
+                if emo != _e0:
+                    log("情绪迟滞：%s → 沿用 %s" % (_e0, emo))
+            except Exception as e:
+                log("情绪迟滞失败 %s" % e)
             raw, scene_now, outfit_now = split_scene(raw)
             acts, raw = split_action(raw)
             # 模型自己给的双语：<ja>日语</ja><zh>中文</zh>（比事后再翻译准，还省一次往返）

@@ -25,6 +25,7 @@ OUT = os.path.join(ROOT, "..", "other", "docs", "架构", "映射表.md")
 LEVELS = {
     "main.py": ("一级 · 后端服务", "主入口（HTTP 服务 + 窗口 + 启动）"),
     "text_parse.py": ("二级 · 核心", "回复标签解析、日文清理（纯函数）"),
+    "emotion.py": ("二级 · 核心", "情绪迟滞：立绘表情/参考音频别一句话一跳（settle/last/reset）"),
     "applog.py": ("二级 · 核心", "日志文件"),
     "diag.py": ("二级 · 核心", "调试面板的只读状态账本（/api/debug/state）"),
     "logpack.py": ("二级 · 核心", "日志按天滚动 + 诊断包导出（脱敏）"),

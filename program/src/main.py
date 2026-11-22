@@ -1383,6 +1383,12 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
                 log("场面：读档 %s 判定为%s" % (slot, "成人场面" if _is else "普通场面"))
             except Exception as e:
                 log("场面判定：读档重算失败 %s" % e)
+            try:
+                # 情绪迟滞：读档后基线从零开始（下一句用上一句的情绪播种，见 emotion.py）
+                import emotion as _emo_s
+                _emo_s.reset()
+            except Exception:
+                pass
             # 读档：恢复「这一场怎么演的」（旧档没有 meta.scene → 当前设置一概不动）
             try:
                 done = _restore_scene((d.get("meta") or {}).get("scene"))

@@ -299,6 +299,18 @@
       if (act.url) body.base_url = act.url;
       // 让后端做一次剧本检索：和这句话相关的「原作里发生过的事」会单独拼进 system
       body.memory = true;
+      /* 上一句的情绪：后端拿它写「情绪连续」提示、并给情绪迟滞播种
+         （读档 / 重启后第一句不用从 calm 从零开始）。优先看历史里最后一行的 emo。 */
+      body.last_emo = (function () {
+        try {
+          for (var i = history.length - 1; i >= 0; i--) {
+            if (history[i] && history[i].role === "assistant" && history[i].emo) {
+              return history[i].emo;
+            }
+          }
+        } catch (e) {}
+        return window.__lastEmo || "";
+      })();
       // 当前背景一并带上：模型只说地点没说时间时，新场景沿用现在的时段（白天/晚上）
       var _bgNow = (WA2.session && WA2.session.currentBg) ? WA2.session.currentBg() : "";
       if (_bgNow) body.bg = _bgNow;

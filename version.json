@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-22.4",
+  "version": "2026-11-22.5",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
   "portable_url": "",
-  "notes": "选择分支：同一对话点不重复生成（关掉不选再打开直接复用、不发请求）；数量从 2 改成 5 只补差额 3 条，前几条保持不变"
+  "notes": "情绪不再一句话一跳：单句离群压回上一句、连续两次才真的换；提示词也会带上「上一句的情绪」让模型自己少换"
 }

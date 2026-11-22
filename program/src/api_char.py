@@ -57,9 +57,14 @@ class CharApi:
             except Exception:
                 pass
             try:
-                # 换角色 = 换一场戏：上一场的原话别带过来
+                # 换角色 = 换一场戏：上一场的原话 / 情绪基线都别带过来
                 import scenelog
                 scenelog.clear()
+            except Exception:
+                pass
+            try:
+                import emotion
+                emotion.reset()          # 情绪迟滞：新角色从零建立基线
             except Exception:
                 pass
             try:
