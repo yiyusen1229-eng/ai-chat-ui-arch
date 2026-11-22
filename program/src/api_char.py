@@ -57,6 +57,12 @@ class CharApi:
             except Exception:
                 pass
             try:
+                # 换角色 = 换一场戏：上一场的原话别带过来
+                import scenelog
+                scenelog.clear()
+            except Exception:
+                pass
+            try:
                 _set_character_sessions()
             except Exception:
                 pass

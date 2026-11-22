@@ -42,9 +42,17 @@ _STRONG_RE = re.compile("|".join(re.escape(w) for w in STRONG))
 _WEAK_RE = re.compile("|".join(re.escape(w) for w in WEAK))
 _ZH_RE = re.compile("|".join(re.escape(w) for w in ZH))
 # 中文里也算强特征的几个词（译文里出现就已经很说明问题）
+# 补进来的都是实测里真的出现过、但词表没覆盖的露骨词
+# （"嗯？（把手指伸入她的阴道浅浅抽插）"这种以前只算 1 分，判不出来）
 ZH_STRONG = ("里面", "太深", "好深", "要去了", "忍不住", "好舒服",
-             "色情", "插入", "拔出来")
+             "色情", "插入", "拔出来",
+             "高潮", "阴道", "抽插", "母狗", "狗绳", "龟甲缚", "项圈",
+             "内射", "中出", "射了", "发情", "呻吟", "淫", "抽送", "舔")
 _ZH_STRONG_RE = re.compile("|".join(re.escape(w) for w in ZH_STRONG))
+# 日语里同类的露骨词（原文里常有、译文被洗白时靠它兜底）
+JA_STRONG = ("ちんこ", "まんこ", "おっぱい", "乳首", "くぱ", "中出し", "射精",
+             "オナニー", "精液", "気持ちよすぎ", "イかされる", "腰が砕")
+_JA_STRONG_RE = re.compile("|".join(re.escape(w) for w in JA_STRONG))
 
 
 def score(text):
@@ -56,13 +64,30 @@ def score(text):
     # 中文强特征也按个数算强信号（只看译文也能判出来）；
     # 以前只 +1，导致「里面太深了…要去了」这种只出现在译文里的句子过不了门槛
     strong += len(set(_ZH_STRONG_RE.findall(s)))
+    strong += len(set(_JA_STRONG_RE.findall(s)))
     return strong * 2 + weak + zh, strong
+
+
+def is_explicit(text):
+    """这句本身有没有**明确**的露骨词（不是"腰""胸""だめ"这种日常也有的）。
+
+    为什么要单独的判断：score() 里那串强特征词为了"看上下文"故意放宽
+    （腰/胸/感じ/だめ/むり…日常对话里到处都是），
+    拿它做**逐句**判定会把"腰有点疼"这种正常台词也判成 H ——
+    实测就是这个把普通台词全变成 H 语音的。逐句判定只认露骨词。
+    """
+    s = text or ""
+    if not s:
+        return False
+    return bool(_ZH_STRONG_RE.search(s) or _JA_STRONG_RE.search(s))
 
 
 def is_intimate(messages, lookback=6):
     """最近几条对话是不是成人场面。
 
     只看 user / assistant 的正文，遇不到就返回 False（宁可漏判，不要乱判）。
+    日语原文（ja）也一起看：多角色的中文字幕常被洗得比较含蓄，
+    露骨的东西只留在日语那侧。
     """
     if not messages:
         return False
@@ -72,7 +97,7 @@ def is_intimate(messages, lookback=6):
     for m in messages[-lookback:]:
         if not isinstance(m, dict):
             continue
-        txt = (m.get("content") or "") + " " + (m.get("zh") or "")
+        txt = " ".join([(m.get("content") or ""), (m.get("zh") or ""), (m.get("ja") or "")])
         s, strong = score(txt)
         if s >= 2:
             hits += 1
@@ -130,6 +155,20 @@ def force_exit():
 def last_scene():
     """None=还没判定过，True/False=当前生效的场面状态"""
     return _LAST["scene"]
+
+
+def effective_emotion(emo):
+    """这一句实际该用哪个情绪参考。
+
+    成人场面里，情绪标签只要不是 H 就一律按 H 念 —— 多角色的台词是导演/演员给的
+    （calm / 毒舌 / 撒娇…），不会自己带 H；以前只有"回想重放"那条路会强制 H，
+    于是出现「第一次是平常语气、回想里才变成 H 语气」。现在实时、预合成、重放
+    三处都走这一个判断。
+    """
+    e = (emo or "").strip()
+    if last_scene() is True and e != "H":
+        return "H"
+    return e
 
 
 def reset():

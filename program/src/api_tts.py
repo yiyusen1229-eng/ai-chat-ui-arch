@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 "TtsApi 的 mixin：从 main.py 拆出，方法体未改动。"
 
+import re
 import time
+
 import applog
 import audio_gain
 import tts_client
@@ -15,6 +17,11 @@ class TtsApi:
         try:
             import tts_client
             st = tts_client.state()
+            try:
+                import tts_prefetch
+                st["prefetch"] = tts_prefetch.stats()   # 预合成最近做了什么
+            except Exception:
+                pass
             return self._json({"ok": True, **st})
         except Exception as e:
             return self._json({"ok": False, "error": str(e)}, 500)
@@ -35,22 +42,32 @@ class TtsApi:
             text = qs(q, ("text", "t")).strip()
             lang = qs(q, ("lang",), "zh").strip() or "zh"
             emotion = qs(q, ("emotion", "emo"), "neutral").strip() or "neutral"
-            # 重放旧存档句时的标记：当前确实在成人场面，就按 H 念
-            # （旧存档里的 emotion 是生成时写死的，可能是 calm，重放会听着不对）
+            # 成人场面：标签不是 H 就按 H 念。
+            # 前端传了 hscene 就以它为准（重放旧句时带 1）；没传就用后端记住的当前场面
+            # —— 多角色台词不会自带 H 标签，以前只有重放会强制，导致
+            # 「实时平常语气、回想才是 H 语气」。
             _hs_raw = (qs(q, ("hscene", "hs")) or "").strip().lower()
-            _hs_on = _hs_raw in ("1", "true", "yes", "on")
-            if not _hs_raw:
-                # 没带参数就用后端记住的"当前场面"（载入存档后的自动重播走这条）
-                try:
-                    import hscene as _hsc
-                    _hs_on = _hsc.last_scene() is True
-                except Exception:
-                    _hs_on = False
-            if _hs_on:
-                if emotion != "H":
-                    applog.log("重放：按当前场面用 H 参考（原标签 %r）" % (emotion,), "TTS")
+            try:
+                import hscene as _hsc
+            except Exception:
+                _hsc = None
+            if _hs_raw:
+                _hs_on = _hs_raw in ("1", "true", "yes", "on")
+                if _hs_on and emotion != "H":
+                    applog.log("按请求的场面标记用 H 参考（原标签 %r）" % (emotion,), "TTS")
                     emotion = "H"
+            elif _hsc is not None:
+                _eff = _hsc.effective_emotion(emotion)
+                if _eff != emotion:
+                    applog.log("按当前场面用 H 参考（原标签 %r）" % (emotion,), "TTS")
+                    emotion = _eff
             speak_ja = qs(q, ("speak_ja", "sp")).strip()
+            # 防御：speak_ja 里一个假名都没有，说明调用方把**中文字幕**当成日语原文传了
+            # （多角色刚上线时历史里存的就是中文字幕）。当成"没给"，按中文念，
+            # 否则下面会因为 speak_ja 强制 lang=ja，中文被日语模型念成呓语。
+            if speak_ja and not re.search(r"[\u3040-\u30ff]", speak_ja):
+                applog.log("TTS：speak_ja 里没有假名（多半是字幕当日语传了），按中文念", "WARN")
+                speak_ja = ""
             # 多角色：这句是谁说的就用谁的权重/参考音频（不传 = 当前激活角色）
             speak_char = qs(q, ("char", "speaker", "who")).strip()
             if not text:

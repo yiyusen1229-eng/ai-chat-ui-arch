@@ -1,0 +1,8 @@
+# 运行时要的第三方包（Python 3.10 以上）
+# 首次双击「启动程序.bat」会自动建 venv 并装这些，不用手动执行
+pillow>=10.0
+fonttools>=4.0
+pywebview>=5.0
+
+# 只有发版打包才要（build_exe.py / build_portable.py），平时不用装
+# pyinstaller>=6.0

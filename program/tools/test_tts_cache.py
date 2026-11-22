@@ -138,6 +138,41 @@ def main():
     check("最新 3 条还在", all(("c%d.wav" % i) in left for i in (3, 4, 5)), left)
     check("更老的被删了", "c0.wav" not in left, left)
 
+    print("[9] 命中缓存时不去加载/切换权重（2026-11-22「回想重放又要重新加载」）")
+    d2 = tempfile.mkdtemp(prefix="wa2_hit_")
+    TC._TTS_CACHE_DIR = d2
+    hp = TC._tts_cache_path("テスト用の文です", "ja", "calm")
+    os.makedirs(os.path.dirname(hp), exist_ok=True)
+    io.open(hp, "wb").write(b"FAKE-CACHED")
+    calls = {"n": 0}
+    real_ensure, real_ready, real_post = TC._ensure_char_model, TC._ready, TC._post
+
+    def _counting():
+        calls["n"] += 1
+        return True
+
+    TC._ensure_char_model = _counting
+    TC._post = lambda *a, **k: b"NEW-AUDIO"
+    TC._ready = True
+    try:
+        data = TC._synthesize_inner("テスト用の文です", "ja", 3000, "calm", port=0)
+    finally:
+        TC._ensure_char_model, TC._ready, TC._post = real_ensure, real_ready, real_post
+    check("命中时直接返回缓存", data == b"FAKE-CACHED", data)
+    check("命中时没调 _ensure_char_model（不切权重）", calls["n"] == 0, calls["n"])
+
+    os.remove(hp)
+    calls["n"] = 0
+    TC._ensure_char_model = _counting
+    TC._post = lambda *a, **k: b"NEW-AUDIO"
+    TC._ready = True
+    try:
+        TC._synthesize_inner("别の未缓存文本です", "ja", 50, "calm", port=0)
+    finally:
+        TC._ensure_char_model, TC._ready, TC._post = real_ensure, real_ready, real_post
+    check("没缓存时才去切权重", calls["n"] == 1, calls["n"])
+    shutil.rmtree(d2, ignore_errors=True)
+
     print()
     if FAILS:
         print("失败 %d 项：%s" % (len(FAILS), "、".join(FAILS)))

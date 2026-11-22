@@ -20,22 +20,29 @@
     } catch (e) { return false; }
   }
 
-  function addHistory(role, text, raw, emo, speaker, narr) {
+  function addHistory(role, text, raw, emo, speaker, narr, cid, ja, hscene) {
     const d = document.createElement("div");
     d.className = "hline " + (role === "user" ? "me" : "her");
-    if (raw) d.dataset.ja = raw;      /* 原始日文（含 action/emotion），只存不显示 */
+    /* 重播要用**日语原文**：新数据由调用方明确给（队列路径的 raw 是中文字幕）；
+       老数据没有 ja，就沿用 raw —— 那时 raw 确实是日语原文。 */
+    if (ja) d.dataset.ja = ja;
+    else if (raw) d.dataset.ja = raw;
+    /* 这句当时是不是成人场面：重播要按同一套参考音频念（否则实时平常、回想 H） */
+    if (hscene) d.dataset.hscene = "1";
     /* 这句当时的情绪：重播要用它算缓存 key。
        以前重播写死 emotion=neutral，而当时合成用的是 calm/毒舌 → 缓存永远不命中，
        每次重播都要重新合成 2~5 秒（用户报「重放不像重放，像重新加载」）。 */
     if (emo) d.dataset.emo = emo;
     if (speaker) d.dataset.sp = speaker;      /* 这句是谁说的（多角色时不能都写当前角色） */
+    if (cid) d.dataset.cid = cid;             /* 重播要按 id 找音色：显示名可能重复 / 改过 */
     if (narr) d.dataset.narr = "1";           /* 旁白：不加「」、不写名字 */
     const ico = document.createElement("div");
     ico.className = "ico";
     const ic = document.createElement("img");
     ic.alt = "";
     /* 图标取自 sys_00031：灰气泡=用户（无语音）、白气泡=和纱、白气泡+播放三角=悬停 */
-    const canReplay = (role === "assistant") && !!raw && !!window.__voiceOk;
+    /* 旁白没有语音、也不该有播放入口（以前旁白也挂了播放键，点了会把中文当日语念） */
+    const canReplay = (role === "assistant") && !narr && !!raw && !!window.__voiceOk;
     ic.src = "assets/ui/history/" + (canReplay ? "icon_her" : "icon_me") + ".png";
     ico.appendChild(ic);
     const body = document.createElement("div");
@@ -114,6 +121,12 @@
     setRowHighlight(row, true);
     const clean = ja.replace(/<[^>]*>/g, "")
                     .replace(/^[「『]/, "").replace(/[」』]$/, "").trim();
+    /* 这段到底是日语还是中文？
+       多角色刚上线那阵子，历史里存的是**中文字幕**（日语原文在另一个字段，没存下来），
+       重播又把中文字符串当 speak_ja 发出去 —— 后端见到 speak_ja 就强制 lang=ja，
+       于是拿中文喂日语模型，听起来就是"胡言乱语"。
+       现在按文字本身判断：有假名才当日语念，否则按中文念（老档也不炸）。 */
+    const _useJa = !!(WA2.util && WA2.util.hasKana && WA2.util.hasKana(clean));
     /* 用这句当时的情绪（dataset.emo）算缓存 key，才能命中原来那段音频；
        老存档没有 emo 才退回按文本猜。 */
     /* 优先用「当初合成时」的参数（dataset.voice）：同一句重放必须命中同一段缓存。
@@ -123,7 +136,7 @@
     const emo = (voiceReq && voiceReq.e) ? String(voiceReq.e)
               : ((row.dataset.emo || "").trim() ||
                  (window.emoOf ? window.emoOf(clean) : "calm"));
-    const vLang = (voiceReq && voiceReq.l) ? String(voiceReq.l) : "ja";
+    const vLang = _useJa ? "ja" : "zh";
     const done = function () {
       if (done._ended) return;
       done._ended = true;
@@ -137,11 +150,13 @@
        带 hscene=1 让后端按 H 念，和实时播放保持一致 */
     const _hs = (row.dataset.hscene === "1" ||
                  (document.body && document.body.dataset.hscene === "1")) ? "&hscene=1" : "";
-    /* 多角色：这一行是谁说的就用谁的音色（没有就用当前角色） */
-    var _sp = (row.dataset.sp || "").trim();
+    /* 多角色：这一行是谁说的就用谁的音色（id 优先，老存档只有名字） */
+    var _sp = (row.dataset.cid || row.dataset.sp || "").trim();
     var _charQ = _sp ? ("&char=" + encodeURIComponent(_sp)) : "";
+    /* 不是日语就别带 speak_ja：后端见到它会强制 lang=ja，中文会被当日语念 */
+    var _spkJaq = _useJa ? ("&speak_ja=" + encodeURIComponent(clean)) : "";
     fetch("/api/tts?text=" + encodeURIComponent(vText) + "&lang=" + encodeURIComponent(vLang) +
-          "&emotion=" + encodeURIComponent(emo) + "&speak_ja=" + encodeURIComponent(clean) + _hs + _charQ)
+          "&emotion=" + encodeURIComponent(emo) + _spkJaq + _hs + _charQ)
       .then(function (r) { if (!r.ok) throw new Error("tts " + r.status); return r.blob(); })
       .then(function (b) {
         const u = URL.createObjectURL(b);
@@ -166,7 +181,8 @@
       if (!shown) return;
       addHistory(m.role, shown, isHer ? (m.content || "") : "",
                  isHer ? (m.emo || "") : "", isHer ? (m.speaker || "") : "",
-                 isHer ? !!m.narr : false);
+                 isHer ? !!m.narr : false, isHer ? (m.cid || "") : "",
+                 isHer ? (m.ja || "") : "", isHer ? !!m.hscene : false);
     });
   }
 

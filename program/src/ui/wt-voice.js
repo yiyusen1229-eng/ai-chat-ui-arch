@@ -82,12 +82,14 @@
   }
 
   /* 这句该按什么语言合成：
-     · 有日文原文（单角色正常对话）→ ja；
-     · 没有日文原文但知道说话人（导演写的台词）→ ja，让后端先翻成日文；
-     · 其它情况尊重设置（默认 zh）。 */
+     · 有日文原文（speak_ja）→ ja；
+     · 传进来的本身就是日语原文（单角色对话）→ ja；
+     · 只有中文字幕、没有日语原文 → zh（以前这里见到 speaker 就返回 ja，
+       「中文字幕」被当成日语念，出来就是胡言乱语）。 */
   function voiceLangFor(text, speaker) {
     if (window.__speakJa) return "ja";
-    if (speaker) return "ja";
+    if (WA2.util && WA2.util.hasKana && WA2.util.hasKana(text)) return "ja";
+    if (speaker) return "zh";
     return currentVoiceLang();
   }
 

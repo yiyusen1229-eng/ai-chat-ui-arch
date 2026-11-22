@@ -29,12 +29,16 @@
     window.__nextOutfit = (d.outfit || "").trim(); // 只有明确换衣服才有值
     var _isNarr = (d.line_type === "narr");
     var _speaker = (d.speaker || "").trim();
+    /* 角色 id：立绘和音色都按它找（speaker 只负责显示名字）。
+       老存档 / 单角色路径没有这个字段，下面一律回落到名字。 */
+    var _cid = (d.cid || "").trim();
     /* 模型常把旁白整句写成「（…）」：这种也按旁白处理 */
     if (!_isNarr && /^[（(【]/.test((d.reply_zh || d.reply || "").trim())) {
       _isNarr = true;
     }
     if (_isNarr) {
       _speaker = "";
+      _cid = "";
     } else if (!_speaker) {
       /* 聊天路径没有 speaker 字段：默认就是当前角色，名字牌要照常画回来 */
       try { if (typeof CHAR_NAME !== "undefined" && CHAR_NAME) _speaker = String(CHAR_NAME); } catch (e) {}
@@ -72,11 +76,26 @@
       } else {
         shown = "「" + _lineText.replace(/^[「『]+|[」』]+$/g, "") + "」";
       }
+      /* 这句里到底有没有"台词"：单角色路径会把她说的话包成「…」，
+         纯旁白/动作描写没有引号。用来区分"该配音"和"不该配音"。 */
+      var _hasSpeech = /[「『]/.test(_lineText || "");
       window.__speakJa = replyZh ? reply.replace(/^「|」$/g, "") : "";
       if (d && d.ja) window.__speakJa = String(d.ja);   /* 角色自己写的日语原文优先 */
+      /* 旁白 / 纯动作描写不配音：以前也会走 TTS，把"（她在路灯下停了一瞬…）"
+         这种长句翻成日语念出来，听上去就是一长串怪声（日志里出现过 900KB 的音频） */
+      if (_isNarr && !_hasSpeech) window.__speakJa = "";
+      /* 存这一句「真正的日语原文」：队列路径的 reply 是**中文字幕**，
+         以前把它当日语原文存进历史，回想重播时拿中文去喂日语模型 —— 这就是
+         「实时正常、回想里胡言乱语」的原因。旁白 / 玩家没有日语，存空。 */
+      var _jaForHist = _isNarr ? "" : String(window.__speakJa || "").trim();
       /* 中日对照：content 保留语言模型原句（含 action/emotion 未过滤），zh 存翻译模型原样输出 */
       history[history.length - 1].zh = replyZh;
       history[history.length - 1].emo = window.__lastEmo || "";   /* 重播要按当时的情绪算缓存 key */
+      if (_jaForHist) history[history.length - 1].ja = _jaForHist;
+      /* 这一句当时是不是成人场面：回想重放要用同一套参考音频，
+         否则会出现「实时平常语气、回想才是 H 语气」 */
+      var _hsLine = !!(d && d.hscene);
+      if (_hsLine) history[history.length - 1].hscene = true;
       /* 说话人：队列条目带的是真实说话人；单角色路径用当前角色名。
          写进历史，读档/回想才不会把别人的台词标成当前角色。 */
       if (_isNarr) {
@@ -84,8 +103,10 @@
       } else {
         var _spkName = _speaker || _ownName || (typeof CHAR_NAME !== "undefined" ? String(CHAR_NAME) : "");
         if (_spkName) history[history.length - 1].speaker = _spkName;
+        if (_cid) history[history.length - 1].cid = _cid;   /* 换角色 / 改名后重播还找得对人 */
       }
-      addHistory("assistant", shown, reply, window.__lastEmo || "", _speaker, _isNarr);   /* 六参：旁白 */
+      addHistory("assistant", shown, reply, window.__lastEmo || "", _speaker, _isNarr, _cid,
+                 _jaForHist, _hsLine);
       // 先合成语音；语音没准备好就先不出文字，等语音出来一起出
       try { if (WA2.backlog && WA2.backlog.setVoiceOnLast) WA2.backlog.setVoiceOnLast(window.__lastVoiceReq); } catch (e) {}
       const mood = (window.__lastEmo || detectMood(shown));
@@ -125,7 +146,12 @@
             try {
               if (WA2.sprite && WA2.sprite.useCharacter) {
                 var _ownNow = (typeof CHAR_NAME !== "undefined" && CHAR_NAME) ? String(CHAR_NAME) : "";
-                WA2.sprite.useCharacter(_speaker && _speaker !== _ownNow ? _speaker : "", cb || function () {});
+                var _ownId = (window.__activeCharId || "");
+                /* 优先按 id 找立绘；没有 id（玩家 / 龙套 / 老数据）才退回名字 */
+                var _who = _cid || _speaker;
+                if (_cid && _ownId && _cid === _ownId) _who = "";
+                else if (!_cid && _speaker && _speaker === _ownNow) _who = "";
+                WA2.sprite.useCharacter(_who, cb || function () {});
                 return;
               }
             } catch (e) {}
@@ -156,20 +182,29 @@
       const _readMs = Math.min(30000, Math.max(2000, (shown || "").length * 500));
       var _ownName = "";
       try { if (typeof CHAR_NAME !== "undefined" && CHAR_NAME) _ownName = String(CHAR_NAME); } catch (e) {}
-      var _canVoice = (_lineType === "her") && (!_speaker || _speaker === _ownName);
+      var _ownId = String(window.__activeCharId || "");
+      /* 找音色也是 id 优先：名字只用来显示 */
+      var _who = _cid || _speaker;
+      /* 旁白 / 动作描写一律不配音：它们没有"台词"，念出来就是长串怪声。
+         以前只按 line_type 判断，而单角色路径的 line_type 恒为 her，
+         于是「（她在路灯下停了一瞬…）」这种也被合成成日语念出来。
+         判据：带引号的 = 台词（要念）；不带引号的旁白 = 不念。
+         动作+台词混在一句里（"（她别过脸）「…」"）仍然要念。 */
+      var _canVoice = (_lineType === "her") && (_hasSpeech || !_isNarr) &&
+                      (!_who || _who === _ownName || (_cid && _ownId && _cid === _ownId));
       /* 队列里别的角色说话：他/她有自己的音色也照样念 */
       try {
-        if (!_canVoice && _speaker && window.__voiceMap && window.__voiceMap[_speaker] === true) {
+        if (!_canVoice && _who && window.__voiceMap && window.__voiceMap[_who] === true) {
           _canVoice = true;
         }
       } catch (e) {}
       /* 玩家永远不出语音；说话人没有音色也不出 */
       try {
         if (window.__playerName && _speaker === window.__playerName) _canVoice = false;
-        if (_speaker && window.__voiceMap && window.__voiceMap[_speaker] === false) _canVoice = false;
+        if (_who && window.__voiceMap && window.__voiceMap[_who] === false) _canVoice = false;
       } catch (e) {}
       const voiceDone = _canVoice
-        ? speakReply(reply, renderNow, _speaker).then(function () {
+        ? speakReply(reply, renderNow, _who).then(function () {
             renderNow();      /* 没有语音 / 播失败时兜底：文字照样要出 */
           })
         : Promise.resolve().then(function () {
@@ -230,14 +265,17 @@
     }
     if (_dirOn) {
       try {
+        /* 清队列（丢掉上一轮没播完的预生成），但**不清场景原话**：
+           以前这里连带把「刚才发生的事」清了，于是每一轮导演和角色都从零开始
+           —— 表现就是「每轮对话接不上」。 */
         await fetch("/api/play/clear", { method: "POST" });
-        await fetch("/api/direct/options", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ direction: text })
-        });
+        /* 和单角色 /api/chat 一样：把整段 history 带上去。
+           导演和角色因此看到的就是「从存档读到现在的全部」，
+           不用再单独记玩家这句话、也不用读档后另做铺回。
+           对话框里打的是玩家的台词；剧情走向在标题栏「多角色」菜单里单独填。 */
         var _g = await fetch("/api/direct/gen", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ n: 3 })     /* 多要一拍：至少让两个在场角色都开口 */
+          body: JSON.stringify({ n: 3, messages: (history || []).slice(-200) })
         });
         var _gd = await _g.json().catch(function () { return null; });
         if (_gd && _gd.error && window.__toast) window.__toast("导演没能接话：" + _gd.error, 3200);

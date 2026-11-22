@@ -32,9 +32,12 @@ MAX_WORLDBOOK_CHARS = 3000
 MAX_MEMORY_CHARS = 1500
 
 
-def char_file(kind, exts=None):
-    """这一类资源当前导入的是哪个文件（统一由 special_files 找，别写两份）"""
-    return _sf.char_file(kind, exts)
+def char_file(kind, exts=None, cid=None):
+    """这一类资源当前导入的是哪个文件（统一由 special_files 找，别写两份）
+
+    cid 不传 = 当前角色；传了 = 指定角色（多角色场上那个人）。
+    """
+    return _sf.char_file(kind, exts, cid)
 
 
 def _cached(path, loader):
@@ -135,13 +138,16 @@ def worldbook_text():
 
 
 # ------------------------------------------------------------------ 记忆书
-def memory_path():
-    return char_file("memory", TEXT_EXTS)
+def memory_path(cid=None):
+    return char_file("memory", TEXT_EXTS, cid)
 
 
-def memory_text():
-    """导入的记忆书：一段事先记好的旧事，每轮都带上"""
-    text = _cached(memory_path(), _read_text) or ""
+def memory_text(cid=None):
+    """角色的记忆书：一段事先记好的旧事，每轮都带上
+
+    cid 不传 = 当前角色（单角色对话走这条）；传了 = 场上说话的那个人。
+    """
+    text = _cached(memory_path(cid), _read_text) or ""
     if len(text) > MAX_MEMORY_CHARS:
         text = text[:MAX_MEMORY_CHARS]
     return text

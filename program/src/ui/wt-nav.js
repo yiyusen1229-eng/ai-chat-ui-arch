@@ -193,6 +193,51 @@
     return v === "1";
   }
 
+  /* 动作文本的「字模」渲染：和对话框走**同一套**参数 —— 后端按 FONT_SIZE=28 带描边烤图，
+     前端按 TEXT_SCALE（默认 0.625）缩放，所以字形、描边、颜色、字重和对话框完全一致
+     （显示字号 ≈ 28 × 0.625 ≈ 17.5px，和对话框一样）。
+     另外按 chars_per_line 折行：图片高度随行数长，宽度按缩放算死，
+     不会被挤小、也没有行数裁剪。
+     为什么不用 uitext.js：它把整段渲成**一张单行图**（height=15.5px, width:auto），
+     长句就会被压成小字。 */
+  var ACT_TX_VER = "20261122b";
+  var ACT_FONT_PX = 28;          /* 后端字模字号（sub_render.FONT_SIZE） */
+  function renderActionImage(box) {
+    var text = (box.textContent || "").trim();
+    if (!text) return;
+    /* 显示比例要和对话框用**同一个**（用户在设置里能调，存在 localStorage：
+       app_textScale；window.TEXT_SCALE 是模块加载时的旧副本，不能直接用） */
+    var scale = 0.625;
+    try {
+      var _ls = parseFloat(localStorage.getItem("app_textScale") || "");
+      if (_ls > 0.2 && _ls < 3) scale = _ls;
+      else if (window.TEXT_SCALE > 0.2 && window.TEXT_SCALE < 3) scale = window.TEXT_SCALE;
+    } catch (e) {}
+    /* 框的**逻辑**宽度：#stage 固定 800 宽，#thinkBox 是 36% → 288px。
+       不能拿 getBoundingClientRect()：它含 fitStage() 的缩放（窗口变大时会被放大），
+       会算出偏大的每行字数；而图片宽度是按逻辑 px 设置的，两者必须同一套坐标。 */
+    var boxW = 800 * 0.36;
+    /* 一行放几个字：按「显示后的字宽」算（28px 字模 × 缩放 = 显示字宽） */
+    var glyphPx = ACT_FONT_PX * scale;
+    var perLine = Math.max(4, Math.floor(boxW / Math.max(8, glyphPx)));
+    /* 和对话框同样的参数（s/e 是 GLIB 兜底用的，plain 不传 = 带描边）；
+       w 给大值，让折行只由 chars_per_line 决定 */
+    var url = "/api/text?text=" + encodeURIComponent(text) + "&s=56&w=2000&e=1" +
+              "&chars_per_line=" + perLine + "&v=" + ACT_TX_VER;
+    var img = new Image();
+    img.onload = function () {
+      if (box.textContent.trim() !== text) return;      /* 期间又换了内容：丢弃旧图 */
+      box.textContent = "";
+      img.setAttribute("data-uitxt", text);
+      img.style.cssText = "display:block;width:" + (img.naturalWidth * scale).toFixed(1) +
+                          "px;height:auto;pointer-events:none";
+      img.alt = "";
+      box.appendChild(img);
+    };
+    img.onerror = function () { /* 渲染失败就保持真文字，不让人看不到 */ };
+    img.src = url;
+  }
+
   function renderThinking() {
     const box = $("thinkBox");
     const btn = $("thinkBtn");
@@ -210,10 +255,13 @@
       // 模型有时自己带了（）/「」，先剥掉再统一包一层
       var clean = body.replace(/^[（(【\[]+/, "").replace(/[）)】\]]+$/, "").trim();
       box.textContent = "（" + clean + "）";
-      /* 字号固定成和对话框一致（15.5px），不再按长度缩 */
+      /* 字号固定成和对话框一致（15.5px），不按长度缩、也不裁行数：
+         字多就往下多占几行（样式见 game450.css 的 #thinkBox）。 */
       box.style.fontSize = "";
-      box.style.webkitLineClamp = 4;
+      box.style.webkitLineClamp = "";
       box.classList.remove("hidden");
+      /* 换成字模图（和对话框同一套字体）；拿不到就保持真文字 */
+      try { renderActionImage(box); } catch (e) {}
     } else {
       box.textContent = "";
       box.classList.add("hidden");

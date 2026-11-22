@@ -4,16 +4,22 @@
 
 | 脚本 | 作用 | 什么时候用 |
 |---|---|---|
-| `run_dev.py` | 同步 `src/` → `build_env/` 并启动程序；`--sync-only` 只同步 | 每次开发运行（被 bat 调用） |
+| `run_dev.py` | 同步 `src/` → `build_env/` 并启动程序；`--sync-only` 只同步，`--watch` 改完自动同步 + 重启 | 每次开发运行（被 bat 调用） |
 | `ui_probe.py` | 用真实 WebView2 打开界面、跑 JS、截图 | 改完界面要验证「JS 真的跑了」 |
 | `ui_snap.py` | 六个界面逐元素样式指纹 + 截图，`--diff` 对比两次 | 改 CSS 前后的回归检查 |
 | `test_memory.py` | 记忆书单测（估算 / 裁剪 / 打包 / 合并） | 改记忆书逻辑 |
 | `test_memory_flow.py` | 记忆书端到端（读档复制 → 缓存 → 存档快照 → 6 轮重打包） | 改记忆书流程 |
 | `test_char_res.py` | 角色资源接线单测（提示词/世界书/记忆书/参考音频/立绘表情） | 改 `char_res` / `special_files` / `tts_client` |
 | `test_char_wiring.py` | 资源接线端到端（假模型，断言 system 内容） | 改人设/世界书/记忆书注入 |
+| `test_actor_ctx.py` | 上下文隔离：数据目录 / scenelog / speaker.ctx / 角色提示词里的记忆·原话·关系·红线 / 导演提示词 | 改 `actor` / `speaker` / `scenelog` / `datadir` / `director_gen` |
+| `test_run_dev.py` | 开发入口：只看代码文件、改/增/删都认得出、窗口关了会退出、子进程收得干净 | 改 `run_dev.py` |
+| `test_tts_prefetch.py` | 预合成：开关 / 只排下两句 / 参数与真播一致 / 去重与清空 / 失败不扩散 / 队列上限 | 改 `tts_prefetch` / `playqueue` |
 | `test_persona_stage.py` | 关系阶段：云端分类 / 到顶封顶 / 失败兜底 | 改 `persona_stage.py` |
 | `test_scene_cg.py` | 场景 CG 匹配单测 | 改 `scene_cg.py` |
 | `import_cg.py` | 场景图 → `res/assets/cg/*.webp` + `index.json` | 换/加场景图 |
+| `import_voice_refs.py` | 语音素材 → `<角色>/voice/<情绪>/*.wav` + prompt_text（剧本原文或 ASR） | 导入/整理参考音频 |
+| `test_import_cg.py` | 导入/匹配回归（增量导入不冲旧目录、已有的地点不被别名抢） | 改 `import_cg.py` / `scene_cg.match` |
+| `test_scene_judge.py` | 场景判定器单测（大致匹配/不变/胡答/关思考/完整场景名） | 改 `_judge_scene` 或场景提示词 |
 | `build_story_index_v2.py` | 从 `other/dev/dataset/L2_scene.jsonl` 重建 `src/story_index.json.gz` | 换了剧本数据 |
 | `bake_ui_text.py` | 固定文案 → `res/assets/ui/text/*.png` | 改界面文案 |
 | `bake_cost_ui.py` | 花费栏字模（数字/字母单独排版） | 改花费栏 |
@@ -24,6 +30,7 @@
 | `preview_assets.py` | 预览 tga/bmp 素材与坐标 | 调界面坐标 |
 | `setup_assets.py` | 下载可自动获取的模型依赖 | 首次部署 |
 | `build_exe.py` | PyInstaller 打包（onefile） | 发版 |
+| `restore_cloud_models.py` | 角色聊天模型在「本机 / 云端」之间一键切换（备份在 `characters/<角色>/model.json.cloud.bak`） | 换回云端 / 再切本地 |
 | `build_portable.py` | 绿色版目录（onedir）+ zip | 发版 |
 | `归档/` | 一次性分析脚本、旧工具（`gdi_proxy`、`llama_cpp`、占位素材生成器） | 一般不用，别删 |
 

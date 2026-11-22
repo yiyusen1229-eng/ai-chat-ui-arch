@@ -79,11 +79,14 @@ def _probe(endpoint, key):
 def state():
     sec = _load().get(KIND) or {}
     g = _global_default()
+    ep = sec.get("endpoint") or g.get("endpoint") or ""
+    # 本机端点不显示云端的 key（界面上看到"有 key"会让人以为在打云端）
+    key = sec.get("key") or ("" if _local_ep(ep) else (g.get("key") or ""))
     return {"kind": KIND,
-            "endpoint": sec.get("endpoint") or g.get("endpoint") or "",
-            "key": _mask(sec.get("key") or g.get("key") or ""),
-            "hasKey": bool(sec.get("key") or g.get("key")),
-            "model": sec.get("model") or g.get("model") or "",
+            "endpoint": ep,
+            "key": _mask(key),
+            "hasKey": bool(key),
+            "model": sec.get("model") or ("" if _local_ep(ep) else (g.get("model") or "")),
             "connected": bool(sec.get("connected"))}
 
 
@@ -109,7 +112,9 @@ def connect():
     d = _load()
     s = d.get(KIND) or {}
     s["connected"] = True
-    if model:
+    # 只在没填模型时才用探测到的第一个：本机 Ollama 列表里第一个往往是别的模型，
+    # 直接盖掉会把用户选的模型换走
+    if model and not s.get("model"):
         s["model"] = model
     d[KIND] = s
     _save(d)
@@ -132,10 +137,25 @@ def switch():
     return {"ok": ok, "cleared": True, "state": state()}
 
 
+def _local_ep(endpoint):
+    """本机端点（Ollama / LM Studio / llama.cpp）：不要借云端 key、不要借云端模型名"""
+    u = (endpoint or "").lower()
+    return any(x in u for x in ("127.0.0.1", "localhost", "0.0.0.0", ":11434", "::1"))
+
+
 def cfg():
-    """给 director_gen 用：返回 {base_url, api_key, model}"""
+    """给 director_gen 用：返回 {base_url, api_key, model}
+
+    配的是本机端点时：不把云端的 key 带过去（本地服务不认它，还会把 key 发到本地
+    日志里），也不回落云端的模型名（否则 127.0.0.1 + deepseek-flash 这种组合会直接
+    「模型不存在」）。
+    """
     sec = _load().get(KIND) or {}
     g = _global_default()
-    return {"base_url": sec.get("endpoint") or g.get("endpoint") or "",
+    ep = sec.get("endpoint") or g.get("endpoint") or ""
+    if _local_ep(ep):
+        return {"base_url": ep, "api_key": sec.get("key") or "",
+                "model": sec.get("model") or ""}
+    return {"base_url": ep,
             "api_key": sec.get("key") or g.get("key") or "",
             "model": sec.get("model") or g.get("model") or ""}

@@ -24,19 +24,18 @@
 """
 import json
 import os
-import sys
 import time
 
 import cache_io
+import datadir
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-# 运行时缓存目录（缓存记忆书就放这儿）；WA2_CACHE_DIR 是给自测/便携版换位置的
-CACHE_DIR = os.environ.get("WA2_CACHE_DIR") or os.path.join(BASE, "cache")
+BASE = os.path.dirname(os.path.abspath(__file__))   # 程序目录（只读素材在这里）
+# 运行时缓存目录（缓存记忆书就放这儿）；跟 sessions / 角色 / 日志同一个数据根
+CACHE_DIR = datadir.env_or("WA2_CACHE_DIR", "cache")
 RUNTIME_FILE = os.path.join(CACHE_DIR, "memory_runtime.json")
-# 用户可改的参数放 exe 同目录（和 prefs.json / config.json 一个规矩）。
+# 用户可改的参数放数据根（和 prefs.json / config.json 一个规矩）。
 # 打包后 BASE 是临时解包目录，写进去程序一退出就没了。
-USER_DIR = (os.path.dirname(os.path.abspath(sys.executable))
-            if getattr(sys, "frozen", False) else BASE)
+USER_DIR = datadir.root()
 CFG_FILE = os.path.join(USER_DIR, "memory.json")
 
 # ------------------------------------------------------------------ 参数
@@ -153,6 +152,23 @@ def _save_runtime():
         os.replace(tmp, RUNTIME_FILE)
     except Exception:
         pass
+
+
+def summary_text(max_chars=600):
+    """把当前记忆书的条目拼成一段文字。
+
+    多角色要用：读档之后只给导演/角色看最近几十条原话，早先的剧情就接不上了；
+    记忆书是「这一段之前发生过什么」的摘要，和原话一起给才对得上「接着上文」。
+    """
+    try:
+        r = runtime() or {}
+        rows = [str(e.get("text") or "").strip() for e in (r.get("entries") or [])]
+        text = "\n".join(x for x in rows if x)
+    except Exception:
+        return ""
+    if max_chars and len(text) > max_chars:
+        text = text[-max_chars:]
+    return text
 
 
 def runtime_set(**kw):

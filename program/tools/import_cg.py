@@ -71,10 +71,22 @@ def convert(src_path, dst_path, max_w, quality, force):
     return True, "%dx%d" % im.size
 
 
-def build_index(dst, src_names):
-    """按文件名生成目录。标签解析全交给 scene_cg.parse_name()"""
+def build_index(dst, src_names, prune=False):
+    """按文件名生成目录。标签解析全交给 scene_cg.parse_name()
+
+    增量导入必须把**输出目录里已有的图**也带上：以前只按 --src 生成，
+    导一批新 CG 会把这之前的目录整个冲掉（血泪教训：2026-11-21 导「新加入cg」
+    63 张，把原有 119 条的目录写成只剩 63 条）。--prune 时才算"只保留源目录"。
+    """
+    stems = list(src_names)
+    if not prune and os.path.isdir(dst):
+        for f in os.listdir(dst):
+            if f.lower().endswith(".webp"):
+                stem = os.path.splitext(f)[0]
+                if stem not in stems:
+                    stems.append(stem)
     items = []
-    for stem in src_names:
+    for stem in stems:
         file = stem + ".webp"
         if not os.path.exists(os.path.join(dst, file)):
             continue
@@ -103,19 +115,28 @@ def build_index(dst, src_names):
 
 def main():
     ap = argparse.ArgumentParser(description="场景背景图 → webp + index.json")
-    ap.add_argument("--src", required=True, help="场景原图所在目录（tga/png/jpg…）")
+    ap.add_argument("--src", help="场景原图所在目录（tga/png/jpg…）；--rebuild 时可省略")
     ap.add_argument("--dst", default=DEFAULT_DST, help="输出目录（默认 res/assets/cg）")
     ap.add_argument("--width", type=int, default=1280, help="最大宽度，0 表示不缩放")
     ap.add_argument("--quality", type=int, default=90, help="webp 质量")
     ap.add_argument("--force", action="store_true", help="已存在也重转")
     ap.add_argument("--prune", action="store_true", help="删掉输出目录里源图已不存在的 webp")
+    ap.add_argument("--rebuild", action="store_true",
+                    help="只按输出目录里已有的 webp 重建 index.json（不转图）")
     ap.add_argument("--dry-run", action="store_true", help="只打印，不写文件")
     args = ap.parse_args()
 
-    src = os.path.abspath(args.src)
     dst = os.path.abspath(args.dst)
+    if args.rebuild:
+        index, items = build_index(dst, [], prune=False)
+        places = sorted({it["place"] for it in items if it["kind"] == "place"})
+        print("重建目录：%d 条，地点 %d 个" % (len(items), len(places)))
+        print("目录：%s" % index)
+        return 0
+
+    src = os.path.abspath(args.src or "")
     if not os.path.isdir(src):
-        print("源目录不存在：%s" % src)
+        print("源目录不存在：%s（要只重建目录请用 --rebuild）" % src)
         return 2
     sources = list_sources(src)
     if not sources:
@@ -146,7 +167,7 @@ def main():
     if args.dry_run:
         return 0
 
-    index, items = build_index(dst, [s for s, _ in sources])
+    index, items = build_index(dst, [s for s, _ in sources], prune=args.prune)
     places = sorted({it["place"] for it in items if it["kind"] == "place"})
     print("\n转换 %d 张（跳过 %d，失败 %d），本次写入 %.1f MB" %
           (done, skipped, failed, total / 1048576.0))

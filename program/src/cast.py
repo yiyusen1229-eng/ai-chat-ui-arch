@@ -13,12 +13,11 @@
       "turns": 0
     }
 """
-import io
-import json
 import os
 
 import char_cards
 import characters as chars
+import speaker
 
 _state = {"members": [], "turns": 0}
 
@@ -26,37 +25,15 @@ ROLE_NAMES = {"player": "玩家", "protagonist": "主角", "actor": "角色", "e
 
 
 def _char_dir(cid):
-    return os.path.join(chars.root(), cid) if cid else ""
+    """角色文件夹（统一由 speaker 解析，别在这里再写一份）"""
+    return speaker.char_dir(cid)
 
 
 def _model_state(cid):
     """读某个角色自己的模型配置（没有就返回未配置）"""
-    p = os.path.join(_char_dir(cid), "model.json")
-    out = {"chat": False, "voice": False, "model": ""}
-    if not cid or not os.path.isfile(p):
-        return out
-    try:
-        d = json.loads(io.open(p, encoding="utf-8").read()) or {}
-    except Exception:
-        return out
-    chat = d.get("chat") or {}
-    voice = d.get("voice") or {}
-    out["chat"] = bool(chat.get("connected"))
-    out["voice"] = bool(voice.get("connected") or voice.get("endpoint"))
-    out["model"] = chat.get("model") or ""
-    return out
-
-
-def _voice_ready(cid):
-    """有没有可用的音色素材（voice/ 下至少一个 wav）"""
-    d = os.path.join(_char_dir(cid), "voice")
-    if not os.path.isdir(d):
-        return False
-    for root, _dirs, files in os.walk(d):
-        for f in files:
-            if f.lower().endswith(".wav"):
-                return True
-    return False
+    m = speaker.model(cid) or {}
+    return {"chat": speaker.has_chat(cid), "voice": speaker.voice_ready(cid),
+            "model": m.get("model") or ""}
 
 
 def get_cast():
@@ -132,7 +109,7 @@ def status():
         out.append({
             "id": cid, "name": ci["name"], "role": m.get("role"),
             "label": ROLE_NAMES.get(m.get("role"), m.get("role")),
-            "chat": ms["chat"], "voice": ms["voice"] or _voice_ready(cid),
+            "chat": ms["chat"], "voice": ms["voice"],
             "model": ms["model"], "has_card": ci["has_director"]
         })
     return {

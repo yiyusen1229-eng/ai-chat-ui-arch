@@ -19,6 +19,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROGRAM = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(PROGRAM, "src"))
 
+# 这个自测**不能联网**：数据根指到临时空目录，保证「没配云端模型」那条分支成立。
+# （以前数据根是 program/，那里没有 config.json 所以碰巧不联网；
+#   现在源码树跑也优先用 build_env 的数据，那里有真云端配置，会真的发请求。）
+_DATA_TMP = tempfile.mkdtemp(prefix="wa2_choice_data_")
+os.environ["WA2_DATA"] = _DATA_TMP
+
 import api_choice as C  # noqa: E402
 import sessions as S  # noqa: E402
 

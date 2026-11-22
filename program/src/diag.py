@@ -106,6 +106,19 @@ def _server():
         out["version"] = ""
     out["assets_env"] = bool(os.environ.get("WA2_ASSETS_DIR"))
     out["sess_env"] = bool(os.environ.get("WA2_SESS_DIR"))
+    # 数据根只报名字和环境变量名（账本里只许短标签，完整路径见启动日志「数据根:」）
+    try:
+        import datadir
+        info = datadir.info()
+        out["data"] = {
+            "root": os.path.basename(info.get("root") or "") or "?",
+            "env": "WA2_DATA" if info.get("data_env") else "",
+            "characters": info["characters"]["source"],
+            "cache": info["cache"]["source"],
+            "logs": info["logs"]["source"],
+        }
+    except Exception:
+        out["data"] = {}
     return out
 
 

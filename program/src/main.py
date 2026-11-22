@@ -62,6 +62,11 @@ import urllib.request
 import urllib.error
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
+# 数据目录：一套根（WA2_DATA 可整体搬走）；顺手把老位置 program/cache、program/logs 搬进来
+import datadir
+DATADIR_MOVED = datadir.ensure()
+applog.log("数据根: %s" % datadir.root())
+
 # 用 `python main.py` 起的时候，本文件在 sys.modules 里叫 "__main__"，
 # 别的模块里写的 `from main import ...` / `import main` 会**把这个文件再执行一遍**，
 # 拿到的是另一份空壳：没有 _WINDOW、没有 _API，改它也不影响真身。
@@ -95,8 +100,22 @@ def _no_models_flag():
 
 NO_MODELS = _no_models_flag()
 
-DEFAULT_MODEL = "kazusa14b-v7"
-FALLBACK_MODEL = "kazusa14b-v6"
+# 预合成：把接下来要播的一两句提前合成好（减少"播到哪合成到哪"的等待）
+# 安全模式下整条语音都不该起来，所以这里的开关跟着 NO_MODELS 走
+try:
+    import tts_prefetch
+    tts_prefetch.configure(enabled=not NO_MODELS,
+                           synth=tts_client.synthesize,
+                           ready=lambda: bool(tts_client.status().get("ready")))
+except Exception as _e:
+    print("[tts_prefetch] 初始化失败（预合成关闭）:", _e)
+
+# 本地模型（云端不可用 / 关掉模型开关时用这台机器上的 Ollama）
+# 以前是自家微调的 kazusa14b-v7/v6；那两个模型已经删了，改成：
+#   默认 → 无限制版 14B（导演也在用它，一份权重常驻显存）
+#   兜底 → 官方 14B instruct（翻译兜底也在用，稳）
+DEFAULT_MODEL = "richardyoung/qwen2.5-14b-instruct-abliterated"
+FALLBACK_MODEL = "qwen2.5:14b-instruct-q4_K_M"
 
 
 def res_dir():
@@ -122,12 +141,12 @@ characters.set_seed_sources(persona_ctx.PERSONA_DIR, persona_ctx.WORLDBOOK_FILE)
 _CHAR_ID = characters.ensure()
 applog.log("当前角色: %s（%s）" % (_CHAR_ID, characters.active_dir()), "CHAR")
 # 人设 / 世界书：各自一个文件夹（persona/、worldbook/），逻辑在 persona_ctx.py
-EXE_DIR = (os.path.dirname(os.path.abspath(sys.executable))
-           if getattr(sys, "frozen", False) else BASE)
+# 数据根：prefs / config / fewshot 都放这儿（WA2_DATA 可整体搬走，规则见 datadir.py）
+EXE_DIR = datadir.root()
 CLOUD_CFG_FILE = os.path.join(EXE_DIR, "config.json")
 FEWSHOT_FILE = os.path.join(EXE_DIR, "fewshot.json")
 # 界面设置（音量 / 确认开关 / 右键功能 / 文字速度 / 对话框透明度…）
-# 放 exe 同目录：清理缓存、private_mode 清 localStorage 都不影响它
+# 放数据根：清理缓存、private_mode 清 localStorage 都不影响它
 PREFS_FILE = os.path.join(EXE_DIR, "prefs.json")
 
 
@@ -466,7 +485,78 @@ def _set_character_sessions():
         log("角色存档目录设置失败: %s" % e)
 
 
+# ---------------------------------------------------------------- 存档里的「这一场怎么演的」
+def _scene_snapshot():
+    """存档要带走的场面状态：多角色开关 + 走向 + 阵容。
+
+    以前 meta 里只有 char（当前角色），读回来是「角色对了、场面没了」：
+    多角色关着、阵容空着，得手动重设一遍。
+    这几个键只加在 meta 里 —— sessions 的 meta 本来就是自由字典，
+    加键不用动 schema_version（见 不要动.md 第 12 条）。
+    """
+    out = {"enabled": False, "auto": False, "length": "", "direction": "",
+           "cast": [], "at": int(time.time())}
+    try:
+        import director as _dir
+        st = _dir.status()
+        out.update({"enabled": bool(st.get("enabled")),
+                    "auto": bool(st.get("auto")),
+                    "length": st.get("length") or "",
+                    "direction": st.get("direction") or ""})
+    except Exception:
+        pass
+    try:
+        import cast as _cast
+        members = []
+        for m in _cast.get_cast().get("members", []):
+            mm = {"role": m.get("role") or "actor"}
+            if m.get("id"):
+                mm["id"] = m.get("id")
+            if m.get("name"):
+                mm["name"] = m.get("name")
+            members.append(mm)
+        out["cast"] = members
+    except Exception:
+        pass
+    return out
+
+
+def _restore_scene(scene):
+    """按存档恢复场面。旧档没有这个键 → 返回 None，当前设置一概不动。"""
+    if not isinstance(scene, dict):
+        return None
+    done = {"cast": 0, "director": False}
+    try:
+        members = scene.get("cast")
+        if isinstance(members, list):
+            import cast as _cast
+            r = _cast.set_cast(members)
+            done["cast"] = len((r.get("cast") or {}).get("members") or [])
+    except Exception as e:
+        log("读档：阵容恢复失败 %s" % e)
+    try:
+        import director as _dir
+        _dir.set_options(scene.get("enabled"), scene.get("auto"),
+                         scene.get("length"), scene.get("direction"))
+        done["director"] = True
+    except Exception as e:
+        log("读档：导演状态恢复失败 %s" % e)
+    return done
+
+
 _set_character_sessions()
+
+
+def _player_name():
+    """阵容里玩家叫什么（没有就"你"）：玩家说的话要按这个名字记进场景原话"""
+    try:
+        import cast as _cast
+        for m in _cast.get_cast().get("members", []):
+            if m.get("role") == "player" and m.get("name"):
+                return m["name"]
+    except Exception:
+        pass
+    return "你"
 
 
 def qs(q, names, default=""):
@@ -480,14 +570,18 @@ _RENDER_LOCK = _th.Lock()
 _TEXT_CACHE = {}
 
 
+# 老位置（程序素材目录里）的字模缓存：升级上来的安装要顺手清掉，不然永远躺在那儿
+_LEGACY_TEXT_CACHE = os.path.normpath(
+    os.path.join(BASE, "..", "res", "assets", "ui", "text_cache"))
+
+
 def _clear_text_cache():
     """启动时清空字模磁盘缓存：下次用到再重新生成，避免缓存无限增长"""
     try:
         import shutil
-        d = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                          "..", "res", "assets", "ui", "text_cache"))
-        if os.path.isdir(d):
-            shutil.rmtree(d, ignore_errors=True)
+        for d in (datadir.text_cache(), _LEGACY_TEXT_CACHE):
+            if d and os.path.isdir(d):
+                shutil.rmtree(d, ignore_errors=True)
     except Exception:
         pass
 
@@ -496,8 +590,7 @@ def _text_disk_path(key):
     """文字渲染的磁盘缓存路径（同参数只渲染一次，之后直接读文件）"""
     import hashlib
     h = hashlib.md5(repr(key).encode("utf-8")).hexdigest()[:16]
-    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "res", "assets", "ui", "text_cache")
-    d = os.path.normpath(d)
+    d = datadir.text_cache()
     os.makedirs(d, exist_ok=True)
     return os.path.join(d, h + ".png")
 _TEXT_CACHE_MAX = 2000
@@ -666,7 +759,9 @@ def _record_usage(model, usage):
     """
     usage = usage or {}
     try:
-        c = _pricing.cost(model, usage)
+        # 本地模型（Ollama / LM Studio / llama.cpp）不花钱：
+        # 不然一个本地 14B 会被按 deepseek 的价目表算成"花了钱"，账面数字全是假的
+        c = 0.0 if usage.get("_local") else _pricing.cost(model, usage)
     except Exception:
         c = 0.0
     tokens = int(usage.get("total_tokens") or 0)
@@ -683,6 +778,11 @@ def _record_usage(model, usage):
             "cumTokens": cum_t,
             "cumCost": round(cum_c, 6),
             "currency": _pricing.currency()}
+
+
+# 记账口交给别的模块用（actor / director_gen / translate 不 import main，见 usage.py）
+import usage as _usage_mod
+_usage_mod.bind(_record_usage)
 
 
 def _usage_snapshot():
@@ -1055,10 +1155,28 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
                 return self._json({"ok": True, "director": d})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 500)
+        if self.path.split("?")[0] == "/api/scene/state":
+            # 只读：现在「刚才发生的事」里有什么（排查用；正常上下文由前端带 messages）
+            try:
+                import scenelog
+                st = scenelog.stats()
+                return self._json({"ok": True, "lines": st["lines"], "max": st["max"],
+                                   "first": st["first"], "last": st["last"],
+                                   "recent": [x.get("text", "")[:60] for x in scenelog.recent(8)]})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 500)
         if self.path.split("?")[0] == "/api/play/next":
             try:
                 import playqueue as _pq
-                return self._json({"ok": True, "line": _pq.pop(), "queue": _pq.snapshot()})
+                line = _pq.pop()
+                # 预合成：这条已经开始播了，趁玩家在读它，把后面两条先合成好
+                if line:
+                    try:
+                        import tts_prefetch
+                        tts_prefetch.kick(_pq.pending(tts_prefetch.DEFAULT_N))
+                    except Exception:
+                        pass
+                return self._json({"ok": True, "line": line, "queue": _pq.snapshot()})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 500)
         if self.path.split("?")[0] == "/api/card":
@@ -1265,6 +1383,24 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
                 log("场面：读档 %s 判定为%s" % (slot, "成人场面" if _is else "普通场面"))
             except Exception as e:
                 log("场面判定：读档重算失败 %s" % e)
+            # 读档：恢复「这一场怎么演的」（旧档没有 meta.scene → 当前设置一概不动）
+            try:
+                done = _restore_scene((d.get("meta") or {}).get("scene"))
+                if done:
+                    log("存档：读档 %s 恢复场面（阵容 %d 人%s）"
+                        % (slot, done.get("cast") or 0,
+                           "，多角色按存档切换" if done.get("director") else ""))
+                    d["restored_scene"] = done
+            except Exception as e:
+                log("存档：恢复场面失败 %s" % e)
+            try:
+                # 读档 = 换一场：上一场的原话不能混进来，但**这一场的历史要铺回来**，
+                # 否则打开多角色时导演/角色看到的是「本场开头」，完全不认上下文。
+                import scenelog
+                _n = scenelog.seed((d or {}).get("messages") or [], _player_name(), 200)
+                log("存档：读档 %s 铺回 %d 条场景原话" % (slot, _n))
+            except Exception as e:
+                log("存档：铺场景原话失败 %s" % e)
             if isinstance(d, dict):
                 d.pop("memory", None)          # 记忆书对前端不可见
             return self._json(d)
@@ -1316,8 +1452,27 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
                 body = self._body() or {}
                 import director_gen
                 import playqueue as _pq
-                r = director_gen.generate(int(body.get("n") or 2))
+                r = director_gen.generate(int(body.get("n") or 2),
+                                          messages=body.get("messages"),
+                                          auto=bool(body.get("auto")))
                 if r.get("ok"):
+                    # 场面判定：多角色这条路以前完全没更新 hscene 状态，
+                    # 于是实时配音用平常语气、回想（那边有场面标记）才对。
+                    # 判据两条：导演自己在 beat 上标的 hscene（主）+ 关键词扫描（兜底）。
+                    # 关键词实测会漏（露骨的身体描写只算 1 分），所以模型标记优先。
+                    try:
+                        import hscene as _hsc
+                        _msgs = body.get("messages") or []
+                        _model_h = any(bool(_b.get("hscene")) for _b in (r.get("beats") or []))
+                        _kw_h = (_hsc.is_intimate(_msgs, lookback=10) if _msgs
+                                 else (_hsc.last_scene() is True))
+                        _is_h = _hsc.set_last(bool(_model_h or _kw_h))
+                        log("场面：这一拍判定=%s（导演标记=%s 关键词=%s）"
+                            % ("成人场面" if _is_h else "普通场面", _model_h, _kw_h))
+                    except Exception:
+                        _is_h = False
+                    for _b in (r.get("beats") or []):
+                        _b["hscene"] = bool(_is_h)
                     r["pushed"] = _pq.push(r.get("beats"))
                     r["queue"] = _pq.snapshot()
                 return self._json(r, 200 if r.get("ok") else 400)
@@ -1336,7 +1491,15 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
         if self.path.split("?")[0] == "/api/play/clear":
             try:
                 import playqueue as _pq
-                return self._json(_pq.clear())
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                reset = (q.get("reset") or ["0"])[0] in ("1", "true", "yes", "on")
+                r = _pq.clear(reset_scene=reset)
+                try:
+                    import tts_prefetch
+                    r["prefetch_dropped"] = tts_prefetch.clear()   # 没做的别再做了
+                except Exception:
+                    pass
+                return self._json(r)
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 500)
         if self.path.split("?")[0] == "/api/card":
@@ -1476,6 +1639,15 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
                 return self._json({"ok": False, "error": str(e)}, 400)
             if not isinstance(body, dict):
                 return self._json({"ok": False, "error": "bad body"}, 400)
+            # 存档带上「这一场怎么演的」：多角色开关 / 走向 / 阵容
+            try:
+                meta = body.get("meta")
+                if not isinstance(meta, dict):
+                    meta = {}
+                    body["meta"] = meta
+                meta["scene"] = _scene_snapshot()
+            except Exception as e:
+                log("存档：场面快照失败 %s" % e)
             # 记忆书：把运行时缓存整份快照进存档。不在这里现跑总结 ——
             # 总结只在对话超过阈值后按 repack_turns 做（见 _memory_context），
             # 存档只是一次拷贝，所以每轮自动存档也不会额外调用模型。

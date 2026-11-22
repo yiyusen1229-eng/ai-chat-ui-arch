@@ -25,7 +25,8 @@ import os
 import re
 import shutil
 import subprocess
-import sys
+
+import datadir
 
 ROOT_NAME = "characters"
 LEGACY_NAME = "char"
@@ -41,12 +42,11 @@ _SEED = {"prompt": "", "worldbook": ""}
 
 # 和 special_files 一样：自测时可以用 WA2_USER_DIR 指到临时目录
 def user_dir():
-    env = os.environ.get("WA2_USER_DIR")
+    """用户数据目录：characters/ 就在它下面（WA2_USER_DIR > WA2_DATA > 默认）"""
+    env = (os.environ.get("WA2_USER_DIR") or "").strip()
     if env:
-        return env
-    if getattr(sys, "_MEIPASS", None):
-        return os.path.dirname(os.path.abspath(sys.executable))
-    return os.path.dirname(os.path.abspath(__file__))
+        return os.path.abspath(env)
+    return datadir.root()
 
 
 def root():

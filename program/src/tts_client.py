@@ -21,6 +21,7 @@ import urllib.request
 import char_res
 import audio_gain
 import cache_io
+import datadir
 import diag
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -652,6 +653,35 @@ def pick_ref(emo="neutral", target=""):
     return random.choice(wordy or with_text or items)
 
 
+def _port_taken(port, timeout=0.6):
+    """端口上已经有东西在听？（上次崩溃留下的孤儿进程也会占着）"""
+    if not port:
+        return False
+    try:
+        import socket
+        with socket.create_connection((bind_host(), port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def _http_ok_port(port, timeout=2.0):
+    """对**指定端口**发轻请求：TCP 连得上不代表服务真的在干活
+    （孤儿进程/半死的子进程照样能 accept）。所以健康检查走 HTTP。
+
+    注意：api_v2 的根路径返回 404 会**抛 HTTPError**，那不是"服务没起"，
+    404/405 一样说明它已经在跑 —— 只把 5xx 和连接失败当没起。
+    """
+    url = "http://%s:%d/" % (bind_host(), port)
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return r.status < 500
+    except urllib.error.HTTPError as e:
+        return e.code < 500
+    except Exception:
+        return False
+
+
 def _http_ok(timeout=2.0):
     """对当前 URL 发一个轻请求，看服务在不在（远程模式用）"""
     try:
@@ -771,7 +801,10 @@ def _child_env():
 # ---------------------------------------------------------------- 进程池
 # 每个角色一个常驻进程：端口 9881 起，各自加载自己的权重，互不干扰。
 _SERVERS = {}            # dirname -> {"port": int, "proc": Popen|None, "ready": bool, "key": str}
-_POOL_BASE_PORT = 9881
+_POOL_BASE_PORT = 9882
+# 踩过：这里原来写 9881，和 T_PORT（翻译服务）撞端口 —— 每个角色的语音进程
+# 都绑不上，请求打到翻译服务上失败，于是永远退回共享进程切权重（3~7 秒），
+# 回想重放看起来就像「重新加载」。端口要避开 PORT(9880) 和 T_PORT(9881)。
 
 
 def _pool_enabled():
@@ -779,9 +812,16 @@ def _pool_enabled():
 
 
 def _char_key(cid):
-    """角色目录名当池的 key（空 = 当前激活角色）"""
-    if not cid:
-        return os.path.basename(characters.active_dir() or "")
+    """角色目录名当池的 key（空 = 当前激活角色）
+
+    给了 cid 就直接用它 —— 以前无论传什么都取"当前激活角色"，
+    只有在 synthesize() 里靠 _voice_char 临时切换才对得上；
+    从外面直接问「雪菜用哪个端口」会拿到和纱的端口（串音排查时特别坑）。
+    """
+    if cid:
+        name = os.path.basename(str(cid).rstrip("/\\"))
+        if name:
+            return name
     return os.path.basename(_active_dir() or "")
 
 
@@ -797,10 +837,12 @@ def _server_for(cid):
         return 0            # 之前失败过：不再尝试，交给共享进程
     if ent and ent.get("ready"):
         return ent["port"]
-    # 分配端口
+    # 分配端口：避开自己登记过的，也避开**已经被占**的（上次崩溃留下的孤儿进程
+    # 会一直 listen，TCP 能连、请求却失败 —— 之前就因此把「和纱」的进程判成不可用，
+    # 每次都退回共享进程切权重，回想重放要等 3~7 秒）
     used = {e["port"] for e in _SERVERS.values()}
     port = _POOL_BASE_PORT
-    while port in used:
+    while port in used or _port_taken(port):
         port += 1
     try:
         cfg = _write_pool_cfg(port, key)
@@ -811,15 +853,17 @@ def _server_for(cid):
             creationflags=0x08000000 if os.name == "nt" else 0,
         )
         _SERVERS[key] = {"port": port, "proc": proc, "ready": False, "key": key}
-        import socket, time
+        import time
         t0 = time.time()
         while time.time() - t0 < READY_TIMEOUT_S:
-            try:
-                with socket.create_connection((bind_host(), port), timeout=2):
-                    _SERVERS[key]["ready"] = True
-                    return port
-            except Exception:
-                time.sleep(1.0)
+            if proc.poll() is not None:          # 子进程自己退了：别等满超时
+                _SERVERS.pop(key, None)
+                return 0
+            if _http_ok_port(port, timeout=1.5):
+                _SERVERS[key]["ready"] = True
+                return port
+            time.sleep(0.8)
+        _SERVERS[key]["bad"] = True
         return 0
     except Exception:
         _SERVERS.pop(key, None)
@@ -978,8 +1022,7 @@ def translate_via_service(text, to="ja", timeout=30):
         return ""
 
 
-_TTS_CACHE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                                "..", "cache", "tts"))
+_TTS_CACHE_DIR = os.path.join(datadir.env_or("WA2_CACHE_DIR", "cache"), "tts")
 
 
 # 合成行为（参数/参考挑选/切分）一变就 +1：否则会一直命中旧参数合成的音频。
@@ -1257,8 +1300,10 @@ def _synthesize_inner(text, lang, timeout, emo, port=0):
     except Exception:
         _cp = None
     if True:      # 锁已经在 synthesize() 外层拿过（Lock 不可重入）
-        if not port and not _ensure_char_model():
-            return None
+        # **先看缓存**：key 里已经有参考音频/模型/参数的签名，不需要加载权重就能算出来。
+        # 以前是先 _ensure_char_model() 再看缓存 —— 进程池不可用（某角色进程挂了）时，
+        # 回想里点一句已经合成过的台词，也要先把共享进程的权重切过来（3~7 秒），
+        # 用户看到的就是「重放又要重新加载」。
         if _cp:
             try:
                 if os.path.exists(_cp):
@@ -1276,6 +1321,9 @@ def _synthesize_inner(text, lang, timeout, emo, port=0):
                         return _cached
             except Exception:
                 pass
+        # 没有缓存才需要权重：没走进程池时要先把当前角色的权重切过来
+        if not port and not _ensure_char_model():
+            return None
         diag.count("tts.miss")
         try:
             import applog
@@ -1348,6 +1396,20 @@ def stop():
         except Exception:
             pass
         _proc = None
+    # 进程池里的角色进程也要收掉：以前只 terminate 共享进程，
+    # 池子里的子进程会一直挂着占端口，下次启动又撞端口（实测 9882 留下过孤儿）
+    for _k, _ent in list(_SERVERS.items()):
+        _p = _ent.get("proc")
+        if _p is not None:
+            try:
+                _p.terminate()
+                _p.wait(timeout=5)
+            except Exception:
+                try:
+                    _p.kill()
+                except Exception:
+                    pass
+    _SERVERS.clear()
     _ready = False
 
 

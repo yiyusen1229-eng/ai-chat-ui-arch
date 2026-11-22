@@ -119,6 +119,41 @@ def main():
     hit = scene_cg.match("咖啡厅（夜晚）")
     check("（夜晚）→ 晚上", hit.get("id") == "咖啡厅（晚上）", repr(hit))
 
+    print("\n[8.8] 这一轮说了时段 → 按它挑变体（2026-11-22：「白天去学校」接成晚上校门口）")
+    check("time_hint 早上去学校", scene_cg.time_hint("早上去学校") == "白天",
+          scene_cg.time_hint("早上去学校"))
+    check("time_hint 天黑了", scene_cg.time_hint("天黑了才回家") == "晚上",
+          scene_cg.time_hint("天黑了才回家"))
+    check("time_hint 取最靠后的提及",
+          scene_cg.time_hint("昨天夜里下的雪，今天白天化了") == "白天",
+          scene_cg.time_hint("昨天夜里下的雪，今天白天化 了"))
+    m_night = scene_cg.match("学校大门口", "站台（晚上）") or {}
+    check("没有时段线索 → 沿用上一张（晚上）", "晚上" in (m_night.get("id") or ""),
+          m_night.get("id"))
+    m_day = scene_cg.match("学校大门口", "站台（晚上）", time_hint="白天") or {}
+    check("有时段线索=白天 → 挑白天的校门口", "白天" in (m_day.get("id") or ""),
+          m_day.get("id"))
+
+    print("\n[8.9] 天气 / 地点细节线索（2026-11-22：雪停了还挂着雪景）")
+    check("下雪 → 白雪皑皑", scene_cg.weather_hint("外面下雪了") == "白雪皑皑",
+          scene_cg.weather_hint("外面下雪了"))
+    check("薄雪", scene_cg.weather_hint("地上只剩一层薄雪") == "薄雪",
+          scene_cg.weather_hint("地上只剩一层薄雪"))
+    check("天晴 → 晴天", scene_cg.weather_hint("第二天天晴了") == "晴天",
+          scene_cg.weather_hint("第二天天晴了"))
+    check("圣诞 → 圣诞节", scene_cg.weather_hint("圣诞节那天") == "圣诞节",
+          scene_cg.weather_hint("圣诞节那天"))
+    check("没提天气 → 空", scene_cg.weather_hint("我们去吃饭吧") == "",
+          scene_cg.weather_hint("我们去吃饭吧"))
+    m_w = scene_cg.match("街上（晚上）（人行道）", "街上（白天）（人行道）",
+                         weather_hint="白雪皑皑") or {}
+    check("天气线索生效 → 挑雪景那张", "白雪皑皑" in (m_w.get("id") or ""), m_w.get("id"))
+    check("细节线索：空无一人", "空无一人" in scene_cg.detail_hint("走廊里空无一人"),
+          scene_cg.detail_hint("走廊里空无一人"))
+    m_s = scene_cg.match("温泉旅馆（房间内）（晚上）", "温泉旅馆（房间内）（晚上）（开灯）",
+                         detail_hints=["熄灯"]) or {}
+    check("细节线索生效 → 熄灯那张", "熄灯" in (m_s.get("id") or ""), m_s.get("id"))
+
     print("\n[9] 提示词")
     hint = scene_cg.prompt_hint()
     check("带上了地名表", "咖啡厅" in hint and "大学图书馆" in hint)

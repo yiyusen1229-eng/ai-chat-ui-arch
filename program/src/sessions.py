@@ -18,8 +18,9 @@ import os
 import shutil
 import time
 
-SESS_DIR = os.environ.get("WA2_SESS_DIR") or os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "sessions")
+import datadir
+
+SESS_DIR = datadir.env_or("WA2_SESS_DIR", "sessions")
 
 # 存档结构版本：加字段 / 改结构就 +1，并在 _MIGRATIONS 里补一步 旧版 -> 新版
 SCHEMA_VERSION = 1

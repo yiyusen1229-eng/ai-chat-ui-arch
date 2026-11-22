@@ -50,14 +50,46 @@
      原来两处各抄了一遍同样的 for 循环，合成一个。 */
   function lastAssistant() {
     for (var i = history.length - 1; i >= 0; i--) {
-      if (history[i] && history[i].role === "assistant") {
-        /* 带上当时的情绪：不带就会退回 calm，重播既变平静又要重新合成 */
-        return { zh: history[i].zh || history[i].content || "",
-                 ja: history[i].content || "",
-                 emo: history[i].emo || "" };
+      var m = history[i];
+      if (m && m.role === "assistant") {
+        /* 整条原样带出来：以前只取 zh/ja/emo，丢了 narr（旁白）和 speaker（谁说的），
+           于是读档时**不管最后一条是什么**都当"当前角色的台词"：
+           旁白被包上「」、还被送进语音合成。 */
+        return { zh: m.zh || m.content || "",
+                 ja: m.content || m.ja || "",
+                 emo: m.emo || "",
+                 narr: !!m.narr,
+                 speaker: m.speaker || "",
+                 cid: m.cid || "" };
       }
     }
-    return { zh: "", ja: "" };
+    return { zh: "", ja: "", narr: false, speaker: "", cid: "" };
+  }
+
+  /* 开头是不是括号（（ ( 【 [）——用字符比较而不是正则，
+     多字节括号 + 方括号转义写正则容易在别的解析器里出岔子 */
+  function startsParen(s) {
+    s = String(s || "").trim();
+    if (!s) return false;
+    var c = s.charAt(0);
+    return c === "（" || c === "(" || c === "【" || c === "[";
+  }
+
+  /* 这一行是不是旁白：显式标记优先，其次看开头是不是括号（老存档没标记） */
+  function isNarrLine(line) {
+    if (!line) return false;
+    if (line.narr) return true;
+    return startsParen(line.zh) || startsParen(line.ja);
+  }
+
+  /* 有没有日语假名：没有就说明存的是中文字幕，别拿去喂日语语音模型 */
+  function hasKana(s) {
+    s = String(s || "");
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c >= 0x3040 && c <= 0x30ff) return true;
+    }
+    return false;
   }
 
   /* 读档回显那一句：和平时一样，角色台词包「」，旁白不包 */
@@ -75,6 +107,14 @@
     try {
       if (window.WA2 && WA2.chat && WA2.chat.setSceneFlag) WA2.chat.setSceneFlag(!!isSpecial);
       else document.body.dataset.hscene = isSpecial ? "1" : "0";
+    } catch (e) {}
+  }
+
+  /* 读档后重新问一次「多角色开着没 / 阵容有谁」（后端已按存档恢复，
+     这里只是让前端的 __voiceMap 和 genOn 立刻跟上，不用等 5 秒轮询） */
+  function refreshSceneFlags() {
+    try {
+      if (window.WA2 && WA2.play && WA2.play.refresh) WA2.play.refresh();
     } catch (e) {}
   }
 
@@ -103,6 +143,7 @@
         }
         if (!d.messages || !d.messages.length) return false;
         applyHistory(d.messages);
+        refreshSceneFlags();          /* 后端已按 meta.scene 恢复阵容/导演开关 */
         const meta = d.meta || {};
         /* 存档绑定角色：读档自动切回去（不 await，切完让页面自己刷新） */
         try {
@@ -126,13 +167,7 @@
           setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
           if (meta.bgm) setBgm(meta.bgm, 600);
         } catch (e) {}
-        var line = lastAssistant();
-        if (line.zh) {
-          try { showReply(quoteLine(line.zh)); } catch (e) { $("msgText").textContent = quoteLine(line.zh); }
-          if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) {
-            speakLineJa(line.ja, line.emo || window.__lastEmo || "");
-          }
-        }
+        replayLastLine();
         if (meta.outfit) {
           try { setSpriteByScene(meta.bg || "classroom", "calm", true, meta.outfit); } catch (e) {}
         }
@@ -170,9 +205,60 @@
     try { return document.body.dataset.bg || ""; } catch (e) { return ""; }
   }
 
+  /* 去掉首尾括号（旁白显示用）：只处理成对的（ ） ( ) 【 】 [ ] */
+  function stripParens(text) {
+    var s = String(text || "").trim();
+    var pairs = [["（", "）"], ["(", ")"], ["【", "】"], ["[", "]"]];
+    var changed = true;
+    while (changed && s) {
+      changed = false;
+      for (var i = 0; i < pairs.length; i++) {
+        var a = pairs[i][0], b = pairs[i][1];
+        if (s.charAt(0) === a && s.charAt(s.length - 1) === b) {
+          s = s.slice(1, -1).trim();
+          changed = true;
+        }
+      }
+    }
+    return s;
+  }
+
+  /* 读档后回显最后一条，并只在"确实是她说的一句台词"时配音：
+       · 旁白 → 只显示（不加「」、不配音）；
+       · 别人说的 → 显示「名字：…」，不配音（那个角色的音色未必跟这个存档走）；
+       · 当前角色说的 → 包「」，日语原文里有假名才配音。 */
+  function replayLastLine() {
+    var line = lastAssistant();
+    if (!line.zh) return;
+    var rawZh = String(line.zh || "").trim();
+    var ja = String(line.ja || "").trim();
+    var narr = isNarrLine(line);
+    var speaker = String(line.speaker || "").trim();
+    var cid = String(line.cid || "").trim();
+    var me = String((typeof CHAR_NAME !== "undefined" && CHAR_NAME) ? CHAR_NAME : "");
+    var myId = String(window.__activeCharId || "");
+    var isOther = !narr && !!speaker && speaker !== me &&
+                  (!cid || (!!myId && cid !== myId));
+
+    var shown;
+    if (narr) {
+      shown = stripParens(rawZh);
+    } else if (isOther) {
+      shown = speaker + "：" + quoteLine(rawZh);
+    } else {
+      shown = quoteLine(rawZh);
+    }
+    try { showReply(shown); } catch (e) { $("msgText").textContent = shown; }
+
+    if (narr || isOther) return;          /* 旁白 / 别人的话：不出语音 */
+    if (!ja || !hasKana(ja)) return;      /* 没有日语原文（存的是中文字幕）：不念 */
+    speakLineJa(ja, line.emo || window.__lastEmo || "", cid || "");
+  }
+
   window.__loadSession = function (data) {
     try {
       applyHistory(data.messages);
+      refreshSceneFlags();            /* 后端已按 meta.scene 恢复阵容/导演开关 */
       const meta = data.meta || {};
       showScreen("gameScreen");
       titleBgmStarted = true;
@@ -186,13 +272,7 @@
       setSpriteByScene(meta.bg || "classroom", _spriteEmo, true, meta.outfit || "");
       gdiRenderName(CHAR_NAME, $("namePlate"));
       setBgm(meta.bgm || meta.emo || "calm", 600);
-      var line = lastAssistant();
-      if (line.zh) {
-        try { showReply(quoteLine(line.zh)); } catch (e) { $("msgText").textContent = quoteLine(line.zh); }
-        if (line.ja && !/^[（(【]/.test((line.zh || "").trim())) {
-          speakLineJa(line.ja, line.emo || window.__lastEmo || "");
-        }
-      }
+      replayLastLine();
       try { rebuildBacklog(); } catch (e) {}
       /* 存档里存着「还没选的分支」：摆回来，并且不要抢输入框焦点 */
       var hadChoices = restoreChoices(meta);

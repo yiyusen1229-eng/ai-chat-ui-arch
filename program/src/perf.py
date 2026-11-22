@@ -110,10 +110,10 @@ def _gui_objects():
 
 
 def _text_cache_count():
-    """字模磁盘缓存条数（main 里那个 text_cache 目录）"""
+    """字模磁盘缓存条数（位置由 datadir.text_cache() 决定，别再自己拼）"""
     try:
-        d = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                         "res", "assets", "ui", "text_cache")
+        import datadir
+        d = datadir.text_cache()
         return len([f for f in os.listdir(d) if f.endswith(".png")])
     except Exception:
         return 0

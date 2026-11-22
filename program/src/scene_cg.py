@@ -206,6 +206,82 @@ def catalog():
 
 
 # ---------------- 匹配 ----------------
+# 天气线索：对话里怎么说 → 素材里的天气标签
+WEATHER_HINT = {
+    "下雪": "白雪皑皑", "大雪": "白雪皑皑", "飘雪": "白雪皑皑", "雪天": "白雪皑皑",
+    "积雪": "白雪皑皑", "白雪": "白雪皑皑", "雪停了": "白雪皑皑", "雪地里": "白雪皑皑",
+    "小雪": "薄雪", "薄雪": "薄雪", "零星小雪": "薄雪", "一层薄雪": "薄雪",
+    "晴天": "晴天", "放晴": "晴天", "天晴": "晴天", "阳光": "晴天", "晴空": "晴天",
+    "阴天": "阴天", "阴云": "阴天", "阴沉": "阴天", "乌云": "阴天", "多云": "阴天",
+    "冬": "冬天", "寒冬": "冬天", "严寒": "冬天",
+    "圣诞": "圣诞节",
+}
+
+
+def weather_hint(text):
+    """从一句话里读天气/季节（取最靠后的提及）。没有就返回空串。
+
+    为什么要它：模型经常只写地点（<scene>学校大门口</scene>），
+    匹配会沿用上一张背景的天气 —— 于是「雪停了，天晴」可能还挂着雪景，
+    或者反过来晴天接一张「积雪」的图。
+    """
+    s = text or ""
+    if not s:
+        return ""
+    best, best_pos = "", -1
+    for w, val in WEATHER_HINT.items():
+        i = s.rfind(w)
+        if i > best_pos:
+            best, best_pos = val, i
+    return best
+
+
+def detail_hint(text, cat=None):
+    """从一句话里读「地点细节」标签（空无一人/人来人往/开灯/熄灯…）。
+
+    词表直接来自 index.json 的 state：素材里有什么就认什么，新加图不用改代码。
+    返回有序列表（按在句子里出现的位置）。
+    """
+    s = text or ""
+    if not s:
+        return []
+    try:
+        c = cat or catalog()
+    except Exception:
+        return []
+    states = c.get("states") or []
+    hits = []
+    for st in states:
+        # 太长/太泛的标签不认（「房间内」这种到处都有）
+        if len(st) < 2 or st in ("房间", "房间内", "门口", "人行道", "入口处"):
+            continue
+        i = s.rfind(st)
+        if i >= 0:
+            hits.append((i, st))
+    hits.sort()
+    return [st for _i, st in hits]
+
+
+def time_hint(text):
+    """从一句话里读出「时段」：早上/白天/午后 → 白天；傍晚/夕阳 → 黄昏；
+    晚上/天黑了 → 晚上；深夜/凌晨 → 深夜。取**最靠后**的那次提及
+    （「昨天晚上…今天白天」要按后说的算）。
+    """
+    s = text or ""
+    if not s:
+        return ""
+    best, best_pos = "", -1
+    for w, tp in TIME_ALIAS.items():
+        i = s.rfind(w)
+        if i > best_pos:
+            best, best_pos = tp, i
+    for w in TIME_WORDS:
+        i = s.rfind(w)
+        if i > best_pos:
+            best, best_pos = w, i
+    return best
+
+
 def _parse_query(text, cat):
     """把模型给的场景串拆成地点 + 标签；标签词表来自 index.json"""
     q = parse_name(text)
@@ -314,11 +390,16 @@ def _variant_score(it, q, prev_time):
     return s, "+".join(why)
 
 
-def match(scene, prev=""):
+def match(scene, prev="", time_hint="", weather_hint="", detail_hints=None):
     """把对话里的场景串匹配到一张 CG。
 
     scene: 模型给的 <scene> 内容（可带括号标签，如「大学图书馆（黄昏）」）
     prev:  当前背景的 id（用于沿用时段）
+    time_hint: 这一轮对话里明确提到的时段（白天/黄昏/晚上…）。
+        模型经常只写地点不写时间，没有它就会沿用上一张背景的时段 ——
+        实测「白天去学校」被接成「学校大门口（晚上）」。
+    weather_hint: 这一轮提到的天气/季节（下雪/晴天/阴天…），同理。
+    detail_hints: 这一轮提到的地点细节（开灯/熄灯/空无一人/人来人往…）。
     返回 {} 或 {id, file, place, time, weather, state, score, why}
     """
     cat = catalog()
@@ -328,6 +409,13 @@ def match(scene, prev=""):
     if not text:
         return {}
     q = _parse_query(text, cat)
+    if time_hint and not q["time"]:
+        q["time"] = time_hint
+    if weather_hint and not q["weather"]:
+        q["weather"] = weather_hint
+    for _st in (detail_hints or []):
+        if _st and _st not in q["state"]:
+            q["state"].append(_st)
     if not q["place"]:
         return {}
     # 复合场景名（「学校教学楼的天台」）直接匹配不上时，退一步看里面有没有认识的别名词
@@ -354,7 +442,12 @@ def match(scene, prev=""):
             aliases.append(alias)
 
     best_place, best_place_score = "", 0.0
-    for pl in cat["places"] + (cat["sky"] if sky_ok else []):
+    # 素材里**本来就有**这个地点时直接用，别让别名抢走：
+    # 新整理进来的「街道（白天）/（黑夜）」跟老的「街上」并存，
+    # 按相似度打分别名会先撞上「街上」，把新图全抢过去了（实测）。
+    if q.get("place") in cat["places"]:
+        best_place, best_place_score = q["place"], 1.0
+    for pl in ([] if best_place else cat["places"] + (cat["sky"] if sky_ok else [])):
         sc = max(_place_score(a, pl) for a in aliases)
         if sc > best_place_score:
             best_place, best_place_score = pl, sc
@@ -401,9 +494,20 @@ def prompt_hint():
     cat = catalog()
     pl = cat["places"]
     trigger = ("\n【场景】出现下面三种情况之一时，在回复最前面输出 <scene>地点</scene>：\n"
-               "  ① 人到了一个新地方（推门进去、走进、到达、上楼）；\n"
-               "  ② 离开某处、在两地之间移动（走出教室、离开车站）；\n"
-               "  ③ 时间明显往后推了（天黑了、第二天早上、过了几个小时）。\n"
+               "  ① 这一轮里他们**换了地方**（到了、走进、离开、上车、回家路上…）；\n"
+               "  ② 这一轮**明确说了人在哪儿**（哪怕只是换个房间：\n"
+               "     「我在卫生间洗漱」「坐在教室里」都算）；\n"
+               "  ③ 时间明显往后推了（天黑了、第二天早上）；\n"
+               "  **另外：这一轮如果说了时段（早上/白天/午后/傍晚/晚上/深夜），\n"
+               "  一定要把时间写进 <scene>**，例如 <scene>学校大门口（白天）</scene> ——\n"
+               "  天气/特殊日子也一起写进去：<scene>街上（晚上）（白雪皑皑）</scene>；\n"
+               "  只写地点的话，程序会沿用上一张的天气（雪停了还挂着雪景）。\n"
+               "  只写地点的话，程序会沿用上一张背景的时段，「白天去学校」就会接成晚上的校门口。\n"
+               "选地点时**不用和下面表的字面完全一致，挑最接近的就行**：\n"
+               "  在卫生间洗漱、表里没这间房 → 挑带洗手台/浴室的房间；\n"
+               "  放学往家走 → 挑回家的路 / 街道；以此类推。\n"
+               "只是嘴上说「要不要去某地」、人还没动，就不要输出；\n"
+               "还在原地、也没提地点，也不要输出。\n"
                "例：<scene>咖啡厅</scene>\n")
     if not pl:
         # 素材还没导入：退回最早那套固定枚举，至少不把功能弄坏

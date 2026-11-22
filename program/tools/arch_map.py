@@ -69,6 +69,11 @@ LEVELS = {
     "api_hotreload.py": ("二级 · 接口/素材", "/api/hotreload（素材热重载状态与开关）"),
     "api_wizard.py": ("二级 · 接口/素材", "/api/assets/wizard（素材导入向导数据）"),
     "version.py": ("二级 · 核心", "版本号与 GitHub 仓库地址"),
+    "datadir.py": ("二级 · 核心", "数据根：缓存 / 日志 / 角色 / 配置落在哪（WA2_DATA 可整体搬走）"),
+    "usage.py": ("二级 · 核心", "模型调用记账口（token / 花费；main 启动时挂上 _record_usage）"),
+    "scenelog.py": ("二级 · 剧情", "本场已播出的原话（环形缓冲）：角色和导演的「刚才发生的事」"),
+    "speaker.py": ("二级 · 角色", "按角色 id 解析一切：卡 / 私有记忆 / 关系 / 模型 / 语音 / 立绘"),
+    "tts_prefetch.py": ("二级 · 角色", "预合成：把接下来要播的一两句提前合成好，播到时命中缓存"),
     "wt-update.js": ("二级 · 前端/更新", "启动查新版本 + 标题栏通知（WA2.update）"),
     "gdi_text.py": ("二级 · 字模", "GDI 兜底渲染"),
 }

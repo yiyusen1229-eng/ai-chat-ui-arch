@@ -57,6 +57,15 @@ def _program_dir():
     return up if os.path.basename(up) in ("build_env", "src") else here
 
 
+def _data_dir():
+    """数据根：prefs / config 在这儿（和 main.EXE_DIR 同一个来源）"""
+    try:
+        import datadir
+        return datadir.root()
+    except Exception:
+        return _program_dir()
+
+
 def _log_dir(d=None):
     if d:
         return d
@@ -64,7 +73,7 @@ def _log_dir(d=None):
         import logpack
         return logpack.log_dir()
     except Exception:
-        return os.path.join(_program_dir(), "logs")
+        return os.path.join(_data_dir(), "logs")
 
 
 def _cache_dir(d=None):
@@ -74,7 +83,7 @@ def _cache_dir(d=None):
         import memory
         return memory.CACHE_DIR
     except Exception:
-        return os.path.join(_program_dir(), "cache")
+        return os.path.join(_data_dir(), "cache")
 
 
 def _text_cache_dir(d=None):
@@ -395,7 +404,7 @@ def export(turns=0, out_dir="", log_dir=None, root=None, chars=None):
         if prefs_path and os.path.exists(prefs_path):
             if _zip_add(zf, "config/prefs.json", _scrub(_safe_read(prefs_path))):
                 files += 1
-        cfg_path = os.path.join(_program_dir(), "config.json")
+        cfg_path = os.path.join(_data_dir(), "config.json")
         if os.path.exists(cfg_path):
             txt = _safe_read(cfg_path)
             try:

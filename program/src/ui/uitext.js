@@ -75,6 +75,10 @@
         tag === "SELECT" || tag === "OPTION" || tag === "CANVAS") return;
     if (el.children.length > 0) return;
     if (el.closest("#msgText") || el.closest("#namePlate")) return;
+    /* 动作/心理文本必须保留**真文字**：以前短句被转成一张图片（宽度自适应→被挤小），
+       超过 200 字的又不转（保持原字号）——表现就是"有的字大有的字小、长句被压缩"。
+       保留真文字才能按 word-wrap 自动分行、字号恒定。 */
+    if (el.closest("#thinkBox")) return;
     if (el.closest("#menuBar")) return;
     if (el.id === "__BUILDSTAMP" || el.closest("#__BUILDSTAMP")) return;
     if (el.dataset && el.dataset.noUitext) return;      // 明确要求保留原生字体

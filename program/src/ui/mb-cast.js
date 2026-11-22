@@ -167,6 +167,8 @@
     menu.appendChild(sub("开关", [
       subRow("多角色：" + (d && d.enabled ? "开" : "关"), function () {
         var _next = !(d && d.enabled);
+        /* 不用再单独铺历史：每次生成都会把 window.__history 带上，
+           打开多角色之后第一拍就是接着上文写的。 */
         api("/api/direct/options", { enabled: _next }).then(function () {
         /* 切回单角色：把还没播的「拍」清掉，否则它们会在自动模式里冒出来 */
         if (!_next) { try { fetch("/api/play/clear", { method: "POST" }).catch(function () {}); } catch (e) {} }
@@ -184,12 +186,44 @@
       subRow("大（25 拍 / 约 1500 字）", function () { api("/api/direct/options", { length: "large" }).then(refresh); })
     ]));
 
+    /* 剧情走向：单独一个输入，别和对话框里说的话混在一起。
+       对话框里打的是**玩家的台词**；这里写的是给导演的「这一段往哪儿走」。
+       以前两者是同一个字符串，于是玩家说话就等于在下导演指令，角色答的也不是他说的话。 */
+    var dirRow = el("div", "mi-row mbDirRow");
+    dirRow.appendChild(el("span", "mbDirLabel", "走向"));
+    var dirInp = document.createElement("input");
+    dirInp.className = "mbDirInput";
+    dirInp.type = "text";
+    dirInp.placeholder = "这一段往哪儿走（回车保存）";
+    dirInp.value = (d && d.direction) || "";
+    dirInp.title = "只影响导演怎么排戏，不会变成你说的话";
+    dirInp.addEventListener("mousedown", function (e) { e.stopPropagation(); });
+    dirInp.addEventListener("click", function (e) { e.stopPropagation(); });
+    dirInp.addEventListener("keydown", function (e) {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        var v = dirInp.value.trim();
+        api("/api/direct/options", { direction: v }).then(function () {
+          toast(v ? "走向已保存" : "走向已清空");
+          refresh();
+        });
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        dirInp.value = (last.director && last.director.direction) || "";
+        dirInp.blur();
+      }
+    });
+    dirRow.appendChild(dirInp);
+    menu.appendChild(dirRow);
+
     menu.appendChild(el("div", "mi-sep"));
 
     /* 测试 */
     menu.appendChild(row("写一拍（用模型）", function () {
       toast("导演正在写…");
-      api("/api/direct/gen", { n: 2 }).then(function (r) {
+      api("/api/direct/gen", { n: 2, messages: (window.__history || []).slice(-200) })
+        .then(function (r) {
         if (!r || !r.ok) toast((r && r.error) || "导演没写出来");
         else toast("收到 " + (r.pushed || 0) + " 条");
         refresh();

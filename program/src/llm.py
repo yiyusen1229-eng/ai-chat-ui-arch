@@ -39,6 +39,8 @@ import time
 import urllib.error
 import urllib.request
 
+import datadir
+
 # 每天花费提醒阈值（元）。0 = 不提醒；超过 80% 提醒一次，超过 100% 再提醒一次
 BUDGET_DAILY = 0.0
 
@@ -68,9 +70,15 @@ class LLMError(Exception):
         return "%s: %s" % (self.kind, self.detail)
 
 
+def is_local(base_url):
+    """这台机器上的模型服务（Ollama / LM Studio / llama.cpp …）：不花钱"""
+    u = (base_url or "").lower()
+    return any(x in u for x in ("127.0.0.1", "localhost", "0.0.0.0", ":11434", "::1"))
+
+
 class Result(object):
     def __init__(self, text, usage=None, model="", provider="", ms=0,
-                 degraded=False, reason="", attempts=1):
+                 degraded=False, reason="", attempts=1, local=False):
         self.text = text
         self.usage = usage or {}
         self.model = model
@@ -79,6 +87,10 @@ class Result(object):
         self.degraded = degraded
         self.reason = reason
         self.attempts = attempts
+        self.local = bool(local)
+        if self.local:
+            # 本地推理不要记成钱：模型的 token 是真的，但账面上是 0 元
+            self.usage["_local"] = True
 
     def as_dict(self):
         return {"text": self.text, "usage": self.usage, "model": self.model,
@@ -107,10 +119,31 @@ def endpoint(base_url):
     return b + CHAT_PATH
 
 
+_SESSION_ID = None
+
+
+def session_id():
+    """一次运行一个稳定会话 ID：OpenCode Go 网关卡会话，缺了它直接 400"""
+    global _SESSION_ID
+    if not _SESSION_ID:
+        try:
+            import uuid
+            _SESSION_ID = "ses_" + uuid.uuid4().hex
+        except Exception:
+            _SESSION_ID = "ses_wa2"
+    return _SESSION_ID
+
+
 def headers(cfg):
     h = {"Content-Type": "application/json"}
     if (cfg or {}).get("api_key"):
         h["Authorization"] = "Bearer " + cfg["api_key"]
+    b = ((cfg or {}).get("base_url") or "").lower()
+    if "opencode.ai" in b:
+        # OpenCode Go 的两条硬要求：稳定会话 ID（否则 400 MissingSessionID），
+        # 以及别用 python-urllib 的默认 UA（他们按 UA 认客户端）
+        h["x-opencode-session"] = session_id()
+        h["User-Agent"] = "WA2-Kazusa-Bot/1.0"
     return h
 
 
@@ -193,18 +226,55 @@ def native_payload(payload):
     p["options"]["num_predict"] = int(mt) if mt else int(LOCAL_NUM_PREDICT)
     if "temperature" in payload:
         p["options"]["temperature"] = payload["temperature"]
+    # 本地小模型很容易刷同一句：加一点重复惩罚，并把"看过多少"放大
+    # （default repeat_penalty=1.1 对 14B 不够，实测会整段复读）
+    p["options"]["repeat_penalty"] = 1.18
+    p["options"]["repeat_last_n"] = 256
+    # 要求 JSON 的时候让 Ollama 自己约束输出（语法级保证是合法 JSON）：
+    # 本地小模型经常先写一段散文再给 JSON，光靠提示词镇不住。
+    # 给了 schema 就按 schema 约束（字段名、枚举都对），比 "json" 更稳。
+    if payload.get("schema"):
+        p["format"] = payload["schema"]
+    elif payload.get("json"):
+        p["format"] = "json"
     # 本地小模型不该把预算花在思考上
     p["think"] = False
     return p
 
 
 def _native_usage(d):
-    """原生响应的用量 → OpenAI 口径（pricing.py 认这个）"""
+    """原生响应的用量 → OpenAI 口径（pricing.py 认这个）
+
+    顺手把 Ollama 报的真实耗时也带上（单位 ns，这里换 ms）：
+    `_prefill_ms` / `_decode_ms` / `_load_ms`。排查「本地模型好慢」只看这三个数
+    就知道该治 prefill（提示词太长 / 缓存没命中）还是 decode（模型太大）。
+    """
     pin = int(d.get("prompt_eval_count") or 0)
     pout = int(d.get("eval_count") or 0)
     if not (pin or pout):
         return {}
-    return {"prompt_tokens": pin, "completion_tokens": pout, "total_tokens": pin + pout}
+    u = {"prompt_tokens": pin, "completion_tokens": pout, "total_tokens": pin + pout}
+    for key, src in (("_prefill_ms", "prompt_eval_duration"),
+                     ("_decode_ms", "eval_duration"),
+                     ("_load_ms", "load_duration")):
+        if d.get(src):
+            u[key] = round(float(d[src]) / 1e6, 1)
+    return u
+
+
+def _note_local(r):
+    """本地推理打一行：prefill 与 decode 各占多久（云端不打，免得日志变吵）"""
+    u = r.usage
+    if r.provider != "ollama" or not u.get("prompt_tokens"):
+        return
+    try:
+        import applog
+        applog.log("本地推理 %s: 提示 %d tok / prefill %sms, 输出 %d tok / decode %sms, 合计 %dms%s"
+                   % (r.model, u["prompt_tokens"], u.get("_prefill_ms", "?"),
+                      u.get("completion_tokens", 0), u.get("_decode_ms", "?"), r.ms,
+                      (", 加载 %sms" % u["_load_ms"]) if u.get("_load_ms") else ""), "LLM")
+    except Exception:
+        pass
 
 
 def post(url, payload, cfg, timeout=90):
@@ -224,7 +294,13 @@ def post(url, payload, cfg, timeout=90):
                                     headers=headers({"api_key": ""}))
         with urllib.request.urlopen(rq, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8"))
-    rq = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+    # 云端：只发它认识的字段。json / schema 是我们给本地 Ollama 用的内部键，
+    # 原样发过去会被当未知字段拒掉（deepseek 会直接 400）。
+    body = dict(payload)
+    want_json = bool(body.pop("json", False) or body.pop("schema", None))
+    if want_json:
+        body["response_format"] = {"type": "json_object"}
+    rq = urllib.request.Request(url, data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
                                 headers=headers(cfg))
     with urllib.request.urlopen(rq, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
@@ -246,8 +322,11 @@ def generate(payload, cfg, timeout=90, fallback_cfg=None, retry_pause=0.6, sleep
         try:
             d = post(url, payload, cfg, timeout)
             text, usage = _extract(d, require_text=True)
-            return Result(text, usage, cfg.get("model") or "", provider_of(cfg.get("base_url")),
-                          (time.time() - t0) * 1000, False, "", attempts)
+            res = Result(text, usage, cfg.get("model") or "", provider_of(cfg.get("base_url")),
+                         (time.time() - t0) * 1000, False, "", attempts,
+                         local=is_local(cfg.get("base_url")))
+            _note_local(res)
+            return res
         except Exception as e:
             err = classify_exc(e)
             last = err
@@ -268,8 +347,11 @@ def generate(payload, cfg, timeout=90, fallback_cfg=None, retry_pause=0.6, sleep
         try:
             d = post(endpoint(fcfg.get("base_url")), fpayload, fcfg, timeout)
             text, usage = _extract(d, require_text=True)
-            return Result(text, usage, fcfg.get("model") or "", provider_of(fcfg.get("base_url")),
-                          (time.time() - t0) * 1000, True, last.kind, attempts + 1)
+            res = Result(text, usage, fcfg.get("model") or "", provider_of(fcfg.get("base_url")),
+                         (time.time() - t0) * 1000, True, last.kind, attempts + 1,
+                         local=is_local(fcfg.get("base_url")))
+            _note_local(res)
+            return res
         except Exception as e:
             other = classify_exc(e)
             last.user_message = "%s；本地模型也没成（%s）" % (last.user_message, other.user_message)
@@ -278,8 +360,7 @@ def generate(payload, cfg, timeout=90, fallback_cfg=None, retry_pause=0.6, sleep
 
 # ------------------------------------------------------------------ 预算
 def _budget_path():
-    base = os.environ.get("WA2_CACHE_DIR") or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "cache")
+    base = datadir.env_or("WA2_CACHE_DIR", "cache")
     return os.path.normpath(os.path.join(base, "usage_daily.json"))
 
 

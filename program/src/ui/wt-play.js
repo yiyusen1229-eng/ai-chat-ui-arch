@@ -83,9 +83,11 @@
         p = WA2.chat.renderQueued({
           reply: body,
           speaker: isNarr ? "" : speaker,
+          cid: isNarr ? "" : (line.cid || ""),   /* 立绘 / 音色按 id 找 */
           line_type: isNarr ? "narr" : "her",
           ja: line.ja || "",                 /* 角色自己写的日语原文：配音直接用它 */
-          emotion: line.emotion || ""
+          emotion: line.emotion || "",
+          hscene: !!line.hscene              /* 这一拍是不是成人场面：配音参考要用 H */
         });
       }
     } catch (e) {}
@@ -115,7 +117,9 @@
     lastGen = now;
     return fetch("/api/direct/gen", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ n: 1 })
+      /* 和单角色一样把 history 带上：自动模式接着上文往下滚，而不是只凭最近几条猜 */
+      body: JSON.stringify({ n: 1, auto: true,
+                             messages: (window.__history || []).slice(-200) })
     }).then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.ok) return true;
@@ -153,7 +157,10 @@
       .then(function (d) {
         var map = {};
         ((d && d.cast && d.cast.members) || []).forEach(function (m) {
-          if (m && m.name) map[m.name] = !!m.voice;
+          if (!m) return;
+          /* 名字和 id 都登记：新数据按 id 查，老数据 / 龙套只有名字 */
+          if (m.name) map[m.name] = !!m.voice;
+          if (m.id) map[m.id] = !!m.voice;
         });
         window.__voiceMap = map;
       })

@@ -88,8 +88,18 @@ IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
 CHAR_DIR = ""
 
 
-def char_dir():
-    """当前角色的资源根目录（prompt/worldbook/memory/voice/portrait 都在它下面）"""
+def char_dir(cid=None):
+    """角色资源根目录（prompt/worldbook/memory/voice/portrait 都在它下面）
+
+    不传 cid = 当前角色（导入端、「查看文件」都走这条）；
+    传了 cid = 指定角色（多角色场上说话的那个，见 speaker.ctx）。
+    """
+    if cid:
+        try:
+            d = os.path.join(characters.root(), cid)
+            return d if os.path.isdir(d) else ""
+        except Exception:
+            return ""
     return CHAR_DIR or characters.active_dir()
 
 
@@ -170,10 +180,10 @@ def set_default_paths(prompt="", worldbook="", memory="", voice=""):
                           "memory": memory, "voice": voice})
 
 
-def kind_dir(kind):
-    """这一类资源在当前角色文件夹里的目录（characters/<角色>/<kind>/）"""
+def kind_dir(kind, cid=None):
+    """这一类资源在角色文件夹里的目录（characters/<角色>/<kind>/）"""
     spec = KINDS.get(kind)
-    root = char_dir()
+    root = char_dir(cid)
     return os.path.join(root, spec["dir"]) if (spec and root) else ""
 
 
@@ -183,13 +193,14 @@ def portrait_dir():
     return os.path.join(root, "portrait") if root else ""
 
 
-def char_file(kind, exts=None):
+def char_file(kind, exts=None, cid=None):
     """导入端只保留最新一份：返回那一份的路径（没有就是空串）。
 
     exts 不传就按这一类的白名单过滤 —— 参考音频目录里可能还有同名 .txt
     （prompt_text），不能被当成"导入的音频"。
+    cid 不传 = 当前角色。
     """
-    d = kind_dir(kind)
+    d = kind_dir(kind, cid)
     if not d:
         return ""
     if not exts:

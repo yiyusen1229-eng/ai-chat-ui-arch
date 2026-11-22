@@ -25,6 +25,9 @@ import os
 import re
 import urllib.request
 
+import datadir
+import usage
+
 CACHE = {}
 CACHE_MAX = 500
 
@@ -47,7 +50,12 @@ _JA_KANA = re.compile(r"[\u3040-\u30ff]")
 # ---------------------------------------------------------------- 配置
 
 def _src_dir():
-    return os.path.dirname(os.path.abspath(__file__))
+    """config.json 在哪：数据根（和 main 的 CLOUD_CFG_FILE 同一处）
+
+    以前是"程序目录"：开发时恰好也是 build_env 所以看不出问题，
+    打包版就跑到 _MEIPASS 临时目录里去了，配置永远读不到。
+    """
+    return datadir.root()
 
 
 def _cloud_cfg():
@@ -218,6 +226,8 @@ def _cloud_raw(text, p="zh"):
                      "Authorization": "Bearer " + cfg["key"]})
         with urllib.request.urlopen(rq, timeout=CLOUD_TIMEOUT_S) as r:
             d = json.loads(r.read().decode("utf-8"))
+        # 翻译也是钱：一句台词一次调用，别让它从累计里消失
+        usage.record(payload["model"], d.get("usage") or {})
         out = ((d["choices"][0].get("message") or {}).get("content") or "").strip()
         return out, "" if out else "云端返回空"
     except Exception as e:

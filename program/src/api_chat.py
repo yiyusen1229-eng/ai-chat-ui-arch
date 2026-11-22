@@ -15,6 +15,88 @@ import hscene
 # <hscene>是</hscene>：聊天模型对「当前是不是成人场面」的判定
 import re
 
+# 文字推断场景用：真的发生了"移动"才算换场景（嘴上说"要不要去"不算）
+_MOVE_WORDS = ("走进", "进去", "进了", "到了", "到达", "离开", "走出", "出来",
+               "上了", "下车", "回到", "推开", "推门", "回家", "进到")
+
+# 地点线索词：玩家这句话里提到这些，就值得让模型判断一次"现在在哪儿"。
+# 没提就不用判（省一次调用），台词照旧。
+_PLACE_CUES = ("家", "公司", "学校", "教室", "办公室", "公寓", "别墅", "宿舍", "房间",
+               "卫生间", "洗手间", "浴室", "厕所", "厨房", "卧室", "客厅", "阳台", "玄关",
+               "走廊", "楼道", "楼梯", "天台", "门口", "大堂", "大厅", "后厨",
+               "街", "路", "车站", "站台", "地铁", "电车", "机舱", "机场", "车",
+               "咖啡厅", "咖啡馆", "餐厅", "食堂", "店", "商场", "超市", "酒吧", "ktv",
+               "公园", "河边", "图书", "音乐室", "琴房", "体育馆", "操场", "舞台",
+               "温泉", "酒店", "旅馆", "教室", "广播室", "更衣室", "会议室", "休息区")
+
+# 让模型从素材表里挑地点（大致匹配）：标签对不上时用它兜底。
+# 为什么不让后端硬算：地名千奇百怪（"和纱家别墅的卫生间"），
+# 模型看一眼 67 个地名就能挑出"自己的公寓（洗手台）"这种最接近的。
+_SCENE_JUDGE_SYS = (
+    "你是场景判定器。根据对话判断「此刻两人身处哪个地点」。\n"
+    "只能从下面给的列表里挑一个**最接近**的，逐字照抄它的名字（列表里就带房间细节，"
+    "例如「自己的公寓（洗手台）」）。\n"
+    "允许「差不多就行」：列表里没有完全对应的地点时，**必须**挑功能上最像的那个，"
+    "不要因为名字不同就回答「不变」——\n"
+    "  · 在卫生间/浴室洗漱 → 「自己的公寓（洗手台）」或「自己的公寓（浴室）」；\n"
+    "  · 放学往家走、在路上 → 「回家的路」或「街道（黑夜）」；\n"
+    "  · 在某个房间里做某事、列表没有这间房 → 找同样用途的房间（厨房→后厨，卧室→自己的公寓（房间））。\n"
+    "只有两种情况回答「不变」：① 对话里根本没提地点也没换地方；② 当前背景已经是最贴切的那张。\n"
+    "不要新造地名，不要解释。如果此刻没换地方、也没有任何地点线索，只回答两个字：不变。\n"
+    "可用场景列表：%s")
+
+
+def _judge_scene(prev_bg, player_text, action_text, reply_text, cfg, log, time_hint="", weather_hint=""):
+    """没拿到 <scene> 时，让模型从素材表里挑一个最接近的地点。
+
+    返回 (背景命中, 模型回答)；没判定出返回 ({}, "")
+    """
+    try:
+        cat = scene_cg.catalog()
+        # 给模型看**完整场景名**（182 条，约 2300 字），这样它能直接挑到
+        # "自己的公寓（洗手台）"这种带房间细节的，而不是只给一个大地点再由后端猜房间
+        names = [it.get("id") for it in (cat.get("items") or []) if it.get("id")]
+        if not names:
+            names = [p for p in (cat.get("places") or []) if p]
+        if not names or not cfg:
+            return {}, ""
+        sys_msg = _SCENE_JUDGE_SYS % "、".join(names)
+        user_msg = ("当前背景：%s\n玩家刚说：%s\n她这一轮的动作/旁白：%s\n她的台词：%s\n"
+                    "这一轮的时间线索：%s；天气线索：%s\n"
+                    "此刻在哪个地点？只回答地点名或「不变」。"
+                    % (prev_bg or "（未知）", (player_text or "")[:200],
+                       (action_text or "")[:120], (reply_text or "")[:120],
+                       (time_hint or "（没提）"), (weather_hint or "（没提）")))
+        payload = {"model": cfg.get("model"),
+                   "messages": [{"role": "system", "content": sys_msg},
+                                {"role": "user", "content": user_msg}],
+                   "stream": False, "max_tokens": 40, "temperature": 0.0}
+        # 会先"思考"的模型必须关思考：不关的话 40 个 token 全花在 reasoning 上，
+        # content 是空的（日志："bad_response: content 为空（可能被思考吃掉了预算）"）
+        _mb = ((cfg.get("model") or "") + " " + (cfg.get("base_url") or "")).lower()
+        if "deepseek" in _mb or "pro" in _mb:
+            payload["thinking"] = {"type": "disabled"}
+            payload["reasoning_effort"] = "none"
+        _jt = time.time()
+        r = llm.generate(payload, cfg, timeout=30)
+        log("场景：模型判断用时 %.2fs" % (time.time() - _jt))
+        ans = (r.text or "").strip().strip("。．.「」\"'")
+        if not ans or "不变" in ans:
+            log("场景：模型判断=不变")
+            return {}, ans
+        hit = scene_cg.match(ans, prev_bg) or {}
+        if not hit:
+            # 模型给了地点但表里对不上：再拿它的回答当线索，配玩家原文试一次
+            hit = scene_cg.match((ans + " " + (player_text or "")).strip(), prev_bg) or {}
+        if hit:
+            log("场景：模型判断 %r → %r" % (ans, hit.get("id") or ""))
+        else:
+            log("场景：模型判断 %r，但没对上素材" % ans)
+        return hit, ans
+    except Exception as e:
+        log("场景模型判断失败: %s" % e)
+        return {}, ""
+
 _re_hscene = re.compile(r"<hscene>\s*([^<]{1,8}?)\s*</hscene>", re.I)
 import llm
 import standing
@@ -257,8 +339,8 @@ class ChatApi:
         # 真正发出去的 system 落到 work_scratch/last_prompt.txt，方便和最小复现对比
         if os.environ.get("WA2_DUMP_PROMPT"):
             try:
-                _dp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
-                                   "work_scratch", "last_prompt.txt")
+                import datadir
+                _dp = os.path.join(datadir.sub("work_scratch"), "last_prompt.txt")
                 os.makedirs(os.path.dirname(_dp), exist_ok=True)
                 with open(_dp, "w", encoding="utf-8") as _f:
                     _f.write(system)
@@ -275,6 +357,19 @@ class ChatApi:
                     if _lp2[:1] in ("「", "『") else
                     "（接着写一句台词；如果有其他人说话，写成 名字：「台词」）")
             _req_msgs = list(msgs) + [{"role": "user", "content": _ask}]
+        else:
+            # 标签在长 system 里容易被模型忽略（实测 deepseek-v4.1-flash 有时整轮一个标签都不给，
+            # 于是场景/立绘/情绪全不切换）。把格式提醒贴到**最后一条用户消息**后面：
+            # 模型对"最近的一条"顺从度最高。这条只用于本次请求，不入历史。
+            _fmt = ("\n\n（格式提醒：回复最前面先给标签 —— <hscene>否</hscene>"
+                    "<emotion>情绪</emotion>；场景真的换了才加 <scene>地点</scene>；"
+                    "有动作就用 <action>（…）</action>；台词写成 <ja>日语</ja><zh>中文</zh>。"
+                    "标签必须给，不要省略。）")
+            if _req_msgs:
+                _req_msgs = list(_req_msgs)
+                _last = dict(_req_msgs[-1])
+                _last["content"] = (_last.get("content") or "") + _fmt
+                _req_msgs[-1] = _last
         payload = {
             "model": model,
             "messages": ([{"role": "system", "content": system}] + _few + _req_msgs),
@@ -301,6 +396,17 @@ class ChatApi:
                     _fb = None
             _res = llm.generate(payload, _cfg, timeout=CHAT_TIMEOUT_S, fallback_cfg=_fb)
             raw = (_res.text or "").strip()
+            # 「标签为什么不出现」这类问题看代码猜不出来：WA2_DUMP_RAW=1 时把模型原样输出
+            # 落到 work_scratch/last_raw.txt（和 WA2_DUMP_PROMPT 配套用）
+            if os.environ.get("WA2_DUMP_RAW"):
+                try:
+                    import datadir
+                    _rp = os.path.join(datadir.sub("work_scratch"), "last_raw.txt")
+                    os.makedirs(os.path.dirname(_rp), exist_ok=True)
+                    with open(_rp, "w", encoding="utf-8") as _f:
+                        _f.write(raw)
+                except Exception:
+                    pass
             if _res.degraded:
                 log("云端不可用（%s），这一轮用的是本地模型 %s" % (_res.reason, _res.model))
             _uinfo = _record_usage(_res.model or model, _res.usage)
@@ -350,6 +456,18 @@ class ChatApi:
                 _h_src = "关键词兜底"
                 log("成人场面：模型没给 <hscene>，关键词判定=%s" % ("是" if _h else "否"))
             _intimate = bool(_h)
+            # 逐句兜底：**这一句本身**带明确的露骨词时立刻算 H 场面。
+            # 只看"最近两条"的话，H 场景的第一句永远是平常语气（分数还没凑够），
+            # 后面再回想才变成 H —— 这就是「第一次平常、回想才对」的直接原因。
+            # 注意用 is_explicit 而不是 score()：score 的强特征词里有"腰/胸/だめ"
+            # 这类日常词，拿它逐句判会把普通台词全变成 H 语音。
+            if not _intimate:
+                try:
+                    if hscene.is_explicit(raw or ""):
+                        _intimate = True
+                        log("成人场面：这句本身带露骨词 → 判定为是")
+                except Exception:
+                    pass
             if not _auto_continue:
                 try:
                     # 迟滞只保护「短句/拟声」：玩家发一句完整的、毫无 H 特征的句子时，
@@ -361,13 +479,17 @@ class ChatApi:
                             if isinstance(_m2, dict) and _m2.get("role") == "user":
                                 _u = (_m2.get("content") or "").strip()
                                 break
+                        # 玩家说了一句完整、又不带露骨词的句子 → 场面已经切走了，立刻退出。
+                        # 判据用 is_explicit（只认露骨词）：score() 里有"腰/胸/だめ"这类
+                        # 日常词，用它判断会导致"腰有点疼"也退不出 H 场面，
+                        # 普通台词继续用 H 语音（用户反馈「正常语音变 H 了」）。
                         try:
-                            _u_score = hscene.score(_u)[0] if _u else 0
+                            _u_explicit = hscene.is_explicit(_u) if _u else False
                         except Exception:
-                            _u_score = 0
-                        if _u and _u_score == 0 and len(_u) >= 6:
+                            _u_explicit = False
+                        if _u and len(_u) >= 6 and not _u_explicit:
                             hscene.force_exit()
-                            log("成人场面：玩家这句没有 H 特征且是完整句 → 直接退出")
+                            log("成人场面：玩家这句是普通完整句 → 直接退出")
                     # 带迟滞：返回的是**生效**状态（H 场面里短句不会把语气拽回平静）
                     _intimate = hscene.set_last(_intimate)
                 except Exception:
@@ -431,7 +553,15 @@ class ChatApi:
             _r = (reply or "").strip()
             if _r:
                 _r = _r.strip("「」『』")
-                reply = _r if _line_type != "her" else ("「" + _r + "」")
+                # 纯旁白（整句是括号里的动作/环境描写、里面没有引号台词）标成 narr、
+                # 而且不包引号。不标的话前端会当 "her" 配音：把「（她在路灯下停了一瞬…）」
+                # 这种长句翻成日语念出来，听感就是一长串怪声（日志里出现过 900KB 的音频）。
+                if (_line_type == "her" and re.match(r"^[（(【]", _r)
+                        and not re.search(r"[「『]", _r)):
+                    _line_type = "narr"
+                    reply = _r
+                else:
+                    reply = _r if _line_type != "her" else ("「" + _r + "」")
 
             # 中文：优先用模型自己写的那句；没写 / 不像中文才回落翻译层
             reply_zh = ""
@@ -457,9 +587,36 @@ class ChatApi:
 
             # 场景：把 <scene> 的地点/时间对上素材里的背景图（匹配逻辑在 scene_cg.py）
             bg_hit = {}
+            # 玩家这句话 + 这轮动作描写：判断有没有"地点线索"
+            _u_now = ""
+            try:
+                for _m3 in reversed(raw_msgs):
+                    if isinstance(_m3, dict) and _m3.get("role") == "user":
+                        _u_now = (_m3.get("content") or "").strip()
+                        break
+            except Exception:
+                _u_now = ""
+            _cue_txt = (_u_now + " " + (action or "")).strip()
+            _cue = bool(_cue_txt) and any(w in _cue_txt for w in _PLACE_CUES)
+            # 这一轮明确提到的时段（早上/白天/傍晚/天黑了…）：模型只写地点时用它定时间，
+            # 否则会沿用上一张背景的时段（「白天去学校」被接成晚上的校门口）
+            try:
+                _time_hint = scene_cg.time_hint(_cue_txt)
+            except Exception:
+                _time_hint = ""
+            # 天气 / 地点细节同理：模型只写地点时，别让它沿用上一张的雪景/熄灯
+            try:
+                _weather_hint = scene_cg.weather_hint(_cue_txt)
+            except Exception:
+                _weather_hint = ""
+            try:
+                _detail_hints = scene_cg.detail_hint(_cue_txt)
+            except Exception:
+                _detail_hints = []
             if scene_now:
                 try:
-                    bg_hit = scene_cg.match(scene_now, prev_bg)
+                    bg_hit = scene_cg.match(scene_now, prev_bg, time_hint=_time_hint,
+                                           weather_hint=_weather_hint, detail_hints=_detail_hints)
                 except Exception as e:
                     log("场景匹配失败: %s" % e)
                 if not bg_hit:
@@ -467,7 +624,45 @@ class ChatApi:
                 else:
                     log("场景：%r → %r" % (scene_now, bg_hit.get("id") or ""))
             else:
-                log("场景：本轮模型没给 <scene>（沿用 %r）" % (prev_bg or "",))
+                # 模型没给 <scene>（实测会漏）：先看文字里有没有移动动词
+                # （走进/到了/回家…），嘴上说"要不要去"不算。
+                try:
+                    if _cue_txt and any(v in _cue_txt for v in _MOVE_WORDS):
+                        _hit = scene_cg.match(_cue_txt, prev_bg, time_hint=_time_hint,
+                                             weather_hint=_weather_hint, detail_hints=_detail_hints)
+                        if _hit:
+                            _cur_place = scene_cg.parse_name(prev_bg)["place"]
+                            if _hit.get("place") and _hit.get("place") != _cur_place:
+                                bg_hit = _hit
+                                log("场景：模型没给标记，按文字推断 %r → %r"
+                                    % (_hit.get("place"), _hit.get("id") or ""))
+                except Exception as e:
+                    log("场景文字推断失败: %s" % e)
+
+            # 有地点线索时，再让模型判一次「此刻在哪儿」——**大致匹配**，
+            # 不要求标签和素材完全一致：
+            #   · 标签常只写到大地点（和纱家别墅），模型能挑到更贴切的房间
+            #     （"卫生间里洗漱" → 自己的公寓（洗手台））；
+            #   · 标签漏掉时也能补上（"放学往家走" → 回家的路）。
+            if _cue and not _auto_continue:
+                try:
+                    _jcfg = {"api_key": (cc or {}).get("api_key") or "",
+                             "base_url": base_url, "model": model}
+                    _jhit, _jans = _judge_scene(prev_bg, _u_now, action, reply, _jcfg, log,
+                                                   time_hint=_time_hint, weather_hint=_weather_hint)
+                    if _jhit:
+                        _cur_place = scene_cg.parse_name(prev_bg)["place"]
+                        if _jhit.get("place") and _jhit.get("place") != _cur_place:
+                            if bg_hit and bg_hit.get("id") != _jhit.get("id"):
+                                log("场景：模型改判 %r（原来是 %r）"
+                                    % (_jhit.get("id") or "", bg_hit.get("id") or scene_now))
+                            bg_hit = _jhit
+                        elif not bg_hit:
+                            log("场景：模型判断和当前同一地点，不切")
+                except Exception as e:
+                    log("场景模型判断异常: %s" % e)
+            if not bg_hit:
+                log("场景：本轮没换（当前 %r）" % (prev_bg or "",))
             diag.note("scene", query=scene_now[:24], id=bg_hit.get("id", ""),
                       place=bg_hit.get("place", ""), time=bg_hit.get("time", ""),
                       score=bg_hit.get("score"))

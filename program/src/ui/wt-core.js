@@ -31,7 +31,17 @@
     },
     clamp: function (v, a, b) { return v < a ? a : (v > b ? b : v); },
     pad2: function (n) { return (n < 10 ? "0" : "") + n; },
-    isNum: function (v) { return typeof v === "number" && isFinite(v); }
+    isNum: function (v) { return typeof v === "number" && isFinite(v); },
+    /* 这段文字里有没有假名。判断"是日语原文还是中文字幕"用：
+       多角色路径把中文字幕当日语喂给语音模型，就是这么坏掉的。 */
+    hasKana: function (s) {
+      s = String(s || "");
+      for (var i = 0; i < s.length; i++) {
+        var c = s.charCodeAt(i);
+        if (c >= 0x3040 && c <= 0x30ff) return true;
+      }
+      return false;
+    }
   };
 
   /* 跨文件共享状态：只放“多个文件都要读”的东西 */

@@ -80,16 +80,23 @@ def stub_beats(n=2):
 
 
 def _director_model():
-    """从当前角色的 model.json 里读导演模型（没配就空串）"""
+    """导演模型：和 director_gen._cfg() 同源（characters/director.json，没配才用全局 chat）
+
+    以前读的是当前角色 model.json 的 director 段，那条路早就不用了 ——
+    结果菜单里永远显示"全局 chat 的模型"，把导演换成什么都不会变。
+    """
     try:
-        import char_model
-        st = char_model.get_state()
-        d = (st.get("kinds") or {}).get("director") or {}
+        import scene_model
+        st = scene_model.state()
+        try:
+            own = scene_model._load().get(scene_model.KIND) or {}
+        except Exception:
+            own = {}
         return {
-            "model": d.get("model") or "",
-            "connected": bool(d.get("connected")),
-            "usingGlobal": bool(d.get("usingGlobal")),
-            "endpoint": d.get("endpoint") or ""
+            "model": st.get("model") or "",
+            "connected": bool(st.get("connected")),
+            "usingGlobal": not (own.get("endpoint") or own.get("model")),
+            "endpoint": st.get("endpoint") or ""
         }
     except Exception:
         return {"model": "", "connected": False, "usingGlobal": True, "endpoint": ""}

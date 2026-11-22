@@ -166,14 +166,18 @@ def main():
     try:
         data = TTS.synthesize("测试一句", "zh", emo="calm")
         check("合成返回数据", data == b"RIFFfake")
-        check("接口只被调一次", len(calls) == 1, len(calls))
-        q = _up.parse_qs(_ur.urlparse(calls[0]).query)
+        # 只数**合成**请求：数据根指向真实角色时，_ensure_char_model() 还会发
+        # 「切 GPT/SoVITS 权重」的 POST（正常行为，不算进合成次数）
+        synth = [c for c in calls if "/tts?" in c]
+        check("接口只被调一次", len(synth) == 1, "%d（总 POST %d）" % (len(synth), len(calls)))
+        q = _up.parse_qs(_ur.urlparse(synth[0]).query)
         check("ref_audio_path 用的是导入那条", q.get("ref_audio_path", [""])[0] == w1,
               q.get("ref_audio_path"))
         check("prompt_text 用的是同名 txt", q.get("prompt_text", [""])[0] == "こんにちは",
               q.get("prompt_text"))
         TTS.synthesize("测试一句", "zh", emo="calm")
-        check("第二次走缓存不再合成", len(calls) == 1, len(calls))
+        synth2 = [c for c in calls if "/tts?" in c]
+        check("第二次走缓存不再合成", len(synth2) == 1, "%d（总 POST %d）" % (len(synth2), len(calls)))
     finally:
         TTS._ready = False
 

@@ -18,9 +18,9 @@ import time
 import urllib.request
 
 import cache_io
+import datadir
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-CACHE_DIR = os.path.join(BASE, "cache")
+CACHE_DIR = datadir.env_or("WA2_CACHE_DIR", "cache")
 CACHE_FILE = os.path.join(CACHE_DIR, "prices.json")
 PRICE_URL = "https://api-docs.deepseek.com/zh-cn/quick_start/pricing"
 TTL = 6 * 3600          # 6 小时内不重复抓
@@ -36,6 +36,19 @@ BUILTIN = {
         "hit":  {"off": 0.15, "peak": 0.30},
         "miss": {"off": 4.5,  "peak": 9.0},
         "out":  {"off": 13.5, "peak": 27.0},
+    },
+    # OpenCode Go 里的 DeepSeek V4.1 Flash（官网高峰 $0.30/$1.20、空闲 $0.15/$0.60 每百万美元，
+    # 按 7.2 折人民币；Go 是包月额度，这里给"按量等价"的参考价）
+    "deepseek-v4.1-flash": {
+        "hit":  {"off": 0.022, "peak": 0.043},
+        "miss": {"off": 1.08,  "peak": 2.16},
+        "out":  {"off": 4.32,  "peak": 8.64},
+    },    # OpenCode Go 套餐里的 GLM-5.3-Flash（官网 $0.15 / $0.50 每百万，按 7.2 折人民币；
+    # Go 是包月额度，这里给的是"按量等价"的参考价，方便界面上看个量级）
+    "glm-5.3-flash": {
+        "hit":  {"off": 0.22, "peak": 0.22},
+        "miss": {"off": 1.08, "peak": 1.08},
+        "out":  {"off": 3.60, "peak": 3.60},
     },
 }
 BUILTIN_CUR = "CNY"

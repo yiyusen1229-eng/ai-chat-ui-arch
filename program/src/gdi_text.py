@@ -358,7 +358,10 @@ def render_cached(text, maxw=1200, size=None, embolden=0, outline_w=None):
 
 
 if __name__ == "__main__":
+    # 手动跑一下看渲染效果：产物放数据根的 work/，别写进程序目录
     d, w, h = render_block("不然的话，这次我可是真的要", maxw=1200)
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "work", "gdi_test.png")
+    import datadir
+    out = os.path.join(datadir.sub("work"), "gdi_test.png")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     open(out, "wb").write(d)
     print("渲染 OK:", w, "x", h, "->", out)

@@ -28,9 +28,18 @@ def main():
     from faster_whisper.vad import VadOptions, get_speech_timestamps, collect_chunks
     import numpy as np
 
-    folder = sys.argv[1] if len(sys.argv) > 1 else "H"
-    d = os.path.join(VOICE, folder)
-    out_path = os.path.join(VOICE, folder, "_refaudio.json")
+    # 用法：ref_vad_scan.py <情绪目录> [--char 角色id]
+    args = [a for a in sys.argv[1:]]
+    char = ""
+    if "--char" in args:
+        i = args.index("--char")
+        char = args[i + 1] if i + 1 < len(args) else ""
+        del args[i:i + 2]
+    folder = args[0] if args else "H"
+    voice = (os.path.join(PROGRAM, "build_env", "characters", char, "voice")
+             if char else VOICE)
+    d = os.path.join(voice, folder)
+    out_path = os.path.join(voice, folder, "_refaudio.json")
     print("目录:", d)
 
     opts = VadOptions(min_silence_duration_ms=250, speech_pad_ms=100)

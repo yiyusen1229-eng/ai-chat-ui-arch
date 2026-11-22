@@ -20,6 +20,8 @@ import threading
 import time
 import traceback
 
+import datadir
+
 try:
     import secret as _secret
 except Exception:                      # 极端情况下（单文件跑）也不能让日志挂掉
@@ -33,12 +35,8 @@ _SLOW_REQUEST_MS = 3000
 
 
 def _log_dir():
-    # 打包后 __file__ 在临时解包目录里, 要用 exe 所在目录
-    if getattr(sys, "frozen", False):
-        base = os.path.dirname(os.path.abspath(sys.executable))
-    else:
-        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for cand in (os.path.join(base, "logs"),
+    # 日志跟其它运行数据一起放数据根（开发是 build_env，打包是 exe 同目录）
+    for cand in (datadir.env_or("WA2_LOG_DIR", "logs"),
                  os.path.join(os.environ.get("TEMP", "."), "wa2_logs")):
         try:
             os.makedirs(cand, exist_ok=True)

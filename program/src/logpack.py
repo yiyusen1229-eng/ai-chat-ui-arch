@@ -31,6 +31,7 @@ import time
 import zipfile
 
 import applog
+import datadir
 import diag
 import secret
 
@@ -51,13 +52,11 @@ _RE_POSIX = re.compile(r"/(?:home|Users)/[^\s\"'<>|]+")
 # ------------------------------------------------------------------ 路径
 
 def _exe_dir():
-    """配置目录。和 main.py 的 EXE_DIR 同一套规则（打包后是 exe 旁边，开发时是 src/）。
+    """配置目录 = 数据根（和 main.py 的 EXE_DIR 同一个来源，见 datadir.py）。
 
     这里不 import main：main 一导入就会起预热线程（字模 / 语音），导出日志这种事不该有副作用。
     """
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(os.path.abspath(sys.executable))
-    return os.path.dirname(os.path.abspath(__file__))
+    return datadir.root()
 
 
 def log_dir():
