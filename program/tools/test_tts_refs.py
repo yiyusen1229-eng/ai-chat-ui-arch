@@ -52,6 +52,24 @@ def touch(path):
         f.write(b"")
 
 
+def wav_bytes(peak, seconds=0.5, rate=24000):
+    """造一段 16bit 单声道正弦 wav：peak 给 0 就是静音，给 20000 就是正常响度"""
+    import math
+    import struct
+    import wave as _wave
+    buf = io.BytesIO()
+    n = int(rate * seconds)
+    with _wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        frames = bytearray()
+        for i in range(n):
+            frames += struct.pack("<h", int(peak * math.sin(2 * math.pi * 220 * i / rate)))
+        w.writeframes(bytes(frames))
+    return buf.getvalue()
+
+
 def ref(voice, emo, name, txt, cent=3700, db=-13.0, ratio=0.9, dur=4.5):
     """造一条假参考：空 wav + txt，并把侧车数据攒进 globals 列表"""
     touch(os.path.join(voice, emo, name + ".wav"))
@@ -170,6 +188,100 @@ def main():
         check("目录不存在返回空", T._pick_weights(os.path.join(tmp2, "nope")) == {})
     finally:
         shutil.rmtree(tmp2, ignore_errors=True)
+
+    # ---------- 5) 静音检测 ----------
+    print("[5] 静音检测（_wav_peak）：拟声句合成出静音要认得出来")
+    check("全零 wav 判为静音", (T._wav_peak(wav_bytes(0)) or 0) < T.SILENT_PEAK,
+          T._wav_peak(wav_bytes(0)))
+    check("正常响度 wav 不算静音", (T._wav_peak(wav_bytes(20000)) or 0) >= T.SILENT_PEAK,
+          T._wav_peak(wav_bytes(20000)))
+    check("不是 wav 返回 None（不误判）", T._wav_peak(b"not a wav") is None)
+
+    # ---------- 6) 静音不写缓存 + 换参考重试 ----------
+    print("[6] 合成静音 → 换一条参考重试；还静音就不写缓存")
+    tmp3 = tempfile.mkdtemp(prefix="wa2_synth_")
+    orig = {k: getattr(T, k) for k in
+            ("pick_ref", "_post", "_ensure_char_model", "_character_tts",
+             "_tts_cache_path", "_record_gain", "_ready")}
+    try:
+        T._ready = True          # 自测里没有真服务，直接标记就绪，_post 用桩
+        cache_file = os.path.join(tmp3, "c.wav")
+        T._ensure_char_model = lambda: True
+        T._character_tts = lambda: {}
+        T._record_gain = lambda *a, **k: None
+        T._tts_cache_path = lambda *a, **k: cache_file
+        posts = []
+
+        def fake_post(path, timeout=30, port=0):
+            posts.append(path)
+            # 第一次静音，第二次正常
+            return wav_bytes(0 if len(posts) == 1 else 20000)
+
+        ref_seq = [("r1.wav", "a"), ("r2.wav", "b"), ("r3.wav", "c")]
+        picked = []
+
+        def fake_pick(emo="neutral", target=""):
+            i = min(len(picked), len(ref_seq) - 1)
+            picked.append(ref_seq[i][0])
+            return ref_seq[i]
+
+        T._post = fake_post
+        T.pick_ref = fake_pick
+        data = T.synthesize("テスト", "ja", emo="H")
+        check("静音后自动重试，返回的音频是有声的",
+              bool(data) and (T._wav_peak(data) or 0) >= T.SILENT_PEAK,
+              T._wav_peak(data) if data else None)
+        check("重试换了参考（用了 2 条）", len(picked) == 2, picked)
+        check("缓存里存的是重试后有声音的那版",
+              os.path.exists(cache_file) and
+              (T._wav_peak(open(cache_file, "rb").read()) or 0) >= T.SILENT_PEAK)
+
+        # 三次都静音 → 返回 None 且不写缓存
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+        posts.clear()
+        picked.clear()
+        T._post = lambda path, timeout=30, port=0: (posts.append(path) or wav_bytes(0))
+        T.pick_ref = fake_pick
+
+        def fake_pick2(emo="neutral", target=""):
+            picked.append(ref_seq[min(len(picked), 2)][0])
+            return ref_seq[min(len(picked) - 1, 2)]
+
+        T.pick_ref = fake_pick2
+        data2 = T.synthesize("テスト", "ja", emo="H")
+        check("连续静音时返回 None（前端只显示文字）", data2 is None, data2)
+        check("连续静音不写缓存", not os.path.exists(cache_file))
+        check("连续静音试了 3 条参考", len(picked) == 3, picked)
+    finally:
+        for k, v in orig.items():
+            setattr(T, k, v)
+        shutil.rmtree(tmp3, ignore_errors=True)
+
+    # ---------- 7) 拟声句优先用「拟声参考」 ----------
+    print("[7] 拟声句优先挑「参考文本本身也是拟声/喘息」的")
+    tmp4 = tempfile.mkdtemp(prefix="wa2_moan_")
+    try:
+        voice = os.path.join(tmp4, "voice")
+        ref.audio, ref.tone = {}, {}
+        ref(voice, "h", "gasp", "はぁ…はぁ…はぁ…", cent=3200, db=-12)      # 拟声参考
+        ref(voice, "h", "words", "こんなところで、何してるんだよ", cent=3200, db=-12)  # 完整台词
+        flush(voice)
+        T._REFS_OVERRIDE = voice
+        T.load_refs()
+        got = set()
+        for _ in range(30):
+            r, _t = T.pick_ref("H", target="んぅ……っ、んんーっ！")
+            got.add(os.path.basename(r) if r else "")
+        check("拟声句优先拿到拟声参考（不是完整台词那条）",
+              got == {"gasp.wav"}, got)
+    finally:
+        T._REFS_OVERRIDE = ""
+        try:
+            T.load_refs()
+        except Exception:
+            pass
+        shutil.rmtree(tmp4, ignore_errors=True)
 
     print()
     if FAILS:

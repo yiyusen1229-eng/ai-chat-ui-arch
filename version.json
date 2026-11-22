@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-22.6",
+  "version": "2026-11-22.7",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
   "portable_url": "",
-  "notes": "参考音频修复：「声音很粗 / 语调怪」—— 选了频谱重心 1400~1800Hz 的闷参考；现在按音色门（重心/响度）剔除，空情绪不再乱抓 H 气声；参考的 prompt_text 脏值也清了"
+  "notes": "拟声词没声音修好了：拟声句可能合成出静音且被缓存住 —— 现在拟声句优先用拟声参考，合成出静音会自动换参考重试且不进缓存"
 }

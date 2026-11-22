@@ -196,6 +196,9 @@ QUIET_DB = -28.0            # 响度低于这个 = 太轻
 TONE_EXEMPT = ("h", "接吻", "睡觉时的呼吸", "气喘吁吁")
 # 跨情绪借音色时只许借「以说话为主」的组：绝不从 H / 接吻 / 呼吸 / 喊叫里借
 SAFE_BORROW = ("calm", "soft", "问句", "调侃吐槽", "自怨自艾", "轻快", "故作轻松", "激动")
+# 合成结果「静音」门槛（2026-11-22）：正常台词峰值 2 万+；出问题的那两条只有 300 / 439。
+# 低于这个就当合成失败：换参考重试，且不写缓存（否则这句永远哑）。
+SILENT_PEAK = 1500
 _REFS_OVERRIDE = ""      # 自测用：把参考音频目录指到临时位置
 
 _proc = None
@@ -628,7 +631,11 @@ def pick_ref(emo="neutral", target=""):
     with_text = [x for x in items if x[1]]
     # 目标句本身是纯拟声 → 呼吸参考正合适，随便抽
     if _looks_like_moan(target):
-        return random.choice(with_text or items)
+        # 2026-11-22：优先挑「参考文本本身也是拟声/喘息」的那几条。
+        # 以前这里直接 random.choice(with_text) —— 抽到一条完整台词的参考去念「んぅ…っ」，
+        # 模型经常直接吐静音（用户报「拟声词没有语音了」）。
+        moany = [x for x in with_text if _looks_like_moan(x[1])]
+        return random.choice(moany or with_text or items)
 
     # 正常台词：**音频里得真有人声**，否则模型只出气声不出字（VAD 实测 H 里 74/151 是 0）。
     # 但 H 是例外：它的素材本来就是气声，VAD 天然低；用 VAD 门槛会把 H 全筛掉，
@@ -1234,6 +1241,29 @@ def _gain_path(wav_path):
     return wav_path + ".gain.json"
 
 
+def _wav_peak(data):
+    """WAV 字节的峰值（0~32767）。不是 16bit PCM / 解析失败返回 None。
+
+    用来判「这句是不是合成出静音了」（2026-11-22）：正常台词峰值 2 万+，
+    坏的那两条只有 300 / 439 —— 播放时就是没声音。
+    """
+    try:
+        import array
+        import wave
+        with wave.open(io.BytesIO(data), "rb") as w:
+            if w.getsampwidth() != 2:
+                return None
+            raw = w.readframes(w.getnframes())
+            ch = w.getnchannels() or 1
+        a = array.array("h")
+        a.frombytes(raw[:len(raw) - (len(raw) % 2)])
+        if ch > 1:
+            a = a[0::ch]
+        return max((abs(v) for v in a), default=0)
+    except Exception:
+        return None
+
+
 def _record_gain(wav_path, data):
     """量一次响度，把「到 -16 LUFS 要几个 dB」记在侧车 json 里。
 
@@ -1418,67 +1448,99 @@ def _synthesize_inner(text, lang, timeout, emo, port=0):
         if not port and not _ensure_char_model():
             return None
         diag.count("tts.miss")
-        try:
-            import applog
-            _mdl = _character_tts() or {}
-            applog.log("TTS 合成请求：%d 字，角色=%s 权重=%s 参考=%s"
-                       % (len(text), os.path.basename(_active_dir() or "?"),
-                          os.path.basename(_mdl.get("gpt") or "(底模)"),
-                          os.path.basename(ref_path or "")), "TTS")
-            applog.log("TTS 缓存未命中：len=%d emo=%s key=%s"
-                       % (len(text), emo, os.path.basename(_cp or "")[:8]), "TTS")
-        except Exception:
-            pass
-        # 按情绪挑参考音频；参数也跟着情绪走（一条都没有就别合成，交给上层回报）
-        ref_path, ref_text = pick_ref(emo, target=text)
-        if not ref_path:
-            return None
-        try:
-            global _last_ref
-            _last_ref = ref_path
-        except Exception:
-            pass
         prm = EMOTION_PARAMS.get(EMOTION_ALIAS.get(emo, emo)) or EMOTION_PARAMS["neutral"]
-        q = urllib.parse.urlencode({
-            "text": text,
-            "text_lang": lang,
-            "ref_audio_path": ref_path,
-            "prompt_text": ref_text,
-            "prompt_lang": "ja",
-            "top_k": prm["top_k"],
-            "top_p": prm["top_p"],
-            "temperature": prm["temperature"],
-            # 短句整句合成：cut5 会把「〜して、〜」从词中间切开，被切断的实词会丢
-            "text_split_method": ("cut0" if len(text) <= 40 else "cut5"),
-            "batch_size": 1,
-            "speed_factor": prm["speed_factor"],
-        })
-        try:
-            # 第一次合成要加载模型，给足时间
-            # port=0 时保持老调用形状（自测里 _post 是被替换的桩函数，不接受新参数）
-            if port:
-                _data = _post("/tts?" + q, timeout=timeout, port=port)
-            else:
-                _data = _post("/tts?" + q, timeout=timeout)
+        # 按情绪挑参考音频；参数也跟着情绪走（一条都没有就别合成，交给上层回报）
+        # 2026-11-22：拟声/喘息句有时会合成出**静音**（实测两条 0.68 秒、峰值 300/439，
+        # 正常台词峰值 2 万+）。原因多是用「一句完整台词」的参考去念「んぅ…っ」——
+        # 模型直接摆烂吐静音。所以这里：静音不算成功，换一条参考重试（最多 3 条），
+        # 三次都静音就返回 None（前端只显示文字），并且**不写缓存** —— 否则这句永远哑。
+        _tried = set()
+        _last_silent = None
+        for _attempt in range(3):
+            ref_path, ref_text = pick_ref(emo, target=text)
+            if not ref_path:
+                return None
+            if ref_path in _tried and len(_tried) >= 3:
+                break
+            _tried.add(ref_path)
             try:
-                if _data and _cp:
-                    diag.count("tts.render")
-                    os.makedirs(os.path.dirname(_cp), exist_ok=True)
-                    with open(_cp, 'wb') as _f:
-                        _f.write(_data)
-                    _record_gain(_cp, _data)            # 增益记在侧车，wav 不动
+                global _last_ref
+                _last_ref = ref_path
             except Exception:
                 pass
-            return _data
-        except Exception as e:
-            _last_err = "合成失败: %s" % e
-            # 连不上 / 超时 = 服务像是挂了：标记未就绪，下次请求会重新拉起。
-            # （HTTP 4xx/5xx 说明服务还活着，只是这句没合成出来，不重拉）
-            if isinstance(e, urllib.error.HTTPError):
+            try:
+                import applog
+                _mdl = _character_tts() or {}
+                applog.log("TTS 合成请求：%d 字，角色=%s 权重=%s 参考=%s/%s（%s）"
+                           % (len(text), os.path.basename(_active_dir() or "?"),
+                              os.path.basename(_mdl.get("gpt") or "(底模)"),
+                              os.path.basename(os.path.dirname(ref_path)),
+                              os.path.basename(ref_path), (ref_text or "")[:16]), "TTS")
+            except Exception:
                 pass
-            elif isinstance(e, (urllib.error.URLError, OSError)):
-                _ready = False
+            q = urllib.parse.urlencode({
+                "text": text,
+                "text_lang": lang,
+                "ref_audio_path": ref_path,
+                "prompt_text": ref_text,
+                "prompt_lang": "ja",
+                "top_k": prm["top_k"],
+                "top_p": prm["top_p"],
+                "temperature": prm["temperature"],
+                # 短句整句合成：cut5 会把「〜して、〜」从词中间切开，被切断的实词会丢
+                "text_split_method": ("cut0" if len(text) <= 40 else "cut5"),
+                "batch_size": 1,
+                "speed_factor": prm["speed_factor"],
+            })
+            try:
+                # 第一次合成要加载模型，给足时间
+                # port=0 时保持老调用形状（自测里 _post 是被替换的桩函数，不接受新参数）
+                if port:
+                    _data = _post("/tts?" + q, timeout=timeout, port=port)
+                else:
+                    _data = _post("/tts?" + q, timeout=timeout)
+            except Exception as e:
+                _last_err = "合成失败: %s" % e
+                # 连不上 / 超时 = 服务像是挂了：标记未就绪，下次请求会重新拉起。
+                # （HTTP 4xx/5xx 说明服务还活着，只是这句没合成出来，不重拉）
+                if isinstance(e, urllib.error.HTTPError):
+                    pass
+                elif isinstance(e, (urllib.error.URLError, OSError)):
+                    _ready = False
+                return None
+            if not _data:
+                return None
+            _peak = _wav_peak(_data)
+            if _peak is None or _peak >= SILENT_PEAK:
+                _last_silent = None
+                break
+            # 静音：换一条参考再来一次（不进缓存）
+            _last_silent = _peak
+            try:
+                import applog
+                applog.log("TTS 合成出来是静音（峰值 %d，参考 %s/%s），换参考重试（第 %d 次）"
+                           % (_peak, os.path.basename(os.path.dirname(ref_path)),
+                              os.path.basename(ref_path), _attempt + 1), "WARN")
+            except Exception:
+                pass
+        if _last_silent is not None:
+            _last_err = "合成出来是静音（换了几条参考都不行）"
+            try:
+                import applog
+                applog.log("TTS 放弃合成：连续静音（峰值 %d），这句先只显示文字" % _last_silent, "WARN")
+            except Exception:
+                pass
             return None
+        try:
+            if _data and _cp:
+                diag.count("tts.render")
+                os.makedirs(os.path.dirname(_cp), exist_ok=True)
+                with open(_cp, 'wb') as _f:
+                    _f.write(_data)
+                _record_gain(_cp, _data)            # 增益记在侧车，wav 不动
+        except Exception:
+            pass
+        return _data
 
 
 def stop():
