@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-22.5",
+  "version": "2026-11-22.6",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
   "portable_url": "",
-  "notes": "情绪不再一句话一跳：单句离群压回上一句、连续两次才真的换；提示词也会带上「上一句的情绪」让模型自己少换"
+  "notes": "参考音频修复：「声音很粗 / 语调怪」—— 选了频谱重心 1400~1800Hz 的闷参考；现在按音色门（重心/响度）剔除，空情绪不再乱抓 H 气声；参考的 prompt_text 脏值也清了"
 }

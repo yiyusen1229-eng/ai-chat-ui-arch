@@ -135,6 +135,26 @@ def _char_json(name):
     return {}
 
 
+def _pick_weights(vm):
+    """voice_model/ 里的 (.ckpt, .pth) 配对，**确定性**取一对（按文件名排序取第一个）。
+
+    2026-11-22 查「声音很粗」时注意到的隐患：原来是直接取 listdir 的第 0 个 ——
+    目录里同时躺着 2025-07 和 2026-10 两批权重，哪对生效取决于目录顺序；
+    语音是「一个角色一个子进程」的，理论上可能各挑到不同的一对（音色突然就变了）。
+    现在固定按文件名排序取第一个（和以前实际生效的那对一致），并在切换时记日志。
+    """
+    try:
+        if not os.path.isdir(vm):
+            return {}
+        ckpt = sorted(f for f in os.listdir(vm) if f.lower().endswith(".ckpt"))
+        pth = sorted(f for f in os.listdir(vm) if f.lower().endswith(".pth"))
+        if not (ckpt and pth):
+            return {}
+        return {"gpt": os.path.join(vm, ckpt[0]), "sovits": os.path.join(vm, pth[0])}
+    except Exception:
+        return {}
+
+
 def _character_tts():
     """角色自己的语音权重：
 
@@ -146,11 +166,9 @@ def _character_tts():
         import characters
         vm = os.path.join(_active_dir() or "", "voice_model")
         if os.path.isdir(vm):
-            ckpt = [f for f in os.listdir(vm) if f.lower().endswith(".ckpt")]
-            pth = [f for f in os.listdir(vm) if f.lower().endswith(".pth")]
-            if ckpt and pth:
-                return {"gpt": os.path.join(vm, ckpt[0]),
-                        "sovits": os.path.join(vm, pth[0])}
+            m = _pick_weights(vm)
+            if m:
+                return m
     except Exception:
         pass
     d = _char_json("tts.json")
@@ -167,6 +185,17 @@ def _character_tts():
 # 参考音频：按情绪准备（语气由参考决定，音色由模型决定）
 # 现在放在当前角色文件夹的 voice/<情绪>/ 下；老版本的 refs_touma 只当兜底
 LEGACY_REFS_DIR = os.path.join(os.path.dirname(GSV), "refs_touma")
+
+# 参考音频「音色门」（2026-11-22）：太闷 / 太轻的参考会把整句带成又粗又糊。
+# 实测和纱 `委屈巴巴/` 5 条里有 3 条频谱重心只有 1400~1800 Hz（正常说话 3500~4400），
+# 拿它当参考合成就「声音很粗、语调怪」；而情绪迟滞会让这个情绪连着出现好几句。
+# 数据来自 tools/ref_tone_scan.py 生成的 `_reftone.json`（重心 Hz / 响度 dBFS）。
+DARK_HZ = 2400              # 频谱重心低于这个 = 闷
+QUIET_DB = -28.0            # 响度低于这个 = 太轻
+# 这些情绪本来就是气声 / 呼吸，不能拿"亮度"卡它们
+TONE_EXEMPT = ("h", "接吻", "睡觉时的呼吸", "气喘吁吁")
+# 跨情绪借音色时只许借「以说话为主」的组：绝不从 H / 接吻 / 呼吸 / 喊叫里借
+SAFE_BORROW = ("calm", "soft", "问句", "调侃吐槽", "自怨自艾", "轻快", "故作轻松", "激动")
 _REFS_OVERRIDE = ""      # 自测用：把参考音频目录指到临时位置
 
 _proc = None
@@ -212,9 +241,11 @@ REF_GROUPS = {
     "调侃吐槽": ["调侃吐槽"],
     "问句":  ["问句"],
     # 以下与提示词词表一一对应：模型能输出，才可能选到这些文件夹
-    "沉重":  ["争执", "紧张"],
-    "紧张":  ["紧张", "争执"],
-    "激动":  ["激动"],
+    # 2026-11-22：紧张 不再借「争执」（那是吵架喊叫的参考，拿来念紧张台词又粗又冲）；
+    # 沉重 借「自怨自艾」（低声沉重）而不是吵架的。
+    "沉重":  ["自怨自艾", "紧张"],
+    "紧张":  ["紧张"],
+    "激动":  ["激动", "争执"],
     "委屈巴巴": ["委屈巴巴"],
     "自怨自艾": ["自怨自艾"],
     "故作轻松": ["故作轻松"],
@@ -284,6 +315,7 @@ _ref_cache = {}
 _REF_RATIO = {}          # {(文件夹, 文件名): 人声占比 0~1}，tools/ref_vad_scan.py 生成
 _REF_DUR = {}            # {(文件夹, 文件名): 时长秒}
 _REFCER = {}             # {(文件夹, 文件名): 平均 CER（越低越清楚）}
+_REF_TONE = {}           # {(文件夹, 文件名): (频谱重心 Hz, 响度 dBFS)}，tools/ref_tone_scan.py 生成
 # 特别模式导入的参考音频（角色 voice/ 顶层的散装 wav）：优先于按情绪分组的
 _IMPORTED = {"global": [], "by_emo": {}}
 _refs_sig = ""
@@ -345,6 +377,19 @@ def _ref_wordiness(txt):
         return 0.0
     hit = sum(1 for ch in s if ch in _MOAN_CHARS)
     return 1.0 - hit / len(s)
+
+
+def _clean_prompt(txt):
+    """参考音频的 prompt_text 清一下（2026-11-22）。
+
+    数据里有 25 条是从台词库直接抄来的脏值，中间夹着**字面反斜杠 n**（不是换行）：
+        `'すぐそうやって…！\\n大人げないのはどっちだ！'`
+    这种文本送进 GPT-SoVITS 当 prompt_text，会和参考音频的发音对不上 ——
+    症状就是「语调好奇怪」。这里统一把字面 `\\n` / `\\t` / 真换行 / 连续空白压成一个空格。
+    """
+    x = (txt or "").replace("\r", " ")
+    x = x.replace("\\n", " ").replace("\\t", " ").replace("\t", " ")
+    return re.sub(r"\s+", " ", x).strip()
 
 
 def _text_ok(txt):
@@ -436,7 +481,7 @@ def load_refs():
                         txt = ""
                         if os.path.exists(tpath):
                             try:
-                                txt = io.open(tpath, encoding="utf-8").read().strip()
+                                txt = _clean_prompt(io.open(tpath, encoding="utf-8").read())
                             except Exception:
                                 txt = ""
                         if txt and not _text_ok(txt):
@@ -451,7 +496,7 @@ def load_refs():
                 txt = ""
                 if os.path.exists(tpath):
                     try:
-                        txt = io.open(tpath, encoding="utf-8").read().strip()
+                        txt = _clean_prompt(io.open(tpath, encoding="utf-8").read())
                     except Exception:
                         txt = ""
                 if txt and not _text_ok(txt):
@@ -486,10 +531,28 @@ def load_refs():
         except Exception:
             pass
     # 参考音频的「人声占比」（tools/ref_vad_scan.py 生成）：选参考要用它
-    global _REF_RATIO
+    global _REF_RATIO, _REF_TONE
     _REF_RATIO = {}
     _REF_DUR = {}
     _REFCER = {}
+    _REF_TONE = {}
+    # 音色侧车（tools/ref_tone_scan.py 生成）：重心 Hz / 响度 dBFS，用来剔除「闷 / 太轻」的参考
+    for _emo in list(out.keys()):
+        _d = os.path.join(root, _emo)
+        if not os.path.isdir(_d):
+            for _n in os.listdir(root):
+                if _n.lower() == _emo and os.path.isdir(os.path.join(root, _n)):
+                    _d = os.path.join(root, _n)
+                    break
+        _tone_side = os.path.join(_d, "_reftone.json")
+        if not os.path.isfile(_tone_side):
+            continue
+        try:
+            for _r in json.loads(io.open(_tone_side, encoding="utf-8").read()):
+                _k = (_emo, (os.path.basename(_r.get("wav") or "")).lower())
+                _REF_TONE[_k] = (float(_r.get("cent") or 0), float(_r.get("db") or 0))
+        except Exception:
+            pass
     for _emo, _items in out.items():
         _side = os.path.join(root, _emo, "_refaudio.json")
         if not os.path.exists(_side):
@@ -543,8 +606,17 @@ def pick_ref(emo="neutral", target=""):
     items = []
     for n in names:
         items.extend(refs.get(n) or _lower.get(str(n).lower()) or [])
-    if not items:                     # 兜底：任意一条
-        for v in refs.values():
+    if not items:
+        # 兜底（2026-11-22 收紧）：**只从「以说话为主」的情绪里借**。
+        # 以前这里 `for v in refs.values()` 全抓 —— 未知情绪（比如 气喘吁吁 目录是空的）
+        # 会随机抓到 H / 接吻 / 呼吸这些气声参考，念出来又粗又糊、语调还怪。
+        for _e, v in refs.items():
+            if str(_e).lower() in SAFE_BORROW:
+                items.extend(v)
+    if not items:                     # 还是空（极少见）：退回任意非气声组
+        for _e, v in refs.items():
+            if str(_e).lower() in ("h", "接吻", "睡觉时的呼吸", "气喘吁吁"):
+                continue
             items.extend(v)
     if not items:
         return None, ""
@@ -572,11 +644,16 @@ def pick_ref(emo="neutral", target=""):
     def _dur(path):
         return _REF_DUR.get(_key(path), 0.0)
 
+    def _tone(path):
+        return _REF_TONE.get(_key(path), (0.0, 0.0))
+
     def _good(pairs, lo=3.5, hi=7.5, min_ratio=0.5):
-        """念正常台词用的参考：有人声、时长适中、文本不是纯拟声。
+        """念正常台词用的参考：有人声、时长适中、文本不是纯拟声、**音色不闷不轻**。
 
         实测：>8 秒的长参考会掉字；2~3 秒的气声参考会把整句带成气声
         （ka1625「はぁっ、はっ、はっ…」被抽中就整句念不清）。
+        2026-11-22 补：频谱重心 < DARK_HZ 的参考会让整句变「闷/粗」，
+        响度 < QUIET_DB 的容易合成出气声 —— 都要剔掉（H/接吻/呼吸这些本来就是气声的不卡）。
         """
         out = []
         for x in pairs:
@@ -587,6 +664,14 @@ def pick_ref(emo="neutral", target=""):
                 continue
             if _looks_like_moan(x[1]):
                 continue
+            # 豁免按**这条参考自己所在的情绪目录**算，不是按请求的情绪算：
+            # 借来的 calm/soft 参考照样要过音色门（不然给「气喘吁吁」借到一条闷的也能过）。
+            if str(os.path.basename(os.path.dirname(x[0]))).lower() not in TONE_EXEMPT:
+                cent, db = _tone(x[0])
+                if cent and cent < DARK_HZ:      # 闷：频谱重心太低
+                    continue
+                if db and db < QUIET_DB:         # 太轻：合成容易变成气声
+                    continue
             c = _REFCER.get(_key(x[0]))
             if c is not None and c > 0.5:      # 实测念不清的参考不用
                 continue
@@ -633,11 +718,14 @@ def pick_ref(emo="neutral", target=""):
         except Exception:
             pass
         return _pick
-    # 本情绪里没有能说话的参考 → 跨情绪借（calm/soft 这类以说话为主），参数仍用本情绪的
+    # 本情绪里没有能说话的参考 → 跨情绪借（只借「以说话为主」的组），参数仍用本情绪的
     borrow = []
     for _e, _v in refs.items():
         # 不要从本情绪自己的目录里「借」：这里要的是**别的**情绪的音色
         if str(_e).lower() == str(emo).lower():
+            continue
+        # 2026-11-22：别从 H / 接吻 / 呼吸 / 喊叫（争执、回嘴）里借 —— 借来的音色又粗又冲
+        if str(_e).lower() not in SAFE_BORROW:
             continue
         for x in _good([y for y in _v if y[1]]):
             borrow.append(x)
@@ -764,6 +852,13 @@ def _ensure_char_model():
         _post("/set_gpt_weights?weights_path=" + urllib.parse.quote(m["gpt"]))
         _post("/set_sovits_weights?weights_path=" + urllib.parse.quote(m["sovits"]))
         _model_key = key
+        # 2026-11-22：把真正加载的权重写进日志（查「音色变了/很粗」时要能对账）
+        try:
+            import applog
+            applog.log("TTS 权重：%s + %s"
+                       % (os.path.basename(m["gpt"]), os.path.basename(m["sovits"])), "TTS")
+        except Exception:
+            pass
         return True
     except Exception as e:
         _last_err = "切换角色权重失败: %s" % e
@@ -897,11 +992,9 @@ def _character_tts_for(key):
     """按角色目录名取权重（不依赖 _voice_char）"""
     try:
         d = os.path.join(characters.root(), key, "voice_model")
-        if os.path.isdir(d):
-            ckpt = [f for f in os.listdir(d) if f.lower().endswith(".ckpt")]
-            pth = [f for f in os.listdir(d) if f.lower().endswith(".pth")]
-            if ckpt and pth:
-                return {"gpt": os.path.join(d, ckpt[0]), "sovits": os.path.join(d, pth[0])}
+        m = _pick_weights(d)
+        if m:
+            return m
     except Exception:
         pass
     return {}
