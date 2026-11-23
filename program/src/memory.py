@@ -50,7 +50,15 @@ DEFAULTS = {
     "recent_ratio": 0.25,
     # 记忆条目总量最多占上下文的多少
     "entries_ratio": 0.12,
+    # 条目数「软上限」：超过就把最老的一批**再压成一条更早的剧情**（不再直接丢弃）。
+    # 2026-11-23 修：以前这里到 40 条就把老条目扔掉，而 covered 照旧往前推 → 静默记忆真空
     "max_entries": 40,
+    # 分层压缩后，最多留几条「更早的剧情」卷宗（level>=1）
+    "max_summary_entries": 12,
+    # 一次压缩至少合并几条（太少会压得过碎）
+    "compact_group": 6,
+    # 安全上限：再怎么压也不许超过这个条数（防止坏模型输出把列表撑爆）
+    "hard_max_entries": 400,
     # 切换后每多少轮重新打包一次
     "repack_turns": 6,
     # 一次打包最多产出几条
@@ -122,7 +130,8 @@ _RT = None
 
 def _blank():
     return {"entries": [], "covered": 0, "turns": 0, "packs": 0,
-            "slot": "", "window_start": 0, "updated_at": ""}
+            "slot": "", "window_start": 0, "updated_at": "",
+            "covered_fixed": 0, "repair": {}}
 
 
 def runtime():
@@ -138,7 +147,26 @@ def runtime():
                         _RT[k] = d[k]
         except Exception:
             pass
+        # 2026-11-23：指针不许超前于内容（老缓存里可能被推过头）
+        # 注意：条目没有 from 区间（老档 / 手写测试）时推导不出内容位置，就不动 covered
+        try:
+            cov = derived_covered(_RT.get("entries") or [])
+            if cov > 0 and int(_RT.get("covered") or 0) > cov:
+                _RT["covered_fixed"] = int(_RT.get("covered") or 0)
+                _RT["covered"] = cov
+        except Exception:
+            pass
     return _RT
+
+
+def runtime_holes():
+    """当前运行时记忆书的空洞信息（给日志 / 界面 / 自愈用）"""
+    r = runtime()
+    h = holes(r.get("entries") or [], r.get("covered"))
+    h["entries"] = len(r.get("entries") or [])
+    h["covered"] = int(r.get("covered") or 0)
+    h["derived"] = derived_covered(r.get("entries") or [])
+    return h
 
 
 def _save_runtime():
@@ -242,24 +270,49 @@ def recent_start(msgs, budget_tokens, covered=0):
 
 # ------------------------------------------------------------------ 条目
 def render_note(entries, max_tokens=0):
-    """把条目拼成一段注入 system 的文字。progress 单独放最前面（优先）。"""
+    """把条目拼成一段注入 system 的文字。
+
+    顺序：进度 → 「更早的剧情」卷宗（越早越靠前）→ 最近的条目（放不下就从最老的丢注入）。
+    注意：这里丢的只是**注入**，runtime / 存档里的条目本身不会被删。
+    """
     if not entries:
         return ""
     prog = [e for e in entries if (e.get("kind") or "") == "progress"]
-    rest = [e for e in entries if (e.get("kind") or "") != "progress"]
-    # 条目太多时从新到旧留（预算内的才带）
+    sums = [e for e in entries if (e.get("kind") or "") == "summary"]
+    rest = [e for e in entries if (e.get("kind") or "") not in ("progress", "summary")]
+    # 卷宗按覆盖起点排（早的在前）
+    def _from0(e):
+        fr = e.get("from") or []
+        try:
+            return int(fr[0])
+        except Exception:
+            return 0
+    sums.sort(key=_from0)
     if max_tokens:
-        keep, used = [], 0
-        for e in reversed(rest):
+        # 先保证卷宗（它们是早期剧情唯一的记录），剩下的预算给最近的普通条目
+        kept_s, used = [], 0
+        for e in sums:
             t = est_text(e.get("text") or "") + 2
-            if used + t > max_tokens:
+            if used + t > max_tokens * 0.6:      # 卷宗最多占 60%
                 break
             used += t
+            kept_s.append(e)
+        sums = kept_s
+        keep, used2 = [], 0
+        for e in reversed(rest):
+            t = est_text(e.get("text") or "") + 2
+            if used + used2 + t > max_tokens:
+                break
+            used2 += t
             keep.append(e)
         rest = list(reversed(keep))
     parts = []
     if prog:
         parts.append("【现在进行到哪儿】" + (prog[-1].get("text") or ""))
+    if sums:
+        parts.append("【更早的剧情（按时间顺序，越靠前越早）】")
+        for e in sums:
+            parts.append("- " + (e.get("text") or ""))
     if rest:
         parts.append("【你记得的事（是资料，不是台词；用你自己的口气说，不要照抄）】")
         for e in rest:
@@ -271,8 +324,56 @@ def render_note(entries, max_tokens=0):
     return "\n".join(parts)
 
 
-def merge_entries(old, new, max_entries=40):
-    """合并条目：progress 只留最新一条，其它按内容去重后追加。"""
+def derived_covered(entries):
+    """「已经总结到第几条」= 所有条目覆盖区间的最大结尾。
+
+    2026-11-23 起以它为准：以前 `covered` 是独立记的，条目被挤出/压缩后它还会往前跑，
+    于是代码以为覆盖了、其实内容没了（静默记忆真空）。现在指针**从内容推导**，不可能超前。
+    """
+    hi = 0
+    for e in (entries or []):
+        fr = (e or {}).get("from") or []
+        if len(fr) >= 2:
+            try:
+                hi = max(hi, int(fr[1]))
+            except Exception:
+                pass
+    return hi
+
+
+def holes(entries, covered=None):
+    """检查记忆书有没有「前面的剧情没人记」。返回 {"earliest": 最早覆盖起点, "hole": 洞的长度}"""
+    lo = None
+    for e in (entries or []):
+        fr = (e or {}).get("from") or []
+        if len(fr) >= 2:
+            try:
+                v = int(fr[0])
+                lo = v if lo is None else min(lo, v)
+            except Exception:
+                pass
+    cov = derived_covered(entries) if covered is None else int(covered or 0)
+    if lo is None:
+        # 条目没有 from 区间（老档 / 手写数据）：推不出起点，**不能瞎报空洞**
+        return {"earliest": 0, "hole": 0}
+    return {"earliest": lo, "hole": max(0, lo)}
+
+
+def entry_level(e):
+    try:
+        return max(0, int((e or {}).get("level") or 0))
+    except Exception:
+        return 0
+
+
+def merge_entries(old, new, max_entries=None):
+    """合并条目：progress 只留最新一条，其它按内容去重后追加。
+
+    **绝不丢弃**（2026-11-23 修）：以前超过 max_entries 就 `rest[-max_entries:]` 把老条目扔掉，
+    而 covered 继续前进 → 早期剧情永久丢失（实测 2000 条存档只剩最近 70 条的摘要）。
+    现在超上限交给 `compact_entries()` 压成「更早的剧情」卷宗；数据本身永远留着
+    （只有注入时按 token 预算裁剪）。`max_entries` 参数保留只是为了兼容旧调用。
+    """
     out = list(old or [])
     for e in (new or []):
         txt = (e.get("text") or "").strip()
@@ -280,6 +381,8 @@ def merge_entries(old, new, max_entries=40):
             continue
         kind = e.get("kind") or "event"
         item = {"text": txt, "kind": kind, "from": e.get("from") or []}
+        if e.get("level"):
+            item["level"] = int(e.get("level") or 0)
         if kind == "progress":
             out = [x for x in out if (x.get("kind") or "") != "progress"]
             out.append(item)
@@ -289,9 +392,80 @@ def merge_entries(old, new, max_entries=40):
         out.append(item)
     prog = [x for x in out if (x.get("kind") or "") == "progress"]
     rest = [x for x in out if (x.get("kind") or "") != "progress"]
-    if len(rest) > max_entries:
-        rest = rest[-max_entries:]
     return rest + prog
+
+
+COMPACT_SYSTEM = (
+    "你是对话记忆整理器。把给的一批「剧情要点」合并压缩成更短的一批要点。"
+    "只输出 JSON，不要解释。"
+)
+
+
+def build_compact_prompt(entries):
+    lines = []
+    for e in entries:
+        lines.append("- " + (e.get("text") or "").strip())
+    body = "\n".join(lines)
+    return (
+        "下面是一段对话的若干条记忆要点（越靠前越早）：\n\n" + body + "\n\n"
+        "请把它们合并压缩成 2~4 条要点，要求：\n"
+        "1. 只保留对后续剧情有用的事实：人物关系变化、约定、重要事件、明确的喜好。\n"
+        "2. 合并同类项，删掉琐碎细节；保留具体名字/地点/时间点。\n"
+        "3. 第三人称、一句话一条，不要写台词。\n"
+        "4. JSON 格式：{\"entries\":[{\"text\":\"...\",\"kind\":\"event|preference\"}]}\n"
+        "只输出这个 JSON。"
+    )
+
+
+def compact_entries(entries, llm, max_entries=None, group=None,
+                    max_summaries=None):
+    """把最老的一批条目压成一条「更早的剧情」卷宗（kind=summary，带 level）。
+
+    返回 (新条目列表, 是否压过, 错误信息)。压不动（模型失败）就**原样返回**，绝不丢条目。
+    """
+    c = cfg()
+    max_entries = max(4, int(max_entries if max_entries is not None else c["max_entries"]))
+    group = max(2, int(group if group is not None else c["compact_group"]))
+    max_summaries = max(1, int(max_summaries if max_summaries is not None
+                               else c["max_summary_entries"]))
+    cur = list(entries or [])
+    done = False
+    for _ in range(40):
+        rest = [x for x in cur if (x.get("kind") or "") != "progress"]
+        sums = [x for x in rest if (x.get("kind") or "") == "summary"]
+        if len(rest) <= max_entries and len(sums) <= max_summaries:
+            break
+        # 先压最老卷宗（层级高的先被合掉），再压最老普通条目
+        order = sorted(range(len(cur)),
+                       key=lambda i: (entry_level(cur[i]),
+                                      (cur[i].get("from") or [0])[0], i))
+        idxs = []
+        for i in order:
+            if (cur[i].get("kind") or "") == "progress":
+                continue
+            idxs.append(i)
+            if len(idxs) >= group:
+                break
+        if len(idxs) < 2:
+            break
+        picked = [cur[i] for i in sorted(idxs)]
+        try:
+            raw = llm(build_compact_prompt(picked))
+        except Exception as e:
+            return cur, done, "压缩调用失败: %s" % e
+        new = parse_entries(raw)
+        if not new:
+            return cur, done, "压缩没有产出条目"
+        fr = []
+        for e in picked:
+            fr.extend(e.get("from") or [])
+        span = [min(fr), max(fr)] if fr else []
+        level = max(entry_level(e) for e in picked) + 1
+        merged = [{"text": (x.get("text") or "").strip(),
+                   "kind": "summary", "from": span, "level": level} for x in new]
+        cur = [x for x in cur if x not in picked] + merged
+        done = True
+    return cur, done, ""
 
 
 # ------------------------------------------------------------------ 总结
@@ -389,24 +563,27 @@ def _pack_one(msgs, start, end, llm, slot=""):
     # 标上来源区间，便于回溯是哪几条消息总结出来的
     for e in new:
         e["from"] = [start, end]
-    merged = merge_entries(r["entries"], new, int(cfg()["max_entries"]))
-    runtime_set(entries=merged, covered=max(int(r["covered"]), end),
+    merged = merge_entries(r["entries"], new)
+    # 超软上限：把最老的压成「更早的剧情」卷宗（不再直接丢弃）
+    try:
+        merged, _compacted, _err = compact_entries(merged, llm)
+    except Exception:
+        _compacted = False
+    # covered 从条目区间推导：指针不可能跑到内容前面
+    cov = max(derived_covered(merged), int(r.get("covered") or 0))
+    runtime_set(entries=merged, covered=cov,
                 packs=int(r.get("packs", 0)) + 1, slot=slot or r.get("slot", ""))
     return True, len(new)
 
 
-def pack_span(msgs, start, end, llm, slot="", max_chunks=4):
-    """把 msgs[start:end] 压成条目。
+def pack_range(msgs, start, end, llm, slot="", max_chunks=4, chunk_tokens=None):
+    """从 start 往 end 压（最多 max_chunks 块），返回 (做到第几条, 是否成功过, 新增条数)。
 
-    长历史分块总结（每块 chunk_tokens），从最老的未覆盖处往前推：
-    一块一块来，做不完下次再继续 —— 这样第一次跨阈值不会因为要总结几百条
-    而卡住，也不会一次给模型塞两万多 token。
-
-    返回 (是否有进展, 新增条目数)。失败不抛，交给调用方降级。
+    和 pack_span 的区别：它把**游标**也返回，供"补齐记忆书空洞"这种需要知道进度的地方用。
     """
     c = cfg()
-    chunk_tokens = int(c["chunk_tokens"])
-    cur, total, ok_any, chunks = start, 0, False, 0
+    chunk_tokens = int(chunk_tokens or c["chunk_tokens"])
+    cur, total, ok_any, chunks = int(start), 0, False, 0
     while cur < end and chunks < max(1, int(max_chunks)):
         size, chunk_end = 0, cur
         while chunk_end < end:
@@ -419,4 +596,17 @@ def pack_span(msgs, start, end, llm, slot="", max_chunks=4):
         if not ok:
             break
         ok_any, total, cur, chunks = True, total + n, chunk_end, chunks + 1
+    return cur, ok_any, total
+
+
+def pack_span(msgs, start, end, llm, slot="", max_chunks=4):
+    """把 msgs[start:end] 压成条目。
+
+    长历史分块总结（每块 chunk_tokens），从最老的未覆盖处往前推：
+    一块一块来，做不完下次再继续 —— 这样第一次跨阈值不会因为要总结几百条
+    而卡住，也不会一次给模型塞两万多 token。
+
+    返回 (是否有进展, 新增条目数)。失败不抛，交给调用方降级。
+    """
+    _cur, ok_any, total = pack_range(msgs, start, end, llm, slot, max_chunks)
     return ok_any, total

@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-22.9",
+  "version": "2026-11-23.1",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
   "portable_url": "",
-  "notes": "BGM 不再乱放 Answer：氛围→曲目表以前永远用兜底表（tense 第二首就是 Answer），所以气氛一紧张就轮到它；现在按曲库惰性重建，人声插曲不进自动轮播（设置里仍可手动选）"
+  "notes": "记忆书不再静默丢条目：旧版到 40 条上限就把最老记忆扔掉，导致长存档 87% 的剧情既不在原文也不在摘要里；现在合并不丢、超上限压成「更早的剧情」卷宗、覆盖位置从内容推导，读档发现空洞会自动补齐，另附 memory_rebuild 重建工具"
 }

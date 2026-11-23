@@ -161,6 +161,37 @@ def session_load(slot="auto"):
     return out
 
 
+def session_memory_update(slot, mem, expect_count=None):
+    """只更新存档里的 memory 字段（对话记忆书自愈用）。
+
+    安全约束：
+      · `expect_count` 给了就核对消息条数 —— 期间玩家又聊了（条数变了）就跳过，
+        免得把旧快照写回去；下次启动会再试。
+      · 原子写，不碰 messages / meta。
+    返回 {"ok":bool, ...}
+    """
+    try:
+        path = _sess_path(slot)
+        if not os.path.exists(path):
+            return {"ok": False, "error": "no such slot"}
+        d, err = _read_payload(path)
+        if err:
+            return dict(ok=False, **err)
+        msgs = d.get("messages") or []
+        if expect_count is not None and len(msgs) != int(expect_count):
+            return {"ok": False, "error": "stale",
+                    "count": len(msgs), "expect": int(expect_count)}
+        if not isinstance(mem, dict):
+            return {"ok": False, "error": "bad memory"}
+        d["memory"] = mem
+        _write_atomic(path, d)
+        _SESS_CACHE.pop(os.path.basename(path), None)
+        return {"ok": True, "slot": slot, "count": len(msgs),
+                "entries": len(mem.get("entries") or [])}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 _SESS_CACHE = {}      # 文件名 -> (mtime, 摘要)：避免每次开界面都把上百个存档全解析一遍
 
 

@@ -77,17 +77,24 @@ def main():
         check("%d 轮：条目渲染有标题" % n, "【你记得的事" in note, note[:40])
 
     # ---------------------------------------------------------------- 2 缓存满
-    old = [{"text": "旧 %d" % i, "kind": "event"} for i in range(30)]
-    new = [{"text": "新 %d" % i, "kind": "event"} for i in range(30)]
+    # 2026-11-23 改契约：以前超上限直接丢弃最老条目（这就是用户「忘记上下文」的根因）。
+    # 现在合并**绝不丢**，超上限交给 compact_entries 压成「更早的剧情」卷宗。
+    old = [{"text": "旧 %d" % i, "kind": "event", "from": [i * 10, (i + 1) * 10]}
+           for i in range(30)]
+    new = [{"text": "新 %d" % i, "kind": "event", "from": [(30 + i) * 10, (31 + i) * 10]}
+           for i in range(30)]
     merged = memory.merge_entries(old, new, max_entries=5)
-    check("超出上限只留 5 条", len(merged) == 5, len(merged))
-    check("留下的是最近的（新的）", [e["text"] for e in merged] == ["新 25", "新 26", "新 27", "新 28", "新 29"],
-          [e["text"] for e in merged])
+    check("超出上限也不丢条目（60 条都在）", len(merged) == 60, len(merged))
+    check("最老的条目还在", merged[0]["text"] == "旧 0", merged[0])
+    check("最新的条目也在", merged[-1]["text"] == "新 29", merged[-1])
+    check("覆盖区间没缩水（0~600）",
+          memory.derived_covered(merged) == 600, memory.derived_covered(merged))
     merged2 = memory.merge_entries(merged, [{"text": "新 29", "kind": "event"}], max_entries=5)
-    check("重复条目被去重（长度不变）", len(merged2) == 5, len(merged2))
+    check("重复条目被去重（长度不变）", len(merged2) == 60, len(merged2))
     prog = memory.merge_entries(
         [{"text": "进度 A", "kind": "progress"}],
         [{"text": "进度 B", "kind": "progress"}, {"text": "事件 C", "kind": "event"}], max_entries=5)
+    # progress 会排在最后（merge_entries 的顺序约定），用 kind 找
     kinds = [e.get("kind") for e in prog]
     check("progress 只留最新一条", kinds.count("progress") == 1, prog)
     check("progress 内容是最新的", [e["text"] for e in prog if e.get("kind") == "progress"] == ["进度 B"], prog)

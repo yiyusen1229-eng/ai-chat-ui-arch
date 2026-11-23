@@ -16,7 +16,8 @@ import memory
 import char_res
 import standing as standing_mod
 
-KIND_LABEL = {"preference": "偏好", "event": "事件", "progress": "进度"}
+KIND_LABEL = {"preference": "偏好", "event": "事件", "progress": "进度",
+              "summary": "更早的剧情"}
 
 
 def _entry(i, e):
@@ -31,6 +32,7 @@ def _entry(i, e):
         "text": text,
         "kind": kind,
         "label": KIND_LABEL.get(kind, "其他"),
+        "level": int(e.get("level") or 0),
         "from": e.get("from") or [],
     }
 
@@ -43,6 +45,14 @@ def view():
         v = _entry(i, e)
         if v:
             entries.append(v)
+    levels = {}
+    for v in entries:
+        levels[str(v["level"])] = levels.get(str(v["level"]), 0) + 1
+    # 2026-11-23：把「覆盖到哪 / 有没有空洞」也暴露出来，别让记忆真空静默存在
+    try:
+        h = memory.runtime_holes()
+    except Exception:
+        h = {"earliest": 0, "hole": 0, "derived": 0, "covered": 0}
 
     standing_text = ""
     standing_file = ""
@@ -62,12 +72,20 @@ def view():
     hint = ""
     if not entries:
         hint = "还没有自动摘要。对话变长、超过阈值之后才会生成记忆条目；现在发给模型的还是原文。"
+    elif h.get("hole", 0) > 0:
+        hint = ("注意：最早 %d 条对话没有被记忆覆盖（旧版本丢过条目）。"
+                "程序会在后台自动补齐；也可用 tools/memory_rebuild.py 手动重建。"
+                % h["hole"])
 
     return {
         "ok": True,
         "entries": entries,
         "count": len(entries),
+        "levels": levels,
         "covered": int(r.get("covered") or 0),
+        "covered_derived": int(h.get("derived") or 0),
+        "earliest_from": int(h.get("earliest") or 0),
+        "hole": int(h.get("hole") or 0),
         "turns": int(r.get("turns") or 0),
         "updated_at": r.get("updated_at") or "",
         "hint": hint,

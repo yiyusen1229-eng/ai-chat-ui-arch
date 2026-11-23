@@ -123,16 +123,26 @@ def _server():
 
 
 def _memory_block():
-    """对话记忆书：条目数 / 覆盖到第几轮 / 三档预算"""
+    """对话记忆书：条目数 / 覆盖到第几轮 / 空洞 / 三档预算"""
     try:
         import memory
         r = memory.runtime() or {}
         trig, recent_b, entries_b = memory.budget(True)
         entries = r.get("entries") or []
+        h = memory.runtime_holes()
+        levels = {}
+        for e in entries:
+            lv = str(int((e or {}).get("level") or 0))
+            levels[lv] = levels.get(lv, 0) + 1
         return {
             "entries": len(entries),
             "max_entries": int(memory.cfg().get("max_entries") or 0),
+            "max_summary_entries": int(memory.cfg().get("max_summary_entries") or 0),
+            "levels": levels,
             "covered": int(r.get("covered") or 0),
+            "covered_derived": int(h.get("derived") or 0),
+            "earliest_from": int(h.get("earliest") or 0),
+            "hole": int(h.get("hole") or 0),
             "turns": int(r.get("turns") or 0),
             "packs": int(r.get("packs") or 0),
             "window_start": int(r.get("window_start") or 0),

@@ -153,6 +153,94 @@ def main():
     dd = S.session_load("old")
     check("没有 memory 也能读", dd.get("ok") and dd.get("memory") is None)
 
+    # ---- 2026-11-23：用户报「忘记上下文」，查出旧逻辑在 40 条上限处直接丢条目 ----
+    print("\n[10] 条目到上限不许丢（这是「忘记上下文」的根因）")
+    many = [{"text": "事件%d" % i, "kind": "event", "from": [i * 10, (i + 1) * 10]}
+            for i in range(100)]
+    merged = M.merge_entries([], many)
+    check("100 条全部保留", len(merged) == 100, "实际 %d" % len(merged))
+    check("最早那条还在", merged[0]["text"] == "事件0", merged[0])
+    check("derived covered = 最大结尾", M.derived_covered(merged) == 1000,
+          M.derived_covered(merged))
+
+    print("\n[11] 空洞检测")
+    check("从 0 开始 → 没洞", M.holes([{"text": "a", "from": [0, 50]}, {"text": "b", "from": [50, 90]}])["hole"] == 0)
+    check("从 100 开始 → 洞 100", M.holes([{"text": "b", "from": [100, 200]}])["hole"] == 100,
+          str(M.holes([{"text": "b", "from": [100, 200]}])))
+    check("没有区间信息 → 不瞎报洞", M.holes([{"text": "x"}])["hole"] == 0)
+
+    print("\n[12] 分层压缩：丢条数不丢内容")
+    sixty = [{"text": "要点%d" % i, "kind": "event", "from": [i * 10, (i + 1) * 10]}
+             for i in range(60)]
+    M._RT = M._blank()
+    M._RT["entries"] = list(sixty)
+    M._save_runtime()
+    comp, did, err = M.compact_entries(M.runtime()["entries"], fake_llm)
+    check("确实压过", did and not err, "%s / %s" % (did, err))
+    check("压缩后不超过上限", len(comp) <= 52, "实际 %d" % len(comp))
+    check("出现了卷宗（kind=summary）",
+          any((e.get("kind") or "") == "summary" for e in comp),
+          [e.get("kind") for e in comp][:8])
+    check("卷宗带 level≥1",
+          all((e.get("level") or 0) >= 1 for e in comp if (e.get("kind") or "") == "summary"))
+    frs = [e.get("from") for e in comp if e.get("from")]
+    check("最早起点还是 0（早期剧情没被丢）", min(x[0] for x in frs) == 0,
+          min(x[0] for x in frs))
+    check("最大结尾还是 600（覆盖没缩水）", max(x[1] for x in frs) == 600,
+          max(x[1] for x in frs))
+
+    def bad_llm2(prompt):
+        raise RuntimeError("模型挂了")
+    before = [{"text": "要点%d" % i, "kind": "event", "from": [i * 10, (i + 1) * 10]}
+              for i in range(60)]
+    comp2, did2, err2 = M.compact_entries(before, bad_llm2)
+    check("压缩失败时原样返回（不丢）", comp2 == before and not did2 and err2, "%s/%s" % (did2, err2))
+
+    print("\n[13] 覆盖指针不许超前于内容")
+    M._RT = M._blank()
+    M._RT["entries"] = [{"text": "a", "kind": "event", "from": [0, 10]}]
+    M._RT["covered"] = 999
+    M._save_runtime()
+    M._RT = None                                  # 模拟重启后加载缓存
+    rt4 = M.runtime()
+    check("加载时把 covered 拉回内容位置", rt4["covered"] == 10, rt4["covered"])
+    check("原值记在 covered_fixed 里（可查）", rt4.get("covered_fixed") == 999, rt4.get("covered_fixed"))
+
+    print("\n[14] 空洞自愈：后台补齐 + 写回存档（用假模型，不花钱）")
+    try:
+        import main as APP
+        tmp2 = tempfile.mkdtemp(prefix="wa2_mem_fix_")
+        M.CACHE_DIR = tmp2
+        M.RUNTIME_FILE = os.path.join(tmp2, "memory_runtime.json")
+        S.SESS_DIR = tmp2
+        hist2 = make_hist(400)
+        S.session_save({"slot": "fix", "messages": hist2, "meta": {},
+                        "memory": {"enabled": True, "covered_upto": 400,
+                                   "entries": [{"text": "最近的事", "kind": "event",
+                                                "from": [300, 400]}]}})
+        M.reset_for_load([{"text": "最近的事", "kind": "event", "from": [300, 400]}], 400, "fix")
+        old_llm = APP._mem_llm
+        APP._mem_llm = lambda prompt, max_tokens=1200, timeout=90: fake_llm(prompt)
+        try:
+            APP._memory_repair_worker(hist2, "fix", "fix|400|300", 300)
+        finally:
+            APP._mem_llm = old_llm
+        rt = M.runtime()
+        h2 = M.holes(rt.get("entries") or [], rt.get("covered"))
+        check("补齐后空洞没了", h2["hole"] == 0, h2)
+        check("覆盖到原窗口起点之后", M.derived_covered(rt.get("entries") or []) >= 300,
+              M.derived_covered(rt.get("entries") or []))
+        dd2 = S.session_load("fix")
+        mm = dd2.get("memory") or {}
+        check("写回存档的 covered_upto = 条目推导值",
+              mm.get("covered_upto") == M.derived_covered(mm.get("entries") or []),
+              mm.get("covered_upto"))
+        check("写回存档带 rebuilt 标记", mm.get("rebuilt") is True, mm.get("rebuilt"))
+        check("消息没被改动", len(dd2.get("messages") or []) == 400,
+              len(dd2.get("messages") or []))
+    except Exception as e:
+        check("空洞自愈流程没抛异常", False, "%s: %s" % (type(e).__name__, e))
+
     print("\n" + ("全部通过" if not FAILS else "有 %d 项失败: %s" % (len(FAILS), FAILS)))
     return 1 if FAILS else 0
 

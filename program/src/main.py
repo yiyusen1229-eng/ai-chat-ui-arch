@@ -421,7 +421,8 @@ def fewshot_msgs():
 # ---------------- 人设 / 世界书（见 persona_ctx.py） ----------------
 import threading as _th
 from winutil import _win_hwnd, _user32, _quiet_act
-from sessions import session_save, session_load, session_list, session_thumb
+from sessions import (session_save, session_load, session_list, session_thumb,
+                      session_memory_update)
 import sessions as _sessions
 import memory as _memory
 import pricing as _pricing
@@ -803,6 +804,8 @@ def _usage_snapshot():
 
 # ---------------- 记忆书（见 memory.py） ----------------
 _MEM_PACK_LOCK = _th.Lock()
+_MEM_REPAIR_LOCK = _th.Lock()
+_CUR_SLOT = "auto"          # 当前读/写的存档槽位（记忆书自愈写回存档时要用）
 
 
 def _stage_llm(system, user, max_tokens=6, timeout=20):
@@ -916,6 +919,12 @@ def _memory_context(msgs, cloud):
         if aligned <= 0:
             return msgs, ""
         covered = int(r.get("covered") or 0)
+        # 2026-11-23：覆盖位置必须由条目内容推导（旧版指针会超前 → 记忆真空）
+        derived = _memory.derived_covered(r.get("entries") or [])
+        if derived > 0 and covered > derived:
+            log("记忆书：覆盖指针超前（%d > 内容 %d），按内容回退" % (covered, derived))
+            covered = derived
+            _memory.runtime_set(covered=covered)
         # 历史变短了（"开始游戏"清空 / 换了存档）→ 记忆书作废，别把上一段对话的印象带过来
         if covered > len(msgs):
             _memory.reset_for_load([], 0, "")
@@ -936,8 +945,12 @@ def _memory_context(msgs, cloud):
         repack = int(_memory.cfg()["repack_turns"])
         if covered and aligned > covered and repack > 0 and turn % repack == 0:
             _repack_async(msgs, covered, aligned)
-        log("记忆书：估算 %d / 阈值 %d，发最近 %d 条（共 %d 条，%d 条记忆）"
-            % (total, trig, len(msgs) - start, len(msgs), len(r.get("entries") or [])))
+        _hole = _memory.holes(r.get("entries") or [], covered)
+        log("记忆书：估算 %d / 阈值 %d，发最近 %d 条（共 %d 条，%d 条记忆%s）"
+            % (total, trig, len(msgs) - start, len(msgs), len(r.get("entries") or []),
+               ("，空洞 %d 条" % _hole["hole"]) if _hole["hole"] > 0 else ""))
+        if _hole["hole"] > 0:
+            _memory_check_repair(msgs, _CUR_SLOT)
         return (msgs[start:], note) if start > 0 else (msgs, note)
     except Exception as e:
         log("记忆书失败（本轮按全量发送）: %s" % e)
@@ -959,6 +972,82 @@ def _repack_async(msgs, a, b):
         finally:
             _MEM_PACK_LOCK.release()
     _th.Thread(target=work, daemon=True).start()
+
+
+# ---- 记忆书空洞自愈（2026-11-23）----
+# 旧逻辑在 40 条上限处会把最老的条目直接丢掉，而 covered 继续往前 → 老存档里
+# 「第 0 条到最早条目」这段既不在原文窗口、也不在任何摘要里。原文还在 messages 里，
+# 所以可以在后台重新分块摘要补回来（一次性，之后不再丢）。
+def _memory_check_repair(msgs, slot="auto"):
+    """发现空洞就后台补齐；同一存档+同一长度只发起一次（失败下次启动再试）。"""
+    try:
+        h = _memory.runtime_holes()
+        target = int(h.get("earliest") or 0)
+        if target < 60 or len(msgs) < target:
+            return
+        sig = "%s|%d|%d" % (slot or "auto", len(msgs), target)
+        r = _memory.runtime()
+        rep = dict(r.get("repair") or {})
+        if rep.get(sig):
+            return
+        rep[sig] = time.strftime("%Y-%m-%d %H:%M:%S")
+        _memory.runtime_set(repair=rep)
+        log("记忆书：发现空洞（第 0~%d 条没被记），后台补齐开始" % target)
+        _th.Thread(target=_memory_repair_worker, args=(msgs, slot, sig, target),
+                   daemon=True).start()
+    except Exception as e:
+        log("记忆书：空洞检查失败 %s" % e)
+
+
+def _memory_repair_worker(msgs, slot, sig, target):
+    if not _MEM_REPAIR_LOCK.acquire(blocking=False):
+        return
+    ok_any = False
+    try:
+        cur = 0
+        for _ in range(60):
+            cur2, ok, _n = _memory.pack_range(
+                msgs, cur, target, _mem_llm, slot=slot,
+                max_chunks=int(_memory.cfg()["async_chunks"]))
+            if not ok:
+                break
+            ok_any = True
+            cur = cur2
+            if cur >= target:
+                break
+        if not ok_any:
+            raise RuntimeError("一块也没压出来")
+        entries = list(_memory.runtime().get("entries") or [])
+        try:
+            entries, _c, _e = _memory.compact_entries(entries, _mem_llm)
+        except Exception:
+            pass
+        cov = _memory.derived_covered(entries)
+        _memory.runtime_set(entries=entries, covered=cov)
+        mem = {"enabled": True,
+               "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+               "covered_upto": cov, "entries": entries, "rebuilt": True}
+        try:
+            res = session_memory_update(slot, mem, expect_count=len(msgs))
+        except Exception as e:
+            res = {"ok": False, "error": str(e)}
+        log("记忆书：空洞补齐完成（覆盖到第 %d 条，%d 条记忆；写回存档%s）"
+            % (cov, len(entries),
+               "成功" if res.get("ok") else "失败：%s" % res.get("error")))
+        if res.get("ok"):
+            rep = dict(_memory.runtime().get("repair") or {})
+            rep.pop(sig, None)
+            _memory.runtime_set(repair=rep)
+    except Exception as e:
+        log("记忆书：空洞补齐失败（下次启动再试）%s" % e)
+        try:
+            rep = dict(_memory.runtime().get("repair") or {})
+            rep.pop(sig, None)
+            _memory.runtime_set(repair=rep)
+        except Exception:
+            pass
+    finally:
+        _MEM_REPAIR_LOCK.release()
 
 
 # ---------------- HTTP 服务 ----------------
@@ -1361,11 +1450,18 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
             # 之后整局都只读缓存 —— 不再区分"存档记忆书 / 缓存记忆书"两套。
             try:
                 info = _memory.seed_from_save((d or {}).get("memory"), slot)
+                try:
+                    global _CUR_SLOT
+                    _CUR_SLOT = slot or "auto"
+                except Exception:
+                    pass
                 if info["enabled"]:
                     log("记忆书：读档 %s → 缓存 %d 条（覆盖到第 %d 条）"
                         % (slot, info["entries"], info["covered"]))
                 else:
                     log("记忆书：读档 %s 没有记忆书，缓存已清空" % slot)
+                # 2026-11-23：老存档可能带着「空洞」（早期剧情被旧逻辑丢掉了）→ 后台补齐
+                _memory_check_repair((d or {}).get("messages") or [], slot)
             except Exception as e:
                 log("记忆书：读档恢复失败 %s" % e)
             try:
@@ -1663,10 +1759,18 @@ class Handler(UpdateApi, ChatApi, WindowApi, CharApi, CharPackApi, MemoryApi,
             r = _memory.runtime()
             entries = list(r.get("entries") or [])
             if entries:
+                try:
+                    global _CUR_SLOT
+                    _CUR_SLOT = (body.get("slot") or "auto")
+                except Exception:
+                    pass
                 body["memory"] = {
                     "enabled": True,
                     "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "covered_upto": int(r.get("covered") or 0),
+                    # 覆盖位置一律从条目内容推导（2026-11-23：独立记会超前，造成记忆真空）。
+                    # 老条目没有 from 区间时推导不出来 → 保留运行时值（否则老档会被写成 0）
+                    "covered_upto": (_memory.derived_covered(entries)
+                                     or int(r.get("covered") or 0)),
                     "entries": entries,
                 }
             return self._json(session_save(body))

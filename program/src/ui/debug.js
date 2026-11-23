@@ -87,7 +87,9 @@
 
     var mem = m.memory || {};
     L.push("记忆   条目 " + num(mem.entries) + "/" + num(mem.max_entries) +
-           " · 覆盖到第 " + num(mem.covered) + " 条 · 打包 " + num(mem.packs) + " 次");
+           "（卷宗 " + num(mem.max_summary_entries) + "）· 覆盖到第 " + num(mem.covered) + " 条 · 打包 " +
+           num(mem.packs) + " 次" +
+           (mem.hole > 0 ? " · ⚠ 空洞 " + num(mem.hole) + " 条（后台补齐中）" : ""));
 
     var stg = m.stage || {};
     L.push("分类   阶段 " + num(stg.stage) + "/4 · 每 " + num(stg.every) + " 轮判一次" +

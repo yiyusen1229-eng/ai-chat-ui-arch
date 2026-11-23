@@ -90,6 +90,7 @@
 | K37 | 桌面行为（#18） | 置顶 / 不透明度 / 多显示器夹回，全走 user32（不引 pystray/keyboard）。`winutil.set_topmost / set_alpha / clamp_to_workarea`，HTTP 动作 `topmost|alpha|workarea|clamp`，前端 `wt-window.js` 记住设置并套用。**睡眠唤醒**：`powerwatch` 看墙钟跳变（巡检线程睡过去 → 首轮差 >20 秒即判定），`/api/power` 暴露 gen，前端变了就复用 `suspendForDevice/rebuildAfterDevice` 重建音频。「点击穿透」做过又删了（用不上、且有锁死窗口的风险）；托盘与全局快捷键用户明确跳过，别再排期 | `test_desktop.py`（真 Win32 窗口验样式位）+ `test_powerwatch.py`（喂假墙钟）+ `test_desktop_app.py`（真主窗口跑一遍置顶/透明/夹回，人工跑不进冒烟） |
 
 | K39 | 模型接入层（#24） | 云端/本地/自定义 provider 自动识别；七类错误各给一句人话；可重试的重试一次；auth/balance/offline/rate/server 时**回落本地模型**并标 degraded （前端弹「云端不可用，这轮用的是本地」）；空正文当 bad_response（推理型模型会假成功）；当天花费累加 + 80%/超额提醒（`llm.budget_daily` 默认 0 不提醒） | `tools/test_llm.py`（40+ 项，假 post 剧本化，不连网）+ 手动：断网发一句看是否降级到本地 |
+| K40 | 记忆书容量与自愈 | 用户 2026-11-23 报「感觉忘记上下文了」：机制在跑，但旧 `merge_entries()` 在 40 条上限处 `rest[-max_entries:]` 把最老条目扔了，而 `covered` 只增不减 → 长存档里 87% 的剧情既不在原文窗口也不在任何摘要里（实测 2061 条：covered 1838，条目 from 1788 起）。现在：合并不丢 + 超上限压成 kind=summary 卷宗（level 分层）+ covered 用 `derived_covered()` 从条目推导 + `holes()` 报空洞；读档空洞 ≥60 条后台自动补齐并写回存档 memory（`session_memory_update` 带条数校验）。`test_memory.py` **52 项**钉住（不丢/空洞/压缩不丢内容/指针钳制/自愈写回）；重建老存档用 `tools/memory_rebuild.py --slot auto [--dry]`。 |
 
 ## 发版前手动过一遍
 
