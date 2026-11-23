@@ -78,6 +78,7 @@ STEPS = [
     ("核心", "角色资源", "py", ["tools/test_char_res.py"], 120),
     ("核心", "角色包 52 项", "py", ["tools/test_char_pack.py"], 120),
     ("核心", "密钥脱敏 24 项", "py", ["tools/test_secret.py"], 120),
+    ("核心", "模型路由 15 项", "py", ["tools/test_model_route.py"], 60),
     ("核心", "记忆书机制 52 项", "py", ["tools/test_memory.py"], 120),
     ("核心", "记忆书界面 20 项", "py", ["tools/test_memory_view.py"], 120),
     ("核心", "存档 schema 29 项", "py", ["tools/test_session_schema.py"], 120),

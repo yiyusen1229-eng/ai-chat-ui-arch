@@ -71,6 +71,11 @@
       var seg = r.seg || {}, tok = r.tokens || {}, use = r.usage || {};
       L.push("模型 " + (r.model || "?") + " " + (r.tier === "cloud" ? "云" : "本地") +
              " · 时期 " + (r.period || "?") + " · 阶段 " + num(r.stage) + "/4");
+      var rt = d.route || {};
+      if (rt.model) {
+        L.push("路由   " + rt.model + " @ " + (rt.host || "?") +
+               "（" + (rt.source || "?") + "）" + (rt.has_key ? "" : " ⚠ 没 key"));
+      }
       L.push("提示词 人设" + num(seg.persona) + " 常驻" + num(seg.memory_extra) +
              " 世界书" + num(seg.worldbook) + (seg.wb_names && seg.wb_names.length ? "(" + seg.wb_names.length + "条)" : "") +
              " 记忆" + num(seg.mem_note) + " 原作" + num(seg.story) + " 尾" + num(seg.tail));

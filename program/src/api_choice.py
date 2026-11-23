@@ -92,10 +92,14 @@ def parse_options(text, count=MIN_COUNT, avoid=None):
 
 
 def _cloud_cfg():
-    """复用主程序的云端配置（和翻译层同一套 key/base/model）"""
+    """复用主程序的模型路由（2026-11-23：跟聊天一致 → 角色配置优先，其次全局）
+
+    以前这里直接拿 main.cloud_cfg()（全局 config.json），用户把聊天换到
+    OpenCode 之后，选项分支还在按 DeepSeek 官网价烧。
+    """
     try:
         import main
-        cfg = main.cloud_cfg() or {}
+        cfg = main.chat_route() or {}
     except Exception:
         cfg = {}
     return {"key": cfg.get("api_key") or cfg.get("key") or "",

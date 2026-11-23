@@ -100,6 +100,9 @@ def _judge_scene(prev_bg, player_text, action_text, reply_text, cfg, log, time_h
 
 _re_hscene = re.compile(r"<hscene>\s*([^<]{1,8}?)\s*</hscene>", re.I)
 
+# 上一轮打印过的模型路由（同一路由只在变化时打一行，免得日志刷屏）
+_LAST_ROUTE = None
+
 # 场景「模糊推断」的最低相似度（2026-11-22）
 # 用户报「明明还在教室里，CG 突然跳到公寓」：模型这轮没给 <scene>，动作里一个「抽出来」
 # 被当成"移动"（_MOVE_WORDS 里有「出来」），拿整段文字去 scene_cg.match 模糊匹配，
@@ -243,7 +246,7 @@ def performance_hints(cc, outfit_hint=""):
 class ChatApi:
     """见 main.Handler。"""
     def _chat(self):
-        from main import (ASSETS_DIR, DEFAULT_MODEL, FALLBACK_MODEL, NO_MODELS, OLLAMA, STORY, _memory_context, _record_usage, cloud_cfg, fewshot_msgs, log, ollama_models, split_action, split_emotion, split_scene, split_thinking, urllib)
+        from main import (ASSETS_DIR, DEFAULT_MODEL, FALLBACK_MODEL, NO_MODELS, OLLAMA, STORY, _memory_context, _record_usage, chat_route, cloud_cfg, fewshot_msgs, log, ollama_models, split_action, split_emotion, split_scene, split_thinking, urllib)
         try:
             req = self._body()
         except Exception as e:
@@ -255,13 +258,29 @@ class ChatApi:
         emo = "calm"
         scene_now = ""
         outfit_now = ""
-        cc = cloud_cfg()
-        base_url = (req.get("base_url") or (cc.get("base_url") if cc else "") or OLLAMA).strip()
+        # 模型路由（2026-11-23）：请求指定 > 角色配置（characters/<角色>/model.json 的 chat）> 全局 config.json。
+        # 以前只认请求；而前端 localStorage 里的 active-model 从来没人写（历史提交里只有读），
+        # 于是角色配置里填的 OpenCode 永远用不上，每轮都回落到全局 config.json（DeepSeek 官网）。
+        _route = chat_route(req.get("base_url") or "", req.get("model") or "",
+                            req.get("api_key") or "")
+        base_url = (_route.get("base_url") or OLLAMA).strip()
         if not (base_url.startswith("http://") or base_url.startswith("https://")):
             base_url = OLLAMA
-        model = req.get("model") or (cc.get("model") if cc else "") or DEFAULT_MODEL
+        model = _route.get("model") or DEFAULT_MODEL
+        # cc：有 key 才算云端（预算档位 / 降级 / 思考开关都按它），key 跟着路由走
+        cc = ({"api_key": _route.get("api_key") or "", "base_url": base_url,
+               "model": model} if _route.get("api_key") else {})
         if not cc and model not in ollama_models():
             model = FALLBACK_MODEL if FALLBACK_MODEL in ollama_models() else model
+        try:
+            global _LAST_ROUTE
+            _rk = (base_url, model, _route.get("source") or "")
+            if _rk != _LAST_ROUTE:
+                _LAST_ROUTE = _rk
+                log("模型路由：%s @ %s（%s）" % (model, base_url,
+                                              _route.get("source") or "?"))
+        except Exception:
+            pass
         msgs = req.get("messages") or []
         raw_msgs = list(msgs)          # 关系阶段要看完整历史，不能用裁剪后的
         # 当前背景图（前端带的）：模型没说时间时，新场景沿用这个时段

@@ -216,6 +216,23 @@ def _perf_block():
         return {"error": str(e)[:80]}
 
 
+def _route_block():
+    """实际模型路由：模型名 / 主机 / 来源（请求 / 角色配置 / 全局设置）
+
+    2026-11-23：用户报「配的是 OpenCode，DeepSeek 官网还在扣钱」——以前聊天请求
+    没带模型、也没有路由层，界面和实际用的对不上。这一块就是给面板/排查看的。
+    """
+    try:
+        import main
+        from urllib.parse import urlparse
+        r = main.chat_route() or {}
+        u = urlparse(r.get("base_url") or "")
+        return {"model": r.get("model") or "", "host": u.netloc or "",
+                "source": r.get("source") or "", "has_key": bool(r.get("api_key"))}
+    except Exception as e:
+        return {"error": str(e)[:80]}
+
+
 # ------------------------------------------------------------------ 面板整包
 
 def snapshot():
@@ -225,6 +242,7 @@ def snapshot():
         "server": _server(),
         "counters": counters(),
         "rounds": rounds(),
+        "route": _route_block(),
         "modules": {
             "memory": _memory_block(),
             "stage": _stage_block(),

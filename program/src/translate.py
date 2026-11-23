@@ -59,7 +59,19 @@ def _src_dir():
 
 
 def _cloud_cfg():
-    """云端配置：环境变量里的 key 优先（和 main.cloud_cfg 一个口径）。"""
+    """云端配置：跟聊天同一套路由（角色配置 → 全局 config.json）。
+
+    2026-11-23：用户报「配了 OpenCode，DeepSeek 官网还在扣钱」——翻译兜底以前
+    直接读全局 config.json，换通道后它还在烧官网额度；现在跟随 main.chat_route()。
+    """
+    try:
+        import main
+        r = main.chat_route() or {}
+        if r.get("api_key") and r.get("base_url"):
+            return {"key": r.get("api_key") or "", "base": (r.get("base_url") or "").rstrip("/"),
+                    "model": r.get("model") or ""}
+    except Exception:
+        pass
     p = os.path.join(_src_dir(), "config.json")
     try:
         with open(p, encoding="utf-8") as f:

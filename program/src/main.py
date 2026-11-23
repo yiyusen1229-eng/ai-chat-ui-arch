@@ -54,6 +54,7 @@ import scene_cg
 import api_export
 import firstrun
 import standing
+import llm
 try:
     import gdi_text as GLIB
 except Exception:
@@ -218,6 +219,57 @@ def cloud_cfg():
     if d.get("api_key") and d.get("model"):
         return d
     return {}
+
+def chat_route(req_base="", req_model="", req_key=""):
+    """这一轮到底用哪个模型：请求显式指定 > 角色配置 > 全局 config.json。
+
+    2026-11-23：用户报「配的是 OpenCode，怎么 DeepSeek 官网还在扣钱」。查下来
+    聊天请求从来没带 model/base_url —— 前端只读 `localStorage.app_active_model`，
+    而**没有任何代码写它**（历史提交里也只有读），于是每轮都回落到全局 config.json;
+    角色配置（`characters/<角色>/model.json` 的 chat 段）只被导演和界面显示用到。
+    这里把「角色配置 → 全局」补成正式路由，聊天和辅助调用共用。
+    """
+    cc = cloud_cfg() or {}
+    ch = char_chat_route()
+    base = (req_base or "").strip()
+    model = (req_model or "").strip()
+    key = (req_key or "").strip()
+    if base or model or key:
+        return {"base_url": base or cc.get("base_url") or "",
+                "api_key": key or ch.get("api_key") or cc.get("api_key") or "",
+                "model": model or ch.get("model") or cc.get("model") or "",
+                "source": "请求指定"}
+    if ch and ch.get("base_url") and ch.get("model") and ch.get("api_key"):
+        return {"base_url": ch["base_url"], "api_key": ch["api_key"],
+                "model": ch["model"], "source": "角色配置"}
+    return {"base_url": cc.get("base_url") or "", "api_key": cc.get("api_key") or "",
+            "model": cc.get("model") or "", "source": "全局设置"}
+
+
+def char_chat_route():
+    """角色级聊天配置（特别模式 → 角色配置 → 聊天），没有/不完整返回 {}。"""
+    try:
+        import char_model
+        raw = char_model._load_raw() or {}
+        sec = raw.get("chat") or {}
+        ep = str(sec.get("endpoint") or "").strip()
+        key = str(sec.get("key") or "").strip()
+        mdl = str(sec.get("model") or "").strip()
+        if ep and key and mdl:
+            return {"base_url": ep, "api_key": key, "model": mdl}
+    except Exception:
+        pass
+    return {}
+
+
+def aux_cfg():
+    """辅助调用（记忆书 / 关系阶段 / 选项 / 场景判定 / 翻译兜底）用的模型。
+
+    跟聊天同一套路由（角色配置 → 全局），这样换了便宜通道不会「只剩聊天换了、
+    后台还在按官网价烧」。
+    """
+    return chat_route()
+
 
 def _http_ok(url, headers=None, timeout=4):
     """访问一下，能拿到 HTTP 响应就算通"""
@@ -809,15 +861,15 @@ _CUR_SLOT = "auto"          # 当前读/写的存档槽位（记忆书自愈写�
 
 
 def _stage_llm(system, user, max_tokens=6, timeout=20):
-    """关系阶段分类：只回一个数字，尽量便宜（不加载人设）"""
-    cc = cloud_cfg()
-    if not cc:
+    """关系阶段分类：只回一个数字，尽量便宜（不加载人设）。
+
+    走和聊天同一套路由（角色配置 → 全局）：以前这里写死 cloud_cfg()，
+    用户把聊天换到便宜通道后，这一步还在按官网价烧。
+    """
+    cfg = aux_cfg()
+    if not cfg.get("api_key"):
         return ""
-    base_url = (os.environ.get("WA2_MEM_URL")
-                or cc.get("base_url") or OLLAMA).rstrip("/")
-    key = cc.get("api_key") or ""
-    model = cc.get("model") or DEFAULT_MODEL
-    headers = {"Content-Type": "application/json", "Authorization": "Bearer " + key}
+    model = cfg.get("model") or DEFAULT_MODEL
     payload = {
         "model": model,
         "messages": [{"role": "system", "content": system},
@@ -826,20 +878,19 @@ def _stage_llm(system, user, max_tokens=6, timeout=20):
         "max_tokens": max_tokens,
         "temperature": 0,
     }
-    if "pro" in model or "deepseek" in model.lower():
+    if ("pro" in model or "deepseek" in model.lower()
+            or "deepseek" in (cfg.get("base_url") or "").lower()):
         payload["thinking"] = {"type": "disabled"}
         payload["reasoning_effort"] = "none"
-    rq = urllib.request.Request(
-        base_url + "/v1/chat/completions",
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers=headers)
-    with urllib.request.urlopen(rq, timeout=timeout) as r:
-        d = json.loads(r.read().decode("utf-8"))
     try:
-        _record_usage(model, d.get("usage") or {})
+        r = llm.generate(payload, cfg, timeout=timeout)
+    except Exception:
+        return ""
+    try:
+        _record_usage(r.model or model, r.usage)
     except Exception:
         pass
-    return (d["choices"][0]["message"].get("content") or "").strip()
+    return (r.text or "").strip()
 
 
 persona_stage.set_llm(_stage_llm)      # 关系阶段用云端只回一个数字
@@ -849,18 +900,17 @@ def _mem_llm(prompt, max_tokens=1200, timeout=90):
     """给记忆书用的模型调用：不加载人设，只让它把一段对话压成条目。
 
     WA2_MEM_URL 可以把这一步单独指到别的端点（自测用假模型时不烧真实 token）。
+    其它情况走和聊天同一套路由（角色配置 → 全局）—— 以前写死 cloud_cfg()，
+    用户换到 OpenCode 后记忆书摘要还在扣 DeepSeek 官网的钱。
     """
-    cc = cloud_cfg()
-    if cc:
-        base_url = (os.environ.get("WA2_MEM_URL")
-                    or cc.get("base_url") or OLLAMA).rstrip("/")
-        key = cc.get("api_key") or ""
-        model = cc.get("model") or DEFAULT_MODEL
-        headers = {"Content-Type": "application/json", "Authorization": "Bearer " + key}
-    else:
-        base_url = (os.environ.get("WA2_MEM_URL") or OLLAMA).rstrip("/")
-        model = DEFAULT_MODEL
-        headers = {"Content-Type": "application/json"}
+    cfg = dict(aux_cfg())
+    _env = os.environ.get("WA2_MEM_URL")
+    if _env:
+        cfg = {"base_url": _env, "api_key": cfg.get("api_key") or "",
+               "model": cfg.get("model") or DEFAULT_MODEL}
+    if not cfg.get("api_key"):
+        cfg = {"base_url": OLLAMA, "api_key": "", "model": DEFAULT_MODEL}
+    model = cfg.get("model") or DEFAULT_MODEL
     payload = {
         "model": model,
         "messages": [{"role": "system", "content": _memory.SUM_SYSTEM},
@@ -869,31 +919,22 @@ def _mem_llm(prompt, max_tokens=1200, timeout=90):
         "max_tokens": max_tokens,
         "temperature": 0.2,
     }
-    if not cc:
+    if not cfg.get("api_key"):
         payload["reasoning_effort"] = "none"
-    if cc and ("pro" in model or "deepseek" in (base_url or "").lower() or "deepseek" in (model or "").lower()):
+    if ("pro" in model or "deepseek" in model.lower()
+            or "deepseek" in (cfg.get("base_url") or "").lower()):
         payload["thinking"] = {"type": "disabled"}
         payload["reasoning_effort"] = "none"
-    rq = urllib.request.Request(
-        base_url + "/v1/chat/completions",
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers=headers)
     try:
-        with urllib.request.urlopen(rq, timeout=timeout) as r:
-            d = json.loads(r.read().decode("utf-8"))
-        try:
-            _record_usage(model, d.get("usage") or {})
-        except Exception:
-            pass
-        return (d["choices"][0]["message"].get("content") or "").strip()
+        r = llm.generate(payload, cfg, timeout=timeout)
     except Exception as e:
-        detail = ""
-        try:
-            detail = e.read().decode("utf-8", "replace")[:200]
-        except Exception:
-            pass
-        log("记忆书：模型调用失败 %s: %s %s" % (type(e).__name__, e, detail))
+        log("记忆书：模型调用失败 %s: %s" % (type(e).__name__, e))
         raise
+    try:
+        _record_usage(r.model or model, r.usage)
+    except Exception:
+        pass
+    return (r.text or "").strip()
 
 
 # 常驻记忆书的关系摘要（#3）：用同一个便宜模型，只要 3~6 行短句
@@ -1818,13 +1859,16 @@ if not NO_MODELS:
 if not NO_MODELS:
     threading.Thread(target=lambda: tts_client.start(), daemon=True).start()
 applog.start_heartbeat(30)
+# 以前这里印的是 DEFAULT_MODEL（本地模型名），用云端时看着像「在用本地模型」，误导；
+# 2026-11-23 起印**实际路由**（含来源：角色配置 / 全局设置 / 请求），别再出现
+# 「界面写着 OpenCode、实际在烧 DeepSeek」这种误会。
 try:
-    _cc0 = cloud_cfg()
-    _eff = (_cc0.get("model") if _cc0 else DEFAULT_MODEL) or DEFAULT_MODEL
-    _where = ("云端 " + (_cc0.get("base_url") or "")) if _cc0 else ("本地 " + OLLAMA)
+    _rt0 = chat_route()
+    _eff = _rt0.get("model") or DEFAULT_MODEL
+    _where = ("%s %s" % (_rt0.get("source") or "全局设置",
+                        _rt0.get("base_url") or OLLAMA))
 except Exception:
     _eff, _where = DEFAULT_MODEL, "本地 " + OLLAMA
-# 以前这里印的是 DEFAULT_MODEL（本地模型名），用云端时看着像「在用本地模型」，误导
 applog.log("程序启动: 安全模式=%s 语音依赖=%s 对话模型=%s（%s）"
            % (NO_MODELS, tts_client.available(), _eff, _where))
 

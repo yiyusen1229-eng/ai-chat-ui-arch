@@ -1,6 +1,6 @@
 {
-  "version": "2026-11-23.1",
+  "version": "2026-11-23.2",
   "url": "https://github.com/yiyusen1229-eng/ai-chat-ui-arch/tree/master/other/docs/patches",
   "portable_url": "",
-  "notes": "记忆书不再静默丢条目：旧版到 40 条上限就把最老记忆扔掉，导致长存档 87% 的剧情既不在原文也不在摘要里；现在合并不丢、超上限压成「更早的剧情」卷宗、覆盖位置从内容推导，读档发现空洞会自动补齐，另附 memory_rebuild 重建工具"
+  "notes": "聊天模型其实一直没用你配的通道：前端 active-model 从没人写、角色配置没接到聊天上、辅助调用直接读全局 config.json —— 现在统一路由「请求 > 角色配置 > 全局」，记忆书/关系阶段/选项/翻译也跟随；另补上 OpenCode 网关的 UA+会话头"
 }
